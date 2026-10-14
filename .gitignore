@@ -1,0 +1,10 @@
+# Local IDE state and Python bytecode
+.idea/
+__pycache__/
+*.py[cod]
+.venv/
+
+# Reproducible visualizer exports (keep aesthetic reference HTML)
+/top_replay.html
+/demos_gallery.html
+/demos_gallery/

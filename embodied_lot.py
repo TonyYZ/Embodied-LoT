@@ -1,105 +1,26 @@
-"""
-embodied_lot.py — Embodied Language of Thought: Core Model
-===========================================================
+"""Core graph model for Embodied Language of Thought.
 
-A symbolic-spatial cognitive model for concept learning and composition,
-grounded in embodied cognition theory and Yijing trigrams as image-schema
-primitives.
+A concept is a ``ConceptGraph`` of perceptual/attentional operators:
 
-Theoretical background
-----------------------
-Concepts are *lazy scanner functions*: structured programs that scan a
-spatial receptive field only when given perceptual input.  Primitive
-features are drawn from the Yijing trigram system, whose binary line
-structure naturally encodes spatial distributions.
+* ``ObjectNode``    trigram scanner (an image schema over three bands)
+* ``ParallelNode``  attention hub: pools ``InputNode`` fields, averages scanners
+* ``SerialNode``    splits the field into strips, averages children on them
+* ``PlanNode``      template/content replacement rule
+* ``BodyNode``      a plan with position, extent and velocity that moves
+* ``InputNode`` / ``OutputNode``  sensory and output windows
 
-The model distinguishes three kinds of things:
+Solid edges compose nodes. Dashed edges are positive conditional gates:
+``target.gate = mean(source.activation)``. They never invert their source.
 
-    Object nodes      Primitive scanners; each encodes one trigram schema.
-    Structure nodes   Composite scanners built from primitives:
-                        SerialNode   — spatial adjacency / AND
-                        ParallelNode — alpha-blend / OR  [also the context hub]
-                        BodyNode     — template unfolding with spatial memory
-                        PlanNode     — static template (BodyNode, no self-motion)
-    Field nodes       Perceptual input providers (RetinaNode, TactileNode, …).
-                      A field node lives *inside* the graph as a child of a
-                      ParallelNode; it supplies the spatial substrate that
-                      activates its scanner siblings.
+Observed object nodes (below a ``ParallelNode`` that owns an ``InputNode``)
+scan a field: ``activation = gate * scan(field)``. Field-free object nodes
+are imagined: ``activation = gate``.
 
-Lazy evaluation semantics
---------------------------
-Every node is a *lambda function waiting for context*.  A scanner node only
-fires — i.e. actually reads a receptive field — when it is a sibling of a
-ReceptiveFieldNode inside a ParallelNode.  Without that co-presence, it
-remains inert (activation 0).
+Every activation ``a`` also has a yin reading ``1 - a``. Only structures
+that ask for it, such as a ``VOID`` plan template, use that complement.
 
-When a ParallelNode holds both field nodes and scanner nodes as children:
-  1. Each scanner is evaluated against each field node's spatial data.
-  2. Results are weighted by the field node's current activation weight
-     (its "degree of presence"), yielding a weighted average.
-  3. Field node activations can themselves be modulated by dashed edges,
-     so conditional top-down attention changes *which* field dominates.
-
-This design means the same concept graph can be evaluated against vision,
-touch, or any other modality simply by attaching the appropriate field node.
-
-Activation as probability
---------------------------
-Every node's `activation` is a probability p ∈ [0, 1] that its yang lines
-are currently scanning.  We *never sample* — the system always stores and
-manipulates the probability distribution.  Dashed-edge modulation is
-deterministic and multiplicative:
-
-    target.activation  ←  target.activation × (source.activation × gain)
-
-The Bayesian learning component (see concept_learning.py) is the only
-process that structurally modifies the graph.
-
-Edge types
-----------
-SolidEdge   Compositional hierarchy: parent StructureNode → child Node.
-DashedEdge  Conditional modulation: condition Node → target Node.
-            Evaluated in strict topological order along the dashed-edge chain
-            so that A → B → C chains propagate correctly.
-
-Graph structure
----------------
-Local field nodes in a nested ParallelNode *override* the field context
-inherited from a parent SerialNode.  This gives each ParallelNode a clean,
-independent scanning context, and allows a concept to simultaneously contain
-sub-concepts that scan different modalities.
-
-Quick-start example
--------------------
-    from embodied_lot import (
-        ConceptGraph, ObjectNode, SerialNode, ParallelNode,
-        RetinaNode, Orientation, TRIGRAM_PATTERNS,
-        ReceptiveField,
-    )
-    import numpy as np
-
-    # ── "A is above B": two trigrams arranged vertically ──────────────
-    graph = ConceptGraph(name="above")
-
-    top    = ObjectNode("top", TRIGRAM_PATTERNS["bottom"],
-                        orientation=Orientation.VERTICAL)
-    bot    = ObjectNode("bot", TRIGRAM_PATTERNS["top"],
-                        orientation=Orientation.VERTICAL)
-    serial = SerialNode("serial", split_orientation=Orientation.VERTICAL)
-    par    = ParallelNode("par")
-
-    # Build the field-context hub: retina node + serial scanner as siblings
-    retina = RetinaNode("retina", field=ReceptiveField.random(9, 9, seed=0))
-
-    graph.add_nodes([top, bot, serial, par, retina])
-    graph.add_solid_edge(par, retina)   # field node — provides context
-    graph.add_solid_edge(par, serial)   # scanner node — fires when retina present
-    graph.add_solid_edge(serial, top)
-    graph.add_solid_edge(serial, bot)
-    graph.root = par
-
-    activation = graph.evaluate()   # float in [0, 1]
-    print(f"above activation: {activation:.3f}")
+``evaluate()`` is stateless (reset, scan, propagate, rescan).
+``step()`` keeps gates and body state across frames.
 """
 
 from __future__ import annotations
@@ -107,115 +28,127 @@ from __future__ import annotations
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
-from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 import numpy as np
 
 
 # ============================================================
-# Section 1 — Trigram System
+# 1. Pattern vocabulary
 # ============================================================
 
 class Orientation(Enum):
-    """Axis along which a receptive field or scanner is oriented."""
-    HORIZONTAL = 0   # bands / strips run left → right
-    VERTICAL   = 1   # bands / strips run bottom → top
+    """Axis along which bands or strips are read."""
+    HORIZONTAL = 0   # left -> right
+    VERTICAL   = 1   # bottom -> top
 
 
-# Binary pattern for each Yijing trigram ─────────────────────────────
-# Index 0 = top band, 1 = middle band, 2 = bottom band.
-# 0 = yin line (background / absent), 1 = yang line (figure / present).
+# Index 0 is the bottom band (vertical) or the left band (horizontal),
+# following the Yijing bottom-to-top reading. 0 = yin, 1 = yang.
 TRIGRAM_PATTERNS: Dict[str, Tuple[float, ...]] = {
-    "void":    (0,   0,   0  ),   # 坤 Kūn  — all yin; pure ground
-    "top":     (0,   0,   1  ),   # 艮 Gèn  — mountain; figure at top
-    "center":  (0,   1,   0  ),   # 坎 Kǎn  — water; figure at center
-    "upper":   (0,   1,   1  ),   # 巽 Xùn  — wind; majority upper
-    "bottom":  (1,   0,   0  ),   # 震 Zhèn — thunder; figure at bottom
-    "periphery":(1,  0,   1  ),   # 离 Lí   — fire; figure at periphery
-    "lower":   (1,   1,   0  ),   # 兑 Duì  — lake; majority lower
-    "universal":(1,  1,   1  ),   # 乾 Qián — heaven; all yang
-    "neutral": (0.5, 0.5, 0.5),   # 中 Zhōng — neutral / unknown
+    "void":      (0,   0,   0  ),   # Kun   (earth)    all yin; pure ground
+    "top":       (0,   0,   1  ),   # Gen   (mountain) figure at top
+    "center":    (0,   1,   0  ),   # Kan   (water)    figure at center
+    "upper":     (0,   1,   1  ),   # Xun   (wind)     majority upper
+    "bottom":    (1,   0,   0  ),   # Zhen  (thunder)  figure at bottom
+    "periphery": (1,   0,   1  ),   # Li    (fire)     figure at periphery
+    "lower":     (1,   1,   0  ),   # Dui   (lake)     majority lower
+    "universal": (1,   1,   1  ),   # Qian  (heaven)   all yang
+    "neutral":   (0.5, 0.5, 0.5),   # Zhong            unknown
 }
 
 BIGRAM_PATTERNS: Dict[str, Tuple[float, ...]] = {
-    "tai_yin":  (0, 0),   # 太阴
-    "shao_yin": (0, 1),   # 少阴
-    "shao_yang":(1, 0),   # 少阳
-    "tai_yang": (1, 1),   # 太阳
+    "tai_yin":   (0, 0),
+    "shao_yin":  (0, 1),
+    "shao_yang": (1, 0),
+    "tai_yang":  (1, 1),
 }
 
 MONOGRAM_PATTERNS: Dict[str, Tuple[float, ...]] = {
-    "yin":  (0,),   # 阴
-    "yang": (1,),   # 阳
+    "yin":  (0,),
+    "yang": (1,),
 }
 
-ALL_PATTERNS: Dict[str, Tuple[float, ...]] = {
-    **TRIGRAM_PATTERNS, **BIGRAM_PATTERNS, **MONOGRAM_PATTERNS,
-}
+ALL_PATTERNS = {**TRIGRAM_PATTERNS, **BIGRAM_PATTERNS, **MONOGRAM_PATTERNS}
 PATTERN_TO_NAME: Dict[Tuple, str] = {v: k for k, v in ALL_PATTERNS.items()}
+_TRIGRAM_NAMES: Dict[Tuple, str] = {v: k for k, v in TRIGRAM_PATTERNS.items()}
 
-# Expected motion vectors for dynamic (勢 / 動) trigrams ──────────────
-# Format: (direction_vec, magnitude_vec)
-#   direction: (upper_half_dir, lower_half_dir) ∈ {-1, 0, 1}
-#   magnitude: (upper_half_mag, lower_half_mag) ∈ [0, 1]
+# Motion of dynamic trigrams: (directions, magnitudes), each given as
+# (upper_half, lower_half). Directions are in {-1, 0, 1}.
 TRIGRAM_MOTION: Dict[str, Tuple[Tuple, Tuple]] = {
-    "void":     ((0,  0),  (0,   0  )),
-    "top":      ((-1, -1), (1,   1  )),
-    "center":   ((-1,  1), (1,   1  )),
-    "upper":    ((-1,  0), (1,   0  )),
-    "bottom":   (( 1,  1), (1,   1  )),
-    "periphery":(( 1, -1), (1,   1  )),
-    "lower":    (( 0,  1), (0,   1  )),
-    "universal":(( 0,  0), (1,   1  )),
-    "neutral":  (( 0,  0), (0.5, 0.5)),
-}
-
-# Unicode display symbols ─────────────────────────────────────────────
-TRIGRAM_SYMBOLS: Dict[Tuple, str] = {
-    (0, 0, 0)      : "☷", (0, 0, 1): "☶", (0, 1, 0): "☵",
-    (0, 1, 1)      : "☴", (1, 0, 0): "☳", (1, 0, 1): "☲",
-    (1, 1, 0)      : "☱", (1, 1, 1): "☰", (0.5, 0.5, 0.5): "𝌀",
+    "void":      (( 0,  0), (0,   0  )),
+    "top":       (( 1,  1), (1,   1  )),
+    "center":    ((-1,  1), (1,   1  )),
+    "upper":     (( 0,  1), (0,   1  )),
+    "bottom":    ((-1, -1), (1,   1  )),
+    "periphery": (( 1, -1), (1,   1  )),
+    "lower":     ((-1,  0), (1,   0  )),
+    "universal": (( 0,  0), (1,   1  )),
+    "neutral":   (( 0,  0), (0.5, 0.5)),
 }
 
 
 def trigram_symbol(pattern: tuple) -> str:
-    return TRIGRAM_SYMBOLS.get(pattern, "?")
+    """Trigram name for a 3-band pattern, or '' for anything else."""
+    return _TRIGRAM_NAMES.get(pattern, "")
 
 
 # ============================================================
-# Section 2 — Receptive Field (spatial data container)
+# 2. Band geometry
+# ============================================================
+# A region is (r0, r1, c0, c1) in numpy coordinates: row 0 is the top.
+
+Region = Tuple[int, int, int, int]
+
+
+def band_region(region: Region, i: int, n: int, orientation: Orientation) -> Region:
+    """Band ``i`` of ``n`` inside ``region``.
+
+    Vertical bands count from the bottom, horizontal bands from the left.
+    """
+    r0, r1, c0, c1 = region
+    if orientation == Orientation.VERTICAL:
+        k = n - 1 - i
+        return r0 + round((r1 - r0) * k / n), r0 + round((r1 - r0) * (k + 1) / n), c0, c1
+    return r0, r1, c0 + round((c1 - c0) * i / n), c0 + round((c1 - c0) * (i + 1) / n)
+
+
+def is_empty(region: Region) -> bool:
+    r0, r1, c0, c1 = region
+    return r1 <= r0 or c1 <= c0
+
+
+# ============================================================
+# 3. Receptive field
 # ============================================================
 
 class ReceptiveField:
-    """
-    A 2D spatial field with an optional motion channel.
+    """A 2-D yang-salience map in [0, 1], plus an optional motion channel.
 
-    This is the *data payload* carried by a ReceptiveFieldNode.  Values
-    represent feature salience at each position.  In future work this can
-    be derived from image features, neural activations, or semantic
-    embeddings.
-
-    Parameters
-    ----------
-    activation : np.ndarray, shape (H, W)
-        Static activation / salience in [0, 1].
-    motion : np.ndarray, shape (H, W, 2), optional
-        Per-pixel velocity (dy, dx).  Used by dynamic ObjectNodes.
+    ``activation`` has shape (H, W). Its yin reading is ``1 - activation``.
+    ``motion`` has shape (H, W, 2) holding (dy, dx); dynamic scanners read it.
+    ``bounds`` gives this field's position inside its root field, normalised to [0, 1].
     """
 
     def __init__(
         self,
         activation: np.ndarray,
         motion: Optional[np.ndarray] = None,
+        bounds: Tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),
+        root_activation: Optional[np.ndarray] = None,
+        root_motion: Optional[np.ndarray] = None,
     ) -> None:
         if activation.ndim != 2:
             raise ValueError("activation must be 2-D (H, W).")
         if not (0 <= activation.min() and activation.max() <= 1 + 1e-6):
             warnings.warn("Clipping activation values to [0, 1].")
         self.activation = np.clip(activation, 0.0, 1.0).astype(float)
-        self.motion     = motion
+        self.motion = motion
+        self.bounds = tuple(bounds)
+        # Bodies carve their window from the root, not from a strip.
+        self._root_activation = self.activation if root_activation is None else root_activation
+        self._root_motion = self.motion if root_motion is None else root_motion
 
     @classmethod
     def from_array(cls, arr: np.ndarray, motion=None) -> "ReceptiveField":
@@ -227,8 +160,7 @@ class ReceptiveField:
         return cls(np.full((height, width), value))
 
     @classmethod
-    def random(cls, height: int, width: int,
-               seed: Optional[int] = None) -> "ReceptiveField":
+    def random(cls, height: int, width: int, seed: Optional[int] = None) -> "ReceptiveField":
         return cls(np.random.default_rng(seed).random((height, width)))
 
     @property
@@ -243,25 +175,39 @@ class ReceptiveField:
     def shape(self) -> Tuple[int, int]:
         return self.activation.shape
 
-    def subfield(
-        self,
-        row_start: int, row_end: int,
-        col_start: int, col_end: int,
-    ) -> "ReceptiveField":
-        """Crop a rectangular sub-field."""
-        sub_act = self.activation[row_start:row_end, col_start:col_end]
-        sub_mot = (
-            self.motion[row_start:row_end, col_start:col_end]
-            if self.motion is not None else None
+    @property
+    def region(self) -> Region:
+        return 0, self.height, 0, self.width
+
+    @property
+    def yin_activation(self) -> np.ndarray:
+        return 1.0 - self.activation
+
+    def subfield(self, row_start: int, row_end: int,
+                 col_start: int, col_end: int) -> "ReceptiveField":
+        """Crop a rectangle, keeping track of its bounds in the root field."""
+        sub_mot = None if self.motion is None else self.motion[row_start:row_end, col_start:col_end]
+        br0, br1, bc0, bc1 = self.bounds
+        h, w = max(self.height, 1), max(self.width, 1)
+        return ReceptiveField(
+            self.activation[row_start:row_end, col_start:col_end],
+            sub_mot,
+            bounds=(br0 + (br1 - br0) * row_start / h, br0 + (br1 - br0) * row_end / h,
+                    bc0 + (bc1 - bc0) * col_start / w, bc0 + (bc1 - bc0) * col_end / w),
+            root_activation=self._root_activation,
+            root_motion=self._root_motion,
         )
-        return ReceptiveField(sub_act, sub_mot)
+
+    def band(self, i: int, n: int, orientation: Orientation) -> "ReceptiveField":
+        """Band ``i`` of ``n`` (vertical: from the bottom; horizontal: from the left)."""
+        return self.subfield(*band_region(self.region, i, n, orientation))
 
     def __repr__(self) -> str:
         return f"ReceptiveField(shape={self.shape}, mean={self.activation.mean():.3f})"
 
 
 # ============================================================
-# Section 3 — Edge Types
+# 4. Edges
 # ============================================================
 
 class EdgeType(Enum):
@@ -269,861 +215,472 @@ class EdgeType(Enum):
     DASHED = "dashed"
 
 
-class SolidEdge:
-    """
-    Compositional (solid) edge: parent StructureNode → child Node.
+class _Edge:
+    edge_type: EdgeType
+    arrow = "->"
 
-    Encodes the spatial / logical hierarchy.  Children receive sub-regions
-    of their parent's active field (SerialNode), or the same full field
-    (ParallelNode), or a body-internal subfield (BodyNode / PlanNode).
-    """
-
-    def __init__(self, parent: "Node", child: "Node") -> None:
-        self.source    = parent
-        self.target    = child
-        self.edge_type = EdgeType.SOLID
+    def __init__(self, source: "Node", target: "Node") -> None:
+        self.source = source
+        self.target = target
 
     def __repr__(self) -> str:
-        return f"SolidEdge({self.source.node_id!r} → {self.target.node_id!r})"
+        return f"{type(self).__name__}({self.source.node_id!r} {self.arrow} {self.target.node_id!r})"
 
 
-class DashedEdge:
-    """
-    Conditional (dashed) edge: condition Node ⤳  target Node.
+class SolidEdge(_Edge):
+    """Composition: the parent passes (part of) its field to the child."""
+    edge_type = EdgeType.SOLID
 
-    Sets `target.value = mean(source.activation for all incoming dashed edges)`.
-    This is evaluated AFTER the first forward scan pass, so that source
-    activations are available.  A second forward pass then uses the updated
-    values.
 
-    `value` is separate from `activation`:
-      - `activation` is what a node computes by scanning a receptive field.
-      - `value`      is the probability that the node is "present" — it gates
-                     the activation (ObjectNode) and the replacement rule
-                     (Plan/BodyNode).
-
-    When no dashed edge points to a node, its value stays at 1.0 (fully
-    present by default).  A dashed edge from a high-activation source keeps
-    value near 1; from a low-activation source it brings value near 0.
-
-    Parameters
-    ----------
-    condition : Node   The conditioning (source) node.
-    target    : Node   The node whose value is set.
-    """
-
-    def __init__(self, condition: "Node", target: "Node") -> None:
-        self.source    = condition
-        self.target    = target
-        self.edge_type = EdgeType.DASHED
-
-    def __repr__(self) -> str:
-        return f"DashedEdge({self.source.node_id!r} ⤳  {self.target.node_id!r})"
+class DashedEdge(_Edge):
+    """Positive conditional gate: ``target.gate = mean(source activations)``."""
+    edge_type = EdgeType.DASHED
+    arrow = "-->"
 
 
 # ============================================================
-# Section 4 — Node Base Class
+# 5. Nodes
 # ============================================================
 
 class Node(ABC):
-    """
-    Abstract base for all nodes in a ConceptGraph.
+    """Base node: an activation in [0, 1], a gate (default 1), and solid children."""
 
-    Every node is a *lazy scanner function*.  It holds its most recently
-    computed activation and a list of solid-edge children.
-    """
+    node_type: str = "node"
 
     def __init__(self, node_id: str) -> None:
-        self.node_id   = node_id
+        self.node_id = node_id
         self.activation: float = 0.0
-        self.value     : float = 1.0   # set by dashed edges; default = fully present
+        self.gate: float = 1.0
         self.children: List["Node"] = []
 
     @abstractmethod
-    def evaluate(
-        self,
-        inherited_field: Optional[ReceptiveField] = None,
-    ) -> float:
-        """
-        Compute activation, given an optional inherited field context.
-
-        Parameters
-        ----------
-        inherited_field : ReceptiveField or None
-            The field passed down from a parent SerialNode or BodyNode.
-            If None, no field context exists from above.
-
-        Returns
-        -------
-        float
-            Activation in [0, 1].  Returns 0 if no field context is
-            available (lazy semantics).
-        """
-        ...
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        """Compute and store this node's activation. ``field`` is None when there is no field context."""
 
     @property
-    @abstractmethod
-    def node_type(self) -> str:
-        """Short string identifier for display and serialisation."""
-        ...
+    def yin_activation(self) -> float:
+        return 1.0 - self.activation
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(id={self.node_id!r}, act={self.activation:.3f})"
+        return f"{type(self).__name__}(id={self.node_id!r}, act={self.activation:.3f})"
 
 
-# ============================================================
-# Section 5 — Receptive Field Nodes (perceptual input providers)
-# ============================================================
+def walk(node: Node) -> Iterator[Node]:
+    """Pre-order traversal of a solid-edge subtree."""
+    yield node
+    for child in node.children:
+        yield from walk(child)
 
-class ReceptiveFieldNode(Node):
-    """
-    A field node: provides spatial input data as a child of a ParallelNode.
 
-    Field nodes are *not* scanners; they are the *context* that activates
-    scanners.  When a ParallelNode finds a ReceptiveFieldNode among its
-    children, it passes that node's spatial field to all sibling scanners.
+# ---- Portals --------------------------------------------------------------
 
-    A field node's `activation` (default 1.0) represents the degree to
-    which this modality is currently present.  It is used as a weight in
-    the cross-field average inside its parent ParallelNode, and can be
-    modulated by dashed edges to implement top-down attentional gating.
+class InputNode(Node):
+    """Sensory window. A ``ParallelNode`` that owns one passes its field to sibling scanners.
 
-    Subclasses
-    ----------
-    RetinaNode   — visual / image features
-    TactileNode  — haptic / touch features
-    ProprioNode  — proprioceptive / body-position features
-
-    Custom modalities can be added by subclassing ReceptiveFieldNode and
-    setting a `modality` string.
-
-    Parameters
-    ----------
-    node_id : str
-        Unique identifier.
-    field : ReceptiveField or None
-        The spatial data this node provides.  Can be updated between
-        evaluation calls to model dynamic sensory input.
-    modality : str
-        Human-readable modality label.
-    initial_weight : float
-        Initial activation / presence weight in [0, 1].
+    Its gate is the modality's presence weight, used when fields from
+    several modalities are pooled. A dashed edge can set it (attention).
     """
 
+    node_type = "input"
     modality: str = "generic"
 
-    def __init__(
-        self,
-        node_id          : str,
-        field            : Optional[ReceptiveField] = None,
-        modality         : Optional[str] = None,
-        initial_weight   : float = 1.0,
-    ) -> None:
+    def __init__(self, node_id: str, field: Optional[ReceptiveField] = None,
+                 modality: Optional[str] = None, initial_weight: float = 1.0) -> None:
         super().__init__(node_id)
-        self.field      = field
-        self.activation = float(np.clip(initial_weight, 0.0, 1.0))
+        self.field = field
+        self.gate = float(np.clip(initial_weight, 0.0, 1.0))
+        self.activation = self.gate
         if modality is not None:
             self.modality = modality
 
-    @property
-    def node_type(self) -> str:
-        return f"field:{self.modality}"
-
-    def evaluate(
-        self, inherited_field: Optional[ReceptiveField] = None
-    ) -> float:
-        """
-        Field nodes return their weight unchanged; they do not scan.
-        Their role is as context providers, not as scanners.
-        """
-        return self.activation
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        return self.gate
 
     def __repr__(self) -> str:
-        field_info = f"shape={self.field.shape}" if self.field else "no field"
-        return (
-            f"ReceptiveFieldNode(id={self.node_id!r}, "
-            f"modality={self.modality!r}, weight={self.activation:.3f}, "
-            f"{field_info})"
-        )
+        info = f"shape={self.field.shape}" if self.field else "no field"
+        return f"InputNode(id={self.node_id!r}, modality={self.modality!r}, gate={self.gate:.3f}, {info})"
 
 
-class RetinaNode(ReceptiveFieldNode):
-    """Visual receptive field node (image / pixel features)."""
+class RetinaNode(InputNode):
     modality = "retina"
 
 
-class TactileNode(ReceptiveFieldNode):
-    """Haptic / touch receptive field node."""
+class TactileNode(InputNode):
     modality = "tactile"
 
 
-class ProprioNode(ReceptiveFieldNode):
-    """Proprioceptive (body-position) receptive field node."""
+class ProprioNode(InputNode):
     modality = "proprio"
 
 
-class ReturnNode(Node):
-    """
-    Output portal — symmetric counterpart of ReceptiveFieldNode.
+class OutputNode(Node):
+    """Output window. Its parent ``ParallelNode`` writes its result into this node.
 
-    A ReturnNode is an output sink placed as a child of a ParallelNode
-    alongside scanner siblings.  After the ParallelNode computes the weighted
-    average of its scanners, that result is written into the ReturnNode's
-    activation.  ReturnNodes are passive: they do not alter computation.
-
-    When ConceptGraph.evaluate() finds ReturnNodes in the graph, it returns
-    the activation of the last registered one as the concept's answer.
+    ``ConceptGraph.evaluate()`` returns the activation of the last output node.
     """
 
-    @property
-    def node_type(self) -> str:
-        return "return"
+    node_type = "return"   # serialised name kept for the visualizer
 
-    def evaluate(
-        self, inherited_field: Optional[ReceptiveField] = None
-    ) -> float:
-        """Passive — activation is set by the parent ParallelNode."""
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         return self.activation
 
 
-# ============================================================
-# Section 6 — Object Nodes (primitive trigram scanners)
-# ============================================================
+PORTALS = (InputNode, OutputNode)
+
+
+def content_children(node: Node) -> List[Node]:
+    """A node's children, without its input/output windows."""
+    return [c for c in node.children if not isinstance(c, PORTALS)]
+
+
+# ---- Scanner --------------------------------------------------------------
 
 class ObjectNode(Node):
-    """
-    Primitive scanner: evaluates a receptive field using a trigram pattern.
+    """Trigram scanner: an image schema over ``len(pattern)`` bands.
 
-    Cognitive role
-    --------------
-    Each ObjectNode encodes one image schema at the level of a single
-    trigram.  When placed as a sibling of a ReceptiveFieldNode inside a
-    ParallelNode, it fires and returns the probability that the field matches
-    the expected spatial (or motion) distribution.
+    Only yang bands (pattern > 0) contribute to the match:
 
-    Band reading conventions
-    ------------------------
-    Trigrams follow the Yijing convention — **bottom to top** vertically,
-    **left to right** horizontally:
+        activation = gate * mean(1 - |band_mean_i - pattern_i|  for yang i)
 
-        VERTICAL   pattern[0] = bottom band   pattern[n-1] = top band
-        HORIZONTAL pattern[0] = left band     pattern[n-1] = right band
-
-    Examples:
-        震 (1,0,0) VERTICAL   → bottom yang, middle yin, top yin  ("below")
-        艮 (0,0,1) VERTICAL   → bottom yin,  middle yin, top yang ("above")
-        震 (1,0,0) HORIZONTAL → left yang, center yin, right yin  ("left-of")
-
-    Background and void patterns
-    ----------------------------
-    Any all-zero pattern — 坤 (0,0,0), bigram (0,0), or monogram 阴 (0,) —
-    is **background / void**: it does not scan and always returns 0.
-    In Yijing, yin is passive and receptive; it is the *absence* of scanning.
-    Dimness at a location is captured implicitly when a yang-scanner there
-    returns a low value, not by an active yin-detector.
-
-    中 (0.5,…,0.5) — neutral prior, returns 0.5.
-
-    Scanning (static)
-    -----------------
-    The field is divided into `n` equal bands.  For each pattern position i:
-
-        sim_i = 1 − |mean_field_band_i − pattern[i]|
-
-    activation = mean(sim_0, …, sim_{n-1})
-
-    Scanning (dynamic, is_dynamic=True)
-    ------------------------------------
-    Scans the *motion* channel instead of activation, using TRIGRAM_MOTION.
-
-    Lazy semantics
-    --------------
-    Returns 0 without scanning if `inherited_field` is None.
-
-    Parameters
-    ----------
-    node_id : str
-    pattern : tuple of float
-        Trigram / bigram / monogram pattern.
-    orientation : Orientation
-        VERTICAL (default) = bands bottom→top.
-        HORIZONTAL         = bands left→right.
-    is_dynamic : bool
-        If True, scans the motion channel.
-    name : str, optional
-        Human-readable pattern name; inferred from pattern if omitted.
+    Yin bands contribute no positive term, so ``VOID`` scans to 0. With no
+    field the node is imagined and ``activation = gate``. A neutral
+    (all 0.5) pattern returns ``0.5 * gate``. With ``is_dynamic=True`` it
+    scans |motion| along its axis instead of salience.
     """
 
-    def __init__(
-        self,
-        node_id     : str,
-        pattern     : Tuple[float, ...],
-        orientation : Orientation  = Orientation.VERTICAL,
-        is_dynamic  : bool         = False,
-        name        : Optional[str] = None,
-    ) -> None:
+    node_type = "object"
+
+    def __init__(self, node_id: str, pattern: Tuple[float, ...],
+                 orientation: Orientation = Orientation.VERTICAL,
+                 is_dynamic: bool = False, name: Optional[str] = None) -> None:
         super().__init__(node_id)
-        self.pattern     = tuple(pattern)
+        self.pattern = tuple(pattern)
         self.orientation = orientation
-        self.is_dynamic  = is_dynamic
-        self.name        = name or PATTERN_TO_NAME.get(self.pattern, str(pattern))
-
-    @property
-    def node_type(self) -> str:
-        return "object"
+        self.is_dynamic = is_dynamic
+        self.name = name or PATTERN_TO_NAME.get(self.pattern, str(pattern))
 
     @property
     def n_bands(self) -> int:
         return len(self.pattern)
 
-    # ── Internal ─────────────────────────────────────────────────────
-
     def _band_means(self, field: ReceptiveField) -> List[float]:
-        """
-        Return the mean activation of each band, respecting reading direction:
-
-        VERTICAL   pattern[0] ↔ bottom rows  (reversed from numpy row order)
-        HORIZONTAL pattern[0] ↔ left columns (same as numpy column order)
-        """
-        n     = self.n_bands
+        axis = 0 if self.orientation == Orientation.VERTICAL else 1   # dy or dx
         means = []
-
-        if self.orientation == Orientation.VERTICAL:
-            total = field.height
-            for i in range(n):
-                # pattern[0] = bottom → maps to the last row-block in numpy.
-                field_band_from_top = n - 1 - i
-                r0 = round(total * field_band_from_top / n)
-                r1 = round(total * (field_band_from_top + 1) / n)
-                if r1 <= r0:
-                    means.append(0.0); continue
-                band = field.activation[r0:r1, :]
-                if self.is_dynamic and field.motion is not None:
-                    band = np.abs(field.motion[r0:r1, :, 0])  # dy
-                means.append(float(band.mean()) if band.size > 0 else 0.0)
-
-        else:  # HORIZONTAL: left-to-right matches numpy column order
-            total = field.width
-            for i in range(n):
-                c0 = round(total * i / n)
-                c1 = round(total * (i + 1) / n)
-                if c1 <= c0:
-                    means.append(0.0); continue
-                band = field.activation[:, c0:c1]
-                if self.is_dynamic and field.motion is not None:
-                    band = np.abs(field.motion[:, c0:c1, 1])  # dx
-                means.append(float(band.mean()) if band.size > 0 else 0.0)
-
+        for i in range(self.n_bands):
+            r0, r1, c0, c1 = band_region(field.region, i, self.n_bands, self.orientation)
+            values = field.activation[r0:r1, c0:c1]
+            if self.is_dynamic and field.motion is not None:
+                values = np.abs(field.motion[r0:r1, c0:c1, axis])
+            means.append(float(values.mean()) if values.size > 0 else 0.0)
         return means
 
-    # ── Evaluation ────────────────────────────────────────────────────
-
-    def evaluate(
-        self, inherited_field: Optional[ReceptiveField] = None
-    ) -> float:
-        """
-        Scan `inherited_field` using only yang (non-zero) bands.
-
-        Only pattern positions where pattern[i] > 0 contribute.  Yin
-        positions (0) are passive — they do not scan and do not penalise
-        yang activations elsewhere.  This means the void pattern (all zeros)
-        returns 0 for the same reason as any all-yin pattern: no yang band
-        exists to scan.
-
-        The node's `value` (set by incoming dashed edges, default 1.0) gates
-        the result: `activation = value × yang_band_mean_similarity`.
-        """
-        if inherited_field is None:
-            self.activation = 0.0
-            return 0.0
-
-        # Neutral 中 — uniform prior, gated by value.
-        if all(v == 0.5 for v in self.pattern):
-            self.activation = 0.5 * self.value
-            return self.activation
-
-        band_means = self._band_means(inherited_field)
-
-        # Only yang (> 0) bands contribute to the similarity score.
-        yang_sims = [
-            1.0 - abs(obs - exp)
-            for obs, exp in zip(band_means, self.pattern)
-            if exp > 0
-        ]
-
-        if not yang_sims:
-            # All-yin / void pattern — no active scanner bands.
-            self.activation = 0.0
-            return 0.0
-
-        self.activation = self.value * float(np.mean(yang_sims))
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        if field is None:
+            self.activation = self.gate
+        elif all(v == 0.5 for v in self.pattern):
+            self.activation = 0.5 * self.gate
+        else:
+            sims = [1.0 - abs(obs - exp)
+                    for obs, exp in zip(self._band_means(field), self.pattern) if exp > 0]
+            self.activation = self.gate * float(np.mean(sims)) if sims else 0.0
         return self.activation
 
     def __repr__(self) -> str:
-        sym = trigram_symbol(self.pattern)
-        dyn = "動" if self.is_dynamic else "靜"
-        ori = "V"  if self.orientation == Orientation.VERTICAL else "H"
-        return f"ObjectNode(id={self.node_id!r}, {sym}{self.name}{dyn} {ori})"
+        dyn = "dynamic" if self.is_dynamic else "static"
+        ori = "V" if self.orientation == Orientation.VERTICAL else "H"
+        return f"ObjectNode(id={self.node_id!r}, {trigram_symbol(self.pattern)}:{self.name}:{dyn} {ori})"
 
 
-# ============================================================
-# Section 7 — Structure Nodes
-# ============================================================
+# ---- Structure nodes ------------------------------------------------------
 
 class StructureNode(Node, ABC):
-    """Abstract base for nodes that compose child activations."""
-
-    def __init__(self, node_id: str) -> None:
-        super().__init__(node_id)
+    """A node that combines its children's activations."""
 
 
 class ParallelNode(StructureNode):
+    """Attention hub and averaging compositor.
+
+    It pools fields from its ``InputNode`` children (weighted by their gate)
+    and from its parent (weighted by ``inherited_weight``). It then scores
+    each scanner child on the pooled fields:
+
+        scanner_score = sum_f(w_f * scanner.evaluate(f)) / sum_f(w_f)
+        activation    = mean(scanner_score)
+
+    With no field, children are evaluated field-free (imagined) and the
+    mean of their non-zero activations is used. The result is copied into
+    every ``OutputNode`` child.
     """
-    Parallel (并) node — the field-context hub and alpha-blend compositor.
 
-    This node plays two intertwined roles:
-
-    1. **Context hub**: any ReceptiveFieldNode children supply spatial data
-       that activates sibling scanner nodes.  Field nodes from different
-       modalities (retina, tactile, …) each carry an activation weight that
-       represents their current degree of presence.
-
-    2. **Alpha-blend compositor**: scanner children are each evaluated
-       against the pool of available fields (both local and inherited),
-       weighted by each field's presence weight, and the results are averaged
-       across scanners.
-
-    Field context pooling
-    ---------------------
-    The node collects *all* fields that are currently active:
-
-      a) **Local field nodes**: ReceptiveFieldNode children attached directly
-         to this ParallelNode, weighted by their `activation` attribute.
-
-      b) **Inherited field**: a field passed down from a parent SerialNode
-         or BodyNode, weighted by `inherited_weight` (default 1.0).
-
-    When both exist, they are pooled together in a single weighted average.
-    This means a nested ParallelNode with its own retina sibling will blend
-    its local visual signal with whatever spatial context was passed from
-    above — rather than ignoring one or the other.
-
-    If no field is available from either source, the node is inert
-    (activation 0), preserving lazy semantics.
-
-    Evaluation formula
-    ------------------
-    For each scanner s, across all active fields f_i with weight w_i:
-
-        scanner_activation[s] = Σ_i  w_i × s.evaluate(f_i.field)
-                                 ──────────────────────────────────
-                                         Σ_i  w_i
-
-    self.activation = mean(scanner_activation[s] for all scanners s)
-
-    Parameters
-    ----------
-    node_id : str
-    inherited_weight : float
-        Weight assigned to any inherited field (default 1.0).  Can be set
-        per-instance if you want inherited context to dominate less strongly
-        than local field nodes.
-    """
+    node_type = "parallel"
 
     def __init__(self, node_id: str, inherited_weight: float = 1.0) -> None:
         super().__init__(node_id)
         self.inherited_weight = float(inherited_weight)
 
-    @property
-    def node_type(self) -> str:
-        return "parallel"
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        inputs   = [c for c in self.children if isinstance(c, InputNode)]
+        outputs  = [c for c in self.children if isinstance(c, OutputNode)]
+        scanners = content_children(self)
 
-    def _partition_children(self):
-        """Separate children into (field_nodes, scanner_nodes)."""
-        field_nodes   = [c for c in self.children
-                         if isinstance(c, ReceptiveFieldNode)]
-        scanner_nodes = [c for c in self.children
-                         if not isinstance(c, ReceptiveFieldNode)]
-        return field_nodes, scanner_nodes
-
-    def evaluate(
-        self, inherited_field: Optional[ReceptiveField] = None
-    ) -> float:
-        if not self.children:
-            self.activation = 0.0
-            return 0.0
-
-        field_nodes, scanner_nodes = self._partition_children()
-
-        # ── Build the pooled field list ────────────────────────────────
-        # Each entry is (ReceptiveField, weight).
-        # Local field nodes contribute with their activation weight.
-        # The inherited field (from a parent SerialNode) contributes with
-        # inherited_weight.  Both pools are merged into a single average.
-        pooled: List[Tuple[ReceptiveField, float]] = []
-
-        for fn in field_nodes:
-            if fn.field is not None and fn.activation > 1e-8:
-                pooled.append((fn.field, fn.activation))
-
-        if inherited_field is not None and self.inherited_weight > 1e-8:
-            pooled.append((inherited_field, self.inherited_weight))
-
-        # Partition scanner_nodes into pure scanners and return-node markers.
-        return_nodes  = [c for c in scanner_nodes if isinstance(c, ReturnNode)]
-        pure_scanners = [c for c in scanner_nodes if not isinstance(c, ReturnNode)]
+        pooled = [(n.field, n.gate) for n in inputs if n.field is not None and n.gate > 1e-8]
+        if field is not None and self.inherited_weight > 1e-8:
+            pooled.append((field, self.inherited_weight))
 
         if not pooled:
-            # No direct field available — propagate to structure children.
-            child_acts = []
-            for child in pure_scanners:
-                act = child.evaluate(inherited_field=None)
-                if act > 0:
-                    child_acts.append(act)
-            avg = float(np.mean(child_acts)) if child_acts else 0.0
-            for rn in return_nodes:
-                rn.activation = avg
-            self.activation = avg
-            return self.activation
-
-        if not pure_scanners:
-            # Only field nodes (and possibly return nodes) — no scanners to run.
+            acts = [a for a in (s.evaluate(None) for s in scanners) if a > 0]
+            result = float(np.mean(acts)) if acts else 0.0
+        elif not scanners:
+            result = float(np.clip(sum(w for _, w in pooled) / len(pooled), 0.0, 1.0))
+        else:
             total_w = sum(w for _, w in pooled)
-            avg = float(np.clip(total_w / len(pooled), 0.0, 1.0))
-            for rn in return_nodes:
-                rn.activation = avg
-            self.activation = avg
-            return self.activation
+            scores = [sum(w * s.evaluate(f) for f, w in pooled) / total_w for s in scanners]
+            result = float(np.clip(np.mean(scores), 0.0, 1.0))
 
-        # ── Evaluate each scanner against the pooled fields ────────────
-        total_w = sum(w for _, w in pooled)
-        scanner_activations: List[float] = []
-
-        for scanner in pure_scanners:
-            weighted_sum = 0.0
-            for fld, weight in pooled:
-                scan_result   = scanner.evaluate(fld)
-                weighted_sum += weight * scan_result
-            scanner_activations.append(weighted_sum / total_w)
-
-        avg = float(np.mean(scanner_activations))
-        for rn in return_nodes:
-            rn.activation = avg
-        self.activation = avg
-        return self.activation
+        for out in outputs:
+            out.gate, out.activation = 1.0, result
+        self.activation = result
+        return result
 
 
 class SerialNode(StructureNode):
-    """
-    Serial (串) node — spatial adjacency / AND composition.
+    """Splits the field into one strip per child and averages the children's scores.
 
-    Divides its received field into `n` equal strips and evaluates each
-    child on its allocated strip, returning the *minimum* activation (AND).
-
-    Strip ordering convention
-    -------------------------
-    Follows the same reading direction as trigram patterns:
-
-        VERTICAL   (default): children[0] = bottom strip, children[-1] = top
-        HORIZONTAL           : children[0] = left strip,  children[-1] = right
-
-    So for "A above B": children = [B_scanner, A_scanner] with VERTICAL split.
-    (B is lower in the field → bottom strip → children[0].)
-
-    Lazy semantics
-    --------------
-    Returns 0 if no field context is available.
-
-    Parameters
-    ----------
-    node_id : str
-    split_orientation : Orientation
+    The mean is intentional: a partial match still counts. Strips are read
+    like bands, so for vertical splits children[0] is the bottom strip and
+    for horizontal splits children[0] is the left strip. "A above B" is
+    therefore ``[B, A]`` with a vertical split. With no field the activation is 0.
     """
 
-    def __init__(
-        self,
-        node_id           : str,
-        split_orientation : Orientation = Orientation.VERTICAL,
-    ) -> None:
+    node_type = "serial"
+
+    def __init__(self, node_id: str,
+                 split_orientation: Orientation = Orientation.HORIZONTAL) -> None:
         super().__init__(node_id)
         self.split_orientation = split_orientation
 
-    @property
-    def node_type(self) -> str:
-        return "serial"
+    def _make_strip(self, field: ReceptiveField, i: int, n: int) -> ReceptiveField:
+        return field.band(i, n, self.split_orientation)
 
-    def _make_strip(
-        self, field: ReceptiveField, i: int, n: int
-    ) -> ReceptiveField:
-        """
-        Return the strip for child i, respecting reading-direction convention.
-
-        VERTICAL   children[0] = bottom strip → highest row indices in numpy.
-        HORIZONTAL children[0] = left strip   → lowest column indices (unchanged).
-        """
-        if self.split_orientation == Orientation.VERTICAL:
-            # child[0] = bottom = last row-block in numpy (row 0 = top of image)
-            field_band_from_top = n - 1 - i
-            r0 = round(field.height * field_band_from_top / n)
-            r1 = round(field.height * (field_band_from_top + 1) / n)
-            return field.subfield(r0, r1, 0, field.width)
-        else:
-            c0 = round(field.width * i / n)
-            c1 = round(field.width * (i + 1) / n)
-            return field.subfield(0, field.height, c0, c1)
-
-    def evaluate(
-        self, inherited_field: Optional[ReceptiveField] = None
-    ) -> float:
-        if not self.children or inherited_field is None:
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        if not self.children or field is None:
             self.activation = 0.0
             return 0.0
-
-        n           = len(self.children)
-        activations = [
-            child.evaluate(self._make_strip(inherited_field, i, n))
-            for i, child in enumerate(self.children)
-        ]
-        self.activation = float(np.mean(activations))
+        n = len(self.children)
+        self.activation = float(np.mean(
+            [child.evaluate(self._make_strip(field, i, n)) for i, child in enumerate(self.children)]
+        ))
         return self.activation
 
 
 class BodyNode(StructureNode):
-    """
-    Body (身) / Plan (阵) node — probabilistic spatial replacement rule.
+    """A plan that occupies a moving window of the field.
 
-    Children indexed 0 … n-1.  Each child except the last is a *template*
-    directing where the next child is evaluated.  Only the last child (the
-    *content*) contributes to the final activation.
+    Coordinates are normalised to [0, 1]: position = (y, x) centre,
+    extent = (h, w), velocity = (dy, dx). Each evaluation carves the window
+    from the root field and applies the replacement rule. Children are
+    ``[template, ..., content]``, and for each template with p = template.gate:
 
-    Replacement rule (two-child case)
-    ----------------------------------
-    For template T (value p) and content C evaluated on `field`:
+        activation = p * mean(content on template's yang bands)
+                   + (1 - p) * content on the whole window
 
-        activation = p × yang_scan(T, C, field)
-                   + (1 - p) × C.evaluate(full_field)
+    With no field this becomes ``(1 - p) * content.gate``, which is how a
+    ``VOID`` template blocks its content (the explicit yin reading).
 
-    where yang_scan = mean over yang bands i of T of C.evaluate(sub_region_i).
-
-    Interpretation: with probability p the template is present, constraining
-    C to its yang sub-regions.  With probability (1-p) the template is absent
-    and C scans the full field freely.
-
-    Default value = 1.0 (no dashed edges) → T is a strict filter.
-    When a dashed edge sets T.value < 1, yin-band leakage opens proportionally.
-
-    Chaining (3+ children)
-    ----------------------
-    plan([A, B, C], field) is computed recursively:
-        A as template → plan([B, C]) as content
-    So A.value gates whether B can further constrain C.
-
-    Body vs. Plan
-    -------------
-    BodyNode maintains a persistent spatial grid (_grid) across calls.
-    PlanNode is the static version with no persistent state.
+    ``ConceptGraph.step()`` then calls ``update_motion()``. That moves the
+    body along the motion of its first dynamic trigram, scaled by that
+    trigram's activation and by ``step_size`` (the default is one extent).
     """
 
-    def __init__(
-        self,
-        node_id        : str,
-        subfield_shape : Optional[Tuple[int, int]] = None,
-    ) -> None:
+    node_type = "body"
+
+    def __init__(self, node_id: str,
+                 position: Optional[Tuple[float, float]] = None,
+                 extent: Optional[Tuple[float, float]] = None,
+                 velocity: Tuple[float, float] = (0.0, 0.0),
+                 step_size: Optional[float] = None,
+                 subfield_shape: Optional[Tuple[int, int]] = None) -> None:
         super().__init__(node_id)
-        self.subfield_shape = subfield_shape
+        self.position = list(position) if position is not None else None
+        self.extent = list(extent) if extent is not None else None
+        self.velocity = list(velocity)
+        self.step_size = None if step_size is None else float(step_size)
+        self.subfield_shape = subfield_shape   # used by PlanNode only
         self._grid: Optional[np.ndarray] = None
 
-    @property
-    def node_type(self) -> str:
-        return "body"
+    # -- window --------------------------------------------------------
 
-    # ── Band helpers ─────────────────────────────────────────────────
+    def _ensure_support_from_field(self, field: ReceptiveField) -> None:
+        """If position or extent is unset, take them from the incoming field's bounds."""
+        if self.position is not None and self.extent is not None:
+            return
+        r0, r1, c0, c1 = field.bounds
+        self.position = [(r0 + r1) / 2.0, (c0 + c1) / 2.0]
+        self.extent = [max(r1 - r0, 1e-9), max(c1 - c0, 1e-9)]
 
-    def _yang_subfields(
-        self, template: "ObjectNode", field: ReceptiveField
-    ) -> List[ReceptiveField]:
+    def _carve_subfield(self, field: Optional[ReceptiveField]) -> Optional[ReceptiveField]:
+        """Cut the body's window from the root field. The window is clamped to the field edges."""
+        if field is None:
+            return None
+        self._ensure_support_from_field(field)
+        root = ReceptiveField(field._root_activation, field._root_motion)
+        H, W = root.shape
+        cy, cx = self.position
+        eh, ew = self.extent
+        h_px, w_px = max(1, round(eh * H)), max(1, round(ew * W))
+        r0 = max(0, round(cy * H) - h_px // 2)
+        c0 = max(0, round(cx * W) - w_px // 2)
+        r1, c1 = min(H, r0 + h_px), min(W, c0 + w_px)
+        if r1 <= r0: r1 = min(H, r0 + 1)
+        if c1 <= c0: c1 = min(W, c0 + 1)
+        return root.subfield(r0, r1, c0, c1)
+
+    # -- motion --------------------------------------------------------
+
+    @staticmethod
+    def _template_motion(template: ObjectNode) -> Tuple[float, float]:
+        """(dy, dx) of a dynamic trigram: the mean of its signed half-motions along its axis.
+
+        Opposite half-motions cancel out. Numpy coordinates increase downward
+        and to the right.
         """
-        Return sub-fields corresponding to yang (>0) bands of `template`.
-        Uses the same bottom→top / left→right convention as ObjectNode.
-        Returns [] if the template is all-yin (pure blocker).
-        """
-        H, W    = field.shape
-        n       = template.n_bands
-        is_vert = template.orientation == Orientation.VERTICAL
-        subs    = []
-        for i, bit in enumerate(template.pattern):
-            if bit <= 0:
-                continue
-            if is_vert:
-                top_idx = n - 1 - i
-                rs = round(H * top_idx / n); re = round(H * (top_idx + 1) / n)
-                subs.append(field.subfield(rs, re, 0, W))
+        directions, magnitudes = TRIGRAM_MOTION.get(
+            PATTERN_TO_NAME.get(template.pattern), ((0, 0), (0, 0)))
+        motion = float(np.mean(np.asarray(directions) * np.asarray(magnitudes)))
+        return (motion, 0.0) if template.orientation == Orientation.VERTICAL else (0.0, motion)
+
+    def update_motion(self) -> None:
+        """Set the velocity from the first dynamic trigram, then move and clamp the centre inside the field."""
+        template = next((n for n in walk(self)
+                         if isinstance(n, ObjectNode) and n.is_dynamic), None)
+        if template is not None and PATTERN_TO_NAME.get(template.pattern) in TRIGRAM_MOTION:
+            dy, dx = self._template_motion(template)
+            if self.step_size is not None:
+                step = self.step_size
+            elif self.extent is None:
+                step = 0.0
             else:
-                cs = round(W * i / n); ce = round(W * (i + 1) / n)
-                subs.append(field.subfield(0, H, cs, ce))
-        return subs
+                step = self.extent[0] if abs(dy) >= abs(dx) else self.extent[1]
+            scale = template.activation * step
+            self.velocity = [dy * scale, dx * scale]
 
-    def _motion_subfield(
-        self, template: "ObjectNode", field: ReceptiveField
-    ) -> ReceptiveField:
-        """Sub-region in the motion direction of a dynamic template."""
-        name   = PATTERN_TO_NAME.get(template.pattern)
-        dy, dx = TRIGRAM_MOTION.get(name, ((0, 0), (0, 0)))[0]
-        H, W   = field.shape
+        if self.position is None or self.extent is None:
+            return
+        for axis in (0, 1):
+            half = self.extent[axis] / 2
+            self.position[axis] = float(np.clip(
+                self.position[axis] + self.velocity[axis], half, 1.0 - half))
+
+    # -- replacement rule ----------------------------------------------
+
+    def _yang_subfields(self, template: ObjectNode, field: ReceptiveField) -> List[ReceptiveField]:
+        """The sub-fields under the template's yang bands. Empty for an all-yin template."""
+        n = template.n_bands
+        return [field.band(i, n, template.orientation)
+                for i, bit in enumerate(template.pattern) if bit > 0]
+
+    def _motion_subfield(self, template: ObjectNode, field: ReceptiveField) -> ReceptiveField:
+        """The half of the field lying in a dynamic template's motion direction."""
+        dy, dx = self._template_motion(template)
+        H, W = field.shape
         if dy > 0:   return field.subfield(H // 2, H, 0, W)
-        elif dy < 0: return field.subfield(0, H // 2, 0, W)
-        elif dx > 0: return field.subfield(0, H, W // 2, W)
-        elif dx < 0: return field.subfield(0, H, 0, W // 2)
+        if dy < 0:   return field.subfield(0, H // 2, 0, W)
+        if dx > 0:   return field.subfield(0, H, W // 2, W)
+        if dx < 0:   return field.subfield(0, H, 0, W // 2)
         return field
 
-    # ── Core replacement rule ─────────────────────────────────────────
-
-    def _plan_activate(
-        self,
-        children : List[Node],
-        field    : ReceptiveField,
-    ) -> float:
-        """
-        Recursively apply the replacement rule to `children` against `field`.
-
-        Base case (1 child): evaluate directly.
-        Recursive case:
-            template = children[0]   (p = template.value)
-            content  = plan(children[1:], field)
-
-            result = p × yang_scan + (1-p) × full_scan
-
-            yang_scan = mean of content evaluated on each yang sub-region of template
-            full_scan = content evaluated on the full field
-        """
+    def _plan_activate(self, children: List[Node], field: Optional[ReceptiveField]) -> float:
+        """Apply the replacement rule recursively: ``children[0]`` is a template and the rest is the plan's content."""
         if len(children) == 1:
+            if field is None:
+                children[0].activation = children[0].gate
+                return children[0].gate
             return children[0].evaluate(field)
 
-        template = children[0]
-        rest     = children[1:]
-        p        = float(np.clip(template.value, 0.0, 1.0))
-
-        # Evaluate template so its activation is current (used by dashed edges).
+        template, rest = children[0], children[1:]
+        p = float(np.clip(template.gate, 0.0, 1.0))
         template.evaluate(field)
 
-        if isinstance(template, ObjectNode):
-            yang_subs = (
-                self._yang_subfields(template, field)
-                if not template.is_dynamic
-                else [self._motion_subfield(template, field)]
-            )
+        if field is None:
+            # Imagined: there is no region to scan, so the yang term is 0.
+            self.activation = (1.0 - p) * self._plan_activate(rest, None)
+            return self.activation
+
+        if not isinstance(template, ObjectNode):
+            subs = [field]
+        elif template.is_dynamic:
+            subs = [self._motion_subfield(template, field)]
         else:
-            yang_subs = [field]   # non-ObjectNode template: treat as full region
+            subs = self._yang_subfields(template, field)
 
-        # Present case: content scans template's yang sub-regions.
-        yang_scan = (
-            float(np.mean([self._plan_activate(rest, sub) for sub in yang_subs]))
-            if yang_subs else 0.0   # all-yin template → fully blocked when present
-        )
-
-        # Absent case: content scans the full field.
+        yang_scan = float(np.mean([self._plan_activate(rest, s) for s in subs])) if subs else 0.0
         full_scan = self._plan_activate(rest, field)
-
         return p * yang_scan + (1.0 - p) * full_scan
 
-    # ── Node.evaluate ────────────────────────────────────────────────
-
-    def evaluate(
-        self, inherited_field: Optional[ReceptiveField] = None
-    ) -> float:
-        if not self.children or inherited_field is None:
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        if not self.children:
             self.activation = 0.0
             return 0.0
-
-        if self.subfield_shape is not None:
-            H, W = self.subfield_shape
-            rh = min(H, inherited_field.height)
-            rw = min(W, inherited_field.width)
-            working_field = inherited_field.subfield(0, rh, 0, rw)
-        else:
-            working_field = inherited_field
-
-        if self._grid is None:
-            shape = self.subfield_shape or working_field.shape
-            self._grid = np.zeros(shape)
-
-        self.activation = self._plan_activate(self.children, working_field)
-
-        if isinstance(self.children[-1], ObjectNode):
-            self._update_grid(self.children[-1], working_field)
-
+        window = self._carve_subfield(field)
+        if self._grid is None and window is not None:
+            self._grid = np.zeros(window.shape)
+        self.activation = self._plan_activate(self.children, window)
+        if window is not None and isinstance(self.children[-1], ObjectNode):
+            self._update_grid(self.children[-1])
         return self.activation
 
-    def _update_grid(self, content: "ObjectNode", field: ReceptiveField) -> None:
-        if self._grid is None:
-            return
+    def _update_grid(self, content: ObjectNode) -> None:
+        """Paint the content's pattern into ``_grid`` (a record of the imagined layout)."""
         H, W = self._grid.shape
-        n = content.n_bands
-        is_vert = content.orientation == Orientation.VERTICAL
         for i, bit in enumerate(content.pattern):
-            if is_vert:
-                top_idx = n - 1 - i
-                rs = round(H * top_idx / n); re = round(H * (top_idx + 1) / n)
-                self._grid[rs:re, :] = bit
-            else:
-                cs = round(W * i / n); ce = round(W * (i + 1) / n)
-                self._grid[:, cs:ce] = bit
+            r0, r1, c0, c1 = band_region((0, H, 0, W), i, content.n_bands, content.orientation)
+            self._grid[r0:r1, c0:c1] = bit
 
 
 class PlanNode(BodyNode):
-    """
-    Plan (阵) node — static spatial template (BodyNode without spatial memory).
+    """A body that never moves. It works on the whole field, or on a fixed ``subfield_shape`` crop."""
 
-    Uses the same probabilistic replacement rule as BodyNode.  The distinction
-    is conceptual: a PlanNode encodes a static anticipated arrangement;
-    a BodyNode encodes an active motor routine accumulating spatial history.
-    """
+    node_type = "plan"
 
-    @property
-    def node_type(self) -> str:
-        return "plan"
+    def __init__(self, node_id: str, subfield_shape: Optional[Tuple[int, int]] = None,
+                 **_ignored) -> None:
+        super().__init__(node_id, position=(0.5, 0.5), extent=(1.0, 1.0),
+                         subfield_shape=subfield_shape)
+
+    def _carve_subfield(self, field):
+        if field is None or self.subfield_shape is None:
+            return field
+        H, W = self.subfield_shape
+        return field.subfield(0, min(H, field.height), 0, min(W, field.width))
+
+    def update_motion(self) -> None:
+        pass
 
 
-# Section 8 — Concept Graph
+# ============================================================
+# 6. Concept graph
 # ============================================================
 
 class ConceptGraph:
-    """
-    A directed graph representing a concept as a structured composition of
-    scanner nodes, field nodes, and conditional edges.
+    """A concept: nodes joined by solid (composition) and dashed (gate) edges.
 
-    Evaluation protocol
-    -------------------
-    1. **Dashed-edge pass** (topological order):
-       Apply conditional modulation in dependency order.  Each dashed edge
-       A ⤳ B multiplicatively scales B.activation by A.activation × gain.
-       Field node activations are also modulated here, adjusting which
-       sensory modalities dominate.
+    A graph may have several solid-edge roots. The usual pattern is an
+    observed root ``ParallelNode(I, scanners)`` and an imagined root
+    ``ParallelNode(O, structure)``, joined only by dashed edges.
 
-    2. **Solid-edge pass** (recursive, root-down):
-       The root node triggers recursive evaluation.  ParallelNodes extract
-       their ReceptiveFieldNode children and pass fields to scanner siblings.
-       SerialNodes divide the inherited field.  BodyNodes apply template
-       unfolding.
-
-    3. **Re-aggregation pass** (root-up):
-       Propagate post-modulation leaf changes back to the root using each
-       StructureNode's own composition rule.
-
-    Parameters
-    ----------
-    name : str
-        Human-readable concept name.
+    Evaluation:
+        evaluate(): reset gates -> scan -> propagate dashed -> scan
+        step():     scan -> propagate dashed -> move bodies   (stateful)
     """
 
     def __init__(self, name: str = "") -> None:
-        self.name                             = name
-        self._nodes  : Dict[str, Node]        = {}
-        self._solid  : List[SolidEdge]        = []
-        self._dashed : List[DashedEdge]       = []
-        self.root    : Optional[Node]         = None
+        self.name = name
+        self._nodes: Dict[str, Node] = {}
+        self._solid: List[SolidEdge] = []
+        self._dashed: List[DashedEdge] = []
+        self.root: Optional[Node] = None   # primary root; the default target of add_field_slot()
 
-    # ── Construction ──────────────────────────────────────────────────
+    # -- construction / access ----------------------------------------
 
     def add_node(self, node: Node) -> None:
         if node.node_id in self._nodes:
@@ -1135,235 +692,57 @@ class ConceptGraph:
             self.add_node(n)
 
     def add_solid_edge(self, parent: Node, child: Node) -> None:
-        """Add a compositional edge and register child under parent."""
         self._solid.append(SolidEdge(parent, child))
         if child not in parent.children:
             parent.children.append(child)
 
-    def add_dashed_edge(self, condition: Node, target: Node) -> None:
+    def connect(self, parent: Node, *children: Node) -> Node:
+        """Add solid edges from ``parent`` to each child, adding any node that is new. Returns ``parent``.
+
+        ``g.root = g.connect(ParallelNode("par"), InputNode("I"), scanner)``
         """
-        Add a conditional (dashed) edge: condition → target.
+        for node in (parent, *children):
+            if self._nodes.get(node.node_id) is not node:
+                self.add_node(node)
+        for child in children:
+            self.add_solid_edge(parent, child)
+        return parent
 
-        After the first scan pass, target.value will be:
-            mean(source.activation for all dashed sources → target)
+    def add_dashed_edge(self, condition: Node, target: Node) -> None:
+        """``target.gate`` becomes the mean activation of all its dashed sources.
 
-        A second scan pass uses the updated values, so dashed-edge effects
-        are visible within the same evaluate() call.
+        Under ``step()`` the gate applies on the next frame, so a chain
+        A -> B -> C plays out over t, t+1, t+2. ``evaluate()`` rescans once
+        within the same call.
         """
         self._dashed.append(DashedEdge(condition, target))
 
-    # ── Topological order for dashed edges ────────────────────────────
+    def remove_node(self, node: Node) -> None:
+        """Delete a node, its edges, and its place in any parent's children."""
+        self._solid = [e for e in self._solid if node not in (e.source, e.target)]
+        self._dashed = [e for e in self._dashed if node not in (e.source, e.target)]
+        for other in self._nodes.values():
+            if node in other.children:
+                other.children.remove(node)
+        del self._nodes[node.node_id]
 
-    def _dashed_topological_order(self) -> List[Node]:
-        """
-        Return nodes in topological order considering only dashed edges.
-        Nodes with no dashed-edge predecessors come first.
-        Used to ensure A ⤳ B ⤳ C chains propagate correctly.
-        """
-        # Build in-degree count and adjacency via dashed edges
-        in_degree: Dict[str, int]       = defaultdict(int)
-        successors: Dict[str, List[Node]] = defaultdict(list)
-
-        all_ids = set(self._nodes.keys())
-        for edge in self._dashed:
-            in_degree[edge.target.node_id] += 1
-            successors[edge.source.node_id].append(edge.target)
-
-        queue = deque(
-            nid for nid in all_ids
-            if in_degree[nid] == 0
-        )
-        order: List[Node] = []
-
-        while queue:
-            nid  = queue.popleft()
-            node = self._nodes.get(nid)
-            if node:
-                order.append(node)
-            for succ in successors[nid]:
-                in_degree[succ.node_id] -= 1
-                if in_degree[succ.node_id] == 0:
-                    queue.append(succ.node_id)
-
-        # Append any nodes unreachable via dashed edges (no dashed deps)
-        seen = {n.node_id for n in order}
-        for nid, node in self._nodes.items():
-            if nid not in seen:
-                order.append(node)
-
-        return order
-
-    # ── Evaluation ────────────────────────────────────────────────────
-
-    def evaluate(self) -> float:
-        """
-        Compute the concept's activation in three passes.
-
-        Pass 1 — forward scan (all values at default 1.0)
-        --------------------------------------------------
-        Recursive evaluation top-down through the solid-edge tree.
-        ParallelNodes collect field siblings, pass fields to scanner children,
-        and write the scanner average to any ReturnNode children.
-        Plan/BodyNodes apply the replacement rule using current values.
-
-        Pass 2 — value update from dashed edges (topological order)
-        ------------------------------------------------------------
-        For each node that has incoming dashed edges:
-            node.value = mean(source.activation for each incoming edge)
-        Processed in topological order so chains A ⤳ B ⤳ C propagate.
-
-        Pass 3 — re-scan with updated values
-        -------------------------------------
-        Identical to Pass 1, but now with values reflecting conditional gates.
-        ObjectNodes scale their activation by value; Plan/BodyNodes use value
-        as the template's presence probability.
-
-        Output: last ReturnNode activation if any exist; else root activation.
-        """
-        if self.root is None:
-            raise RuntimeError("ConceptGraph has no root node.")
-
-        # Reset all values to 1.0 (fully present by default).
+    def replace_node(self, old: Node, new: Node) -> None:
+        """Put ``new`` in place of ``old`` (same id), keeping all of old's edges."""
+        new.children = old.children
+        self._nodes[old.node_id] = new
+        for edge in self._solid + self._dashed:
+            if edge.source is old: edge.source = new
+            if edge.target is old: edge.target = new
         for node in self._nodes.values():
-            node.value = 1.0
+            node.children = [new if c is old else c for c in node.children]
+        if self.root is old:
+            self.root = new
 
-        # Pass 1.
-        self.root.evaluate(inherited_field=None)
+    def __getitem__(self, node_id: str) -> Node:
+        return self._nodes[node_id]
 
-        # Pass 2: update values from dashed edges.
-        if self._dashed:
-            dashed_to: Dict[str, List[Node]] = defaultdict(list)
-            for edge in self._dashed:
-                dashed_to[edge.target.node_id].append(edge.source)
-
-            for node in self._dashed_topological_order():
-                sources = dashed_to.get(node.node_id)
-                if sources:
-                    node.value = float(np.clip(
-                        np.mean([s.activation for s in sources]), 0.0, 1.0
-                    ))
-
-        # Pass 3.
-        self.root.evaluate(inherited_field=None)
-
-        # Return ReturnNode result if present.
-        return_nodes = [n for n in self._nodes.values() if isinstance(n, ReturnNode)]
-        if return_nodes:
-            return float(np.clip(return_nodes[-1].activation, 0.0, 1.0))
-        return float(np.clip(self.root.activation, 0.0, 1.0))
-
-    # ── Field attachment helpers ───────────────────────────────────────
-
-    def attach_field(
-        self,
-        field       : ReceptiveField,
-        at_node_id  : Optional[str] = None,
-        modality    : str = "retina",
-        weight      : float = 1.0,
-        field_node_id: Optional[str] = None,
-    ) -> ReceptiveFieldNode:
-        """
-        Convenience method: create a field node and attach it as a child
-        of the specified ParallelNode (or the root if it is a ParallelNode).
-
-        Parameters
-        ----------
-        field : ReceptiveField
-            The spatial data to attach.
-        at_node_id : str, optional
-            Node id of the target ParallelNode.  Defaults to the root.
-        modality : str
-            Modality label ('retina', 'tactile', etc.).
-        weight : float
-            Initial presence weight for this field node.
-        field_node_id : str, optional
-            Id for the new field node; auto-generated if omitted.
-
-        Returns
-        -------
-        ReceptiveFieldNode
-            The newly created and attached field node.
-        """
-        cls_map = {
-            "retina" : RetinaNode,
-            "tactile": TactileNode,
-            "proprio": ProprioNode,
-        }
-        FieldCls = cls_map.get(modality, ReceptiveFieldNode)
-
-        fid   = field_node_id or f"_field_{modality}_{len(self._nodes)}"
-        fnode = FieldCls(fid, field=field, initial_weight=weight)
-
-        target_id = at_node_id or (self.root.node_id if self.root else None)
-        if target_id is None or target_id not in self._nodes:
-            raise ValueError(
-                f"No target node found for field attachment "
-                f"(at_node_id={at_node_id!r})."
-            )
-        target = self._nodes[target_id]
-        if not isinstance(target, ParallelNode):
-            raise TypeError(
-                f"Field nodes can only be attached to ParallelNodes; "
-                f"'{target_id}' is a {type(target).__name__}."
-            )
-
-        self.add_node(fnode)
-        self.add_solid_edge(target, fnode)
-        return fnode
-
-    def detach_field_nodes(self) -> None:
-        """
-        Remove all ReceptiveFieldNode children from the graph.
-        Useful for resetting between evaluation calls.
-        """
-        field_ids = {
-            n.node_id for n in self._nodes.values()
-            if isinstance(n, ReceptiveFieldNode)
-        }
-        for fid in field_ids:
-            node = self._nodes.pop(fid)
-            for parent in self._nodes.values():
-                if isinstance(parent, StructureNode) and node in parent.children:
-                    parent.children.remove(node)
-        self._solid = [
-            e for e in self._solid
-            if e.source.node_id not in field_ids
-               and e.target.node_id not in field_ids
-        ]
-
-    def evaluate_against(
-        self,
-        field          : ReceptiveField,
-        at_node_id     : Optional[str] = None,
-        modality       : str = "retina",
-        detach_after   : bool = True,
-    ) -> float:
-        """
-        Convenience: temporarily attach a field node, evaluate, and
-        optionally detach.  Useful for one-shot evaluation without
-        permanently modifying the graph.
-
-        Parameters
-        ----------
-        field : ReceptiveField
-        at_node_id : str, optional
-            Target ParallelNode id.  Defaults to root.
-        modality : str
-        detach_after : bool
-            If True (default), removes the field node after evaluation.
-
-        Returns
-        -------
-        float
-        """
-        fnode = self.attach_field(field, at_node_id=at_node_id,
-                                  modality=modality)
-        result = self.evaluate()
-        if detach_after:
-            self.detach_field_nodes()
-        return result
-
-    # ── Introspection ─────────────────────────────────────────────────
+    def __contains__(self, node_id: str) -> bool:
+        return node_id in self._nodes
 
     @property
     def nodes(self) -> List[Node]:
@@ -1377,9 +756,341 @@ class ConceptGraph:
     def dashed_edges(self) -> List[DashedEdge]:
         return list(self._dashed)
 
+    @property
+    def roots(self) -> List[Node]:
+        """Nodes with no solid-edge parent, in insertion order."""
+        has_parent = {e.target.node_id for e in self._solid}
+        return [n for nid, n in self._nodes.items() if nid not in has_parent]
+
+    def _parents(self) -> Dict[str, List[Node]]:
+        parents: Dict[str, List[Node]] = defaultdict(list)
+        for edge in self._solid:
+            parents[edge.target.node_id].append(edge.source)
+        return parents
+
+    def _has_input_context(self, node: Node) -> bool:
+        """True if ``node`` is observed: some ancestor ``ParallelNode`` owns an ``InputNode``."""
+        parents = self._parents()
+        seen: Set[str] = set()
+        stack = list(parents.get(node.node_id, []))
+        while stack:
+            parent = stack.pop()
+            if parent.node_id in seen:
+                continue
+            seen.add(parent.node_id)
+            if isinstance(parent, ParallelNode) and any(isinstance(c, InputNode) for c in parent.children):
+                return True
+            stack.extend(parents.get(parent.node_id, []))
+        return False
+
+    # -- evaluation ----------------------------------------------------
+
+    def reset_gates(self) -> None:
+        """Set every gate back to 1. ``evaluate()`` calls this itself and ``step()`` does not."""
+        for node in self._nodes.values():
+            node.gate = 1.0
+            if isinstance(node, PORTALS):
+                node.activation = 1.0
+
+    def _dashed_topological_order(self) -> List[Node]:
+        in_degree: Dict[str, int] = defaultdict(int)
+        successors: Dict[str, List[Node]] = defaultdict(list)
+        for edge in self._dashed:
+            in_degree[edge.target.node_id] += 1
+            successors[edge.source.node_id].append(edge.target)
+
+        queue = deque(nid for nid in self._nodes if in_degree[nid] == 0)
+        order: List[Node] = []
+        while queue:
+            nid = queue.popleft()
+            order.append(self._nodes[nid])
+            for succ in successors[nid]:
+                in_degree[succ.node_id] -= 1
+                if in_degree[succ.node_id] == 0:
+                    queue.append(succ.node_id)
+        seen = {n.node_id for n in order}          # nodes in dashed cycles go last
+        return order + [n for nid, n in self._nodes.items() if nid not in seen]
+
+    def _scan(self) -> float:
+        """Evaluate every root. Return the last output node's activation, or else the last root's."""
+        roots = self.roots
+        if not roots:
+            raise RuntimeError("ConceptGraph has no nodes.")
+        for r in roots:
+            r.evaluate(None)
+        outputs = [n for n in self._nodes.values() if isinstance(n, OutputNode)]
+        last = outputs[-1] if outputs else roots[-1]
+        return float(np.clip(last.activation, 0.0, 1.0))
+
+    def _propagate_dashed(self) -> None:
+        """Set each dashed target's gate, in topological order.
+
+        Portals and imagined (field-free) object nodes copy the new gate
+        into their activation straight away, so imagined chains propagate in
+        one pass. Observed nodes wait for the next scan.
+        """
+        sources: Dict[str, List[Node]] = defaultdict(list)
+        for edge in self._dashed:
+            sources[edge.target.node_id].append(edge.source)
+        for node in self._dashed_topological_order():
+            srcs = sources.get(node.node_id)
+            if not srcs:
+                continue
+            node.gate = float(np.clip(np.mean([s.activation for s in srcs]), 0.0, 1.0))
+            if isinstance(node, PORTALS) or (
+                    isinstance(node, ObjectNode) and not self._has_input_context(node)):
+                node.activation = node.gate
+
+    def _update_bodies(self) -> None:
+        for node in self._nodes.values():
+            if isinstance(node, BodyNode):
+                node.update_motion()
+
+    def evaluate(self) -> float:
+        """Stateless: reset gates, scan, propagate dashed gates, scan again."""
+        if not self._nodes:
+            raise RuntimeError("ConceptGraph has no nodes.")
+        self.reset_gates()
+        self._scan()
+        self._propagate_dashed()
+        return self._scan()
+
+    def step(self, field: Optional[ReceptiveField] = None, at_node_id: Optional[str] = None,
+             modality: str = "retina", detach_after: bool = True) -> float:
+        """One timestep: scan, propagate dashed gates, move bodies. Gates carry over.
+
+        If ``field`` is given, it is shown on the matching InputNode for this
+        step only. Call ``reset_gates()`` to replay from t=0.
+        """
+        restore = None
+        if field is not None:
+            node = self._find_input_node(modality, at_node_id=at_node_id)
+            restore = (node, node.field)
+            node.field = field
+        result = self._scan()
+        self._propagate_dashed()
+        self._update_bodies()
+        if restore is not None and detach_after:
+            restore[0].field = restore[1]
+        return result
+
+    def evaluate_against(self, field: ReceptiveField, at_node_id: Optional[str] = None,
+                         modality: str = "retina", detach_after: bool = True) -> float:
+        """Show ``field`` on the matching InputNode, ``evaluate()``, then restore the old field."""
+        node = self._find_input_node(modality, at_node_id=at_node_id)
+        old = node.field
+        node.field = field
+        result = self.evaluate()
+        if detach_after:
+            node.field = old
+        return result
+
+    # -- input windows -------------------------------------------------
+
+    def _find_input_node(self, node_id_or_modality: str = "retina",
+                         at_node_id: Optional[str] = None) -> InputNode:
+        """Find an InputNode by id or by modality, optionally only among one ParallelNode's children."""
+        if at_node_id is None:
+            candidates = [n for n in self._nodes.values() if isinstance(n, InputNode)]
+        else:
+            parent = self._nodes.get(at_node_id)
+            if parent is None:
+                raise KeyError(f"No node found with id {at_node_id!r}.")
+            if not isinstance(parent, ParallelNode):
+                raise TypeError(f"Input lookup target must be a ParallelNode; "
+                                f"{at_node_id!r} is a {type(parent).__name__}.")
+            candidates = [n for n in parent.children if isinstance(n, InputNode)]
+
+        for node in candidates:
+            if node_id_or_modality in (node.node_id, node.modality):
+                return node
+        where = f" under {at_node_id!r}" if at_node_id is not None else ""
+        raise ValueError(f"No explicit InputNode matching id or modality "
+                         f"{node_id_or_modality!r}{where}. Add InputNode('I', modality=...) "
+                         f"to the graph before evaluation.")
+
+    def get_field_node(self, node_id_or_modality: str) -> InputNode:
+        return self._find_input_node(node_id_or_modality)
+
+    def set_field(self, node_id_or_modality: str, field: Optional[ReceptiveField]) -> None:
+        """Change what an input window sees. ``None`` silences the window."""
+        self._find_input_node(node_id_or_modality).field = field
+
+    set_input = set_field
+
+    def add_field_slot(self, node_id: str, modality: str = "retina",
+                       at_node_id: Optional[str] = None, initial_weight: float = 1.0,
+                       initial_field: Optional[ReceptiveField] = None) -> InputNode:
+        """Add a permanent InputNode under a ParallelNode (default: ``self.root``).
+
+        Example: an initially silent proprio channel that a desire node can gate on::
+
+            g.add_field_slot("proprio", modality="proprio", initial_weight=0.0)
+            g.add_dashed_edge(desire, g.get_field_node("proprio"))
+        """
+        known = {"retina": RetinaNode, "tactile": TactileNode, "proprio": ProprioNode}
+        cls = known.get(modality, InputNode)
+        node = cls(node_id, field=initial_field,
+                   modality=None if modality in known else modality,
+                   initial_weight=initial_weight)
+
+        target_id = at_node_id or (self.root.node_id if self.root else None)
+        if target_id is None or target_id not in self._nodes:
+            raise ValueError(f"No target ParallelNode found (at_node_id={at_node_id!r}).")
+        target = self._nodes[target_id]
+        if not isinstance(target, ParallelNode):
+            raise TypeError(f"Field slots can only be attached to ParallelNodes; "
+                            f"'{target_id}' is a {type(target).__name__}.")
+        self.add_node(node)
+        self.add_solid_edge(target, node)
+        return node
+
+    def detach_field_nodes(self) -> None:
+        """Remove every InputNode from the graph."""
+        for node in [n for n in self._nodes.values() if isinstance(n, InputNode)]:
+            self.remove_node(node)
+
+    # -- spatial read-outs ---------------------------------------------
+
+    def render_output(self, shape: Tuple[int, int] = (9, 9),
+                      output_root_id: Optional[str] = None) -> ReceptiveField:
+        """Draw the imagined (output) subgraph as a field.
+
+        This follows the replacement rule spatially: a template's yang bands
+        receive the content with weight p, and the whole region receives it
+        with weight 1 - p. An ObjectNode paints its yang bands at
+        ``gate * weight`` and its yin bands at half that (unknown, not absent).
+        Overlapping contributions combine by noisy-OR: ``1 - prod(1 - c)``.
+        The default root is the last root (the imagined one by convention).
+        """
+        H, W = shape
+        roots = self.roots
+        out_root = self._nodes[output_root_id] if output_root_id is not None else roots[-1]
+        complement = np.ones((H, W))
+
+        def yang_regions(node: Node, region: Region) -> List[Region]:
+            if isinstance(node, ObjectNode):
+                bands = [band_region(region, i, node.n_bands, node.orientation)
+                         for i, bit in enumerate(node.pattern) if bit > 0]
+                return [b for b in bands if not is_empty(b)]
+            if isinstance(node, SerialNode):
+                kids = content_children(node)
+                regions: List[Region] = []
+                for i, child in enumerate(kids):
+                    strip = band_region(region, i, len(kids), node.split_orientation)
+                    regions.extend(yang_regions(child, strip) or [strip])
+                return regions
+            return [region]
+
+        def render_plan(children: List[Node], region: Region, weight: float) -> None:
+            if not children or weight < 1e-9 or is_empty(region):
+                return
+            if len(children) == 1:
+                render_node(children[0], region, weight)
+                return
+            template, rest = children[0], children[1:]
+            p = float(np.clip(template.gate, 0.0, 1.0))
+            if p > 1e-9:
+                for sub in yang_regions(template, region):
+                    render_plan(rest, sub, weight * p)
+            if 1.0 - p > 1e-9:
+                render_plan(rest, region, weight * (1.0 - p))
+
+        def render_node(node: Node, region: Region, weight: float) -> None:
+            if weight < 1e-9 or is_empty(region):
+                return
+            if isinstance(node, ObjectNode):
+                for i, bit in enumerate(node.pattern):
+                    contrib = float(np.clip(weight * node.gate * (1.0 if bit > 0 else 0.5), 0, 1))
+                    if contrib >= 1e-9:
+                        r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
+                        complement[r0:r1, c0:c1] *= 1.0 - contrib
+            elif isinstance(node, BodyNode):
+                render_plan(content_children(node), region, weight)
+            elif isinstance(node, SerialNode):
+                kids = content_children(node)
+                for i, child in enumerate(kids):
+                    render_node(child, band_region(region, i, len(kids), node.split_orientation), weight)
+            elif isinstance(node, ParallelNode):
+                for child in content_children(node):
+                    render_node(child, region, weight)
+
+        render_node(out_root, (0, H, 0, W), 1.0)
+        return ReceptiveField(np.clip(1.0 - complement, 0.0, 1.0))
+
+    def derived_fields(self, shape: Tuple[int, int] = (9, 9)) -> Dict[str, ReceptiveField]:
+        """One display field per node (used by the visualizer).
+
+        An object node shows its pattern, pulled towards neutral (0.5) as its
+        strength falls. Strength is the scan result for observed nodes and
+        the gate for imagined ones. Parallel nodes average their children.
+        Serial nodes place their children side by side. Plans show their
+        content; a dynamic template can set the axis of a serial content.
+        """
+        H, W = shape
+        full = (0, H, 0, W)
+        neutral = lambda: np.full((H, W), 0.5, dtype=float)
+        parents = {edge.target.node_id: edge.source for edge in self._solid}
+        cache: Dict[str, np.ndarray] = {}
+
+        def strength(node: Node) -> float:
+            value = node.activation if self._has_input_context(node) else node.gate
+            return float(np.clip(value, 0.0, 1.0))
+
+        def resize(values: np.ndarray) -> np.ndarray:
+            if values.shape == (H, W):
+                return values.copy()
+            rows = np.linspace(0, values.shape[0] - 1, H).round().astype(int)
+            cols = np.linspace(0, values.shape[1] - 1, W).round().astype(int)
+            return values[np.ix_(rows, cols)].astype(float, copy=True)
+
+        def pattern_field(node: ObjectNode) -> np.ndarray:
+            result = np.zeros((H, W), dtype=float)
+            for i, bit in enumerate(node.pattern):
+                r0, r1, c0, c1 = band_region(full, i, node.n_bands, node.orientation)
+                result[r0:r1, c0:c1] = float(np.clip(bit, 0.0, 1.0))
+            return result
+
+        def render(node: Node, orientation: Optional[Orientation] = None) -> np.ndarray:
+            if orientation is None and node.node_id in cache:
+                return cache[node.node_id]
+            kids = content_children(node)
+            if isinstance(node, InputNode):
+                values = resize(node.field.activation) if node.field is not None else neutral()
+            elif isinstance(node, OutputNode):
+                parent = parents.get(node.node_id)
+                values = render(parent) if parent is not None else neutral()
+            elif isinstance(node, ObjectNode):
+                values = 0.5 + strength(node) * (pattern_field(node) - 0.5)
+            elif isinstance(node, ParallelNode):
+                values = sum(render(c) for c in kids) / len(kids) if kids else neutral()
+            elif isinstance(node, SerialNode):
+                values = neutral()
+                axis = orientation or node.split_orientation
+                for i, child in enumerate(kids):
+                    r0, r1, c0, c1 = band_region(full, i, len(kids), axis)
+                    values[r0:r1, c0:c1] = render(child)[r0:r1, c0:c1]
+            elif isinstance(node, BodyNode):
+                if not kids:
+                    values = neutral()
+                else:
+                    template, content = kids[0], kids[-1]
+                    dynamic = isinstance(template, ObjectNode) and template.is_dynamic
+                    values = render(content, template.orientation
+                                    if dynamic and isinstance(content, SerialNode) else None)
+            else:
+                values = np.full((H, W), float(np.clip(node.activation, 0, 1)))
+            if orientation is None:
+                cache[node.node_id] = values
+            return values
+
+        return {node.node_id: ReceptiveField(render(node)) for node in self.nodes}
+
+    # -- introspection -------------------------------------------------
+
     def depth(self) -> int:
         def _d(n: Node) -> int:
-            return 0 if not n.children else 1 + max(_d(c) for c in n.children)
+            return 1 + max(map(_d, n.children)) if n.children else 0
         return _d(self.root) if self.root else 0
 
     def size(self) -> int:
@@ -1391,110 +1102,97 @@ class ConceptGraph:
     def activation_summary(self) -> Dict[str, float]:
         return {nid: n.activation for nid, n in self._nodes.items()}
 
-    def __repr__(self) -> str:
-        return (
-            f"ConceptGraph(name={self.name!r}, "
-            f"size={self.size()}, depth={self.depth()})"
-        )
+    def body_states(self) -> Dict[str, Dict]:
+        """The position, velocity and extent of every moving body."""
+        return {
+            nid: {"position": list(n.position), "velocity": list(n.velocity), "extent": list(n.extent)}
+            for nid, n in self._nodes.items()
+            if isinstance(n, BodyNode) and not isinstance(n, PlanNode)
+        }
 
-    # ── Serialisation (backward compatibility) ────────────────────────
+    def __repr__(self) -> str:
+        return f"ConceptGraph(name={self.name!r}, size={self.size()}, depth={self.depth()})"
+
+    # -- nested-list format --------------------------------------------
 
     def to_nested_list(self) -> list:
-        """
-        Serialize to the nested-list format of the original code.
-        Field nodes are excluded (they are evaluation-time additions).
-        """
-        if self.root is None:
-            return []
-        return self._node_to_list(self.root)
+        """Write ``root`` as ``[type, child, ...]`` / ``[trigram_name, orientation]``. Input windows are left out."""
+        def convert(node: Node) -> list:
+            if isinstance(node, InputNode):
+                return []
+            if isinstance(node, ObjectNode):
+                return [node.name, node.orientation.value]
+            return [node.node_type] + [convert(c) for c in node.children if not isinstance(c, InputNode)]
+        return convert(self.root) if self.root is not None else []
 
-    def _node_to_list(self, node: Node) -> list:
-        if isinstance(node, ReceptiveFieldNode):
-            return []   # field nodes are not part of the concept definition
-        if isinstance(node, ObjectNode):
-            return [node.name, node.orientation.value, node.layer]
-        result = [node.node_type]
-        for child in node.children:
-            if not isinstance(child, ReceptiveFieldNode):
-                result.append(self._node_to_list(child))
-        return result
+    # -- backward-compatible names -------------------------------------
+
+    reset_values = reset_gates
+
+    def attach_field(self, field: ReceptiveField, at_node_id: Optional[str] = None,
+                     modality: str = "retina", weight: float = 1.0,
+                     field_node_id: Optional[str] = None) -> InputNode:
+        fid = field_node_id or f"_tmp_{modality}_{len(self._nodes)}"
+        return self.add_field_slot(fid, modality=modality, at_node_id=at_node_id,
+                                   initial_weight=weight, initial_field=field)
 
 
 # ============================================================
-# Section 9 — Graph Construction from Nested Lists
+# 7. Building graphs from nested lists
 # ============================================================
 
 _STRUCTURE_MAP = {
-    "serial"  : SerialNode,
+    "serial":   SerialNode,
     "parallel": ParallelNode,
-    "body"    : BodyNode,
-    "plan"    : PlanNode,
+    "body":     BodyNode,
+    "plan":     PlanNode,
 }
 
 
 def graph_from_nested_list(tree: list, name: str = "") -> ConceptGraph:
+    """Build a graph from ``["serial", ["bottom", 1], ["top", 1]]``-style lists.
+
+    A leaf is ``[trigram_name, orientation_int]``. The root is wrapped in a
+    ParallelNode if needed, and an InputNode ``"I"`` is added under it.
     """
-    Build a ConceptGraph from the nested-list format of the original code.
+    graph = ConceptGraph(name=name)
+    counter = 0
 
-    Field nodes are *not* included — the returned graph is a pure scanner
-    definition.  Attach field nodes with `graph.attach_field()` or use
-    `graph.evaluate_against(field)` to evaluate.
-
-    Leaf format:
-        [trigram_name, orientation_int, layer_int]
-        e.g.  ["bottom", 1, 0]
-
-    Structure format:
-        [node_type_str, child_1, child_2, …]
-        e.g.  ["serial", ["bottom", 1, 0], ["top", 1, 0]]
-
-    A ParallelNode is automatically inserted as the root if the top-level
-    node is not already a ParallelNode — this ensures every concept has a
-    field-context hub at its root.
-    """
-    graph   = ConceptGraph(name=name)
-    counter = [0]
-
-    def _build(subtree: list) -> Node:
-        counter[0] += 1
-        nid = f"n{counter[0]}"
-
-        if not isinstance(subtree, list) or not subtree:
+    def build(spec) -> Node:
+        nonlocal counter
+        counter += 1
+        nid = f"n{counter}"
+        if not isinstance(spec, list) or not spec:
             node = ObjectNode(nid, TRIGRAM_PATTERNS["neutral"])
             graph.add_node(node)
-            return node
-
-        head = subtree[0]
-
-        if head in _STRUCTURE_MAP:
-            node = _STRUCTURE_MAP[head](nid)
+        elif spec[0] in _STRUCTURE_MAP:
+            node = _STRUCTURE_MAP[spec[0]](nid)
             graph.add_node(node)
-            for child_spec in subtree[1:]:
-                if isinstance(child_spec, int):
-                    continue   # skip integer body-code annotations
-                child = _build(child_spec)
-                graph.add_solid_edge(node, child)
+            for child_spec in spec[1:]:
+                if not isinstance(child_spec, int):     # skip integer annotations
+                    graph.add_solid_edge(node, build(child_spec))
         else:
-            trig_name   = head
-            orient_int  = int(subtree[1]) if len(subtree) > 1 else 1
-            pattern     = ALL_PATTERNS.get(trig_name, TRIGRAM_PATTERNS["neutral"])
-            orientation = Orientation(orient_int)
-            node = ObjectNode(
-                nid, pattern, orientation, name=trig_name,
-            )
+            orientation = Orientation(int(spec[1]) if len(spec) > 1 else 1)
+            pattern = ALL_PATTERNS.get(spec[0], TRIGRAM_PATTERNS["neutral"])
+            node = ObjectNode(nid, pattern, orientation, name=spec[0])
             graph.add_node(node)
-
         return node
 
-    inner_root = _build(tree)
-
-    # Ensure the root is a ParallelNode (field-context hub)
-    if isinstance(inner_root, ParallelNode):
-        graph.root = inner_root
+    inner = build(tree)
+    if isinstance(inner, ParallelNode):
+        graph.root = inner
     else:
-        hub = ParallelNode(f"hub_{name}")
-        graph.add_node(hub)
-        graph.add_solid_edge(hub, inner_root)
-        graph.root = hub
+        graph.root = ParallelNode(f"hub_{name}")
+        graph.add_node(graph.root)
+        graph.add_solid_edge(graph.root, inner)
 
+    if not any(isinstance(c, InputNode) for c in graph.root.children):
+        inp = InputNode("I", modality="retina")
+        graph.add_node(inp)
+        graph.add_solid_edge(graph.root, inp)
     return graph
+
+
+# Old names kept so that existing code still imports.
+ReceptiveFieldNode = InputNode
+ReturnNode = OutputNode

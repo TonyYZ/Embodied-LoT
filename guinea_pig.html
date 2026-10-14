@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Code Guinea Pig</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f7efe0;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    svg {
+      width: min(94vw, 860px);
+      height: auto;
+      filter: drop-shadow(0 18px 24px rgba(72, 44, 22, 0.18));
+    }
+
+    .label {
+      font-size: 28px;
+      fill: #5f3b22;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <svg viewBox="0 0 860 520" role="img" aria-label="A guinea pig and a crying peach drawn with SVG code">
+    <ellipse cx="500" cy="410" rx="230" ry="34" fill="#d8c3a1" opacity="0.45"/>
+    <ellipse cx="152" cy="410" rx="78" ry="19" fill="#d8c3a1" opacity="0.42"/>
+
+    <!-- Crying peach -->
+    <g transform="translate(118 214)">
+      <path d="M36 4 C58 -14 86 7 83 34 C116 37 130 71 112 101 C96 128 52 138 22 119 C-12 98 -7 49 19 33 C19 20 25 11 36 4Z"
+            fill="#ffb17f"/>
+      <path d="M23 36 C43 6 87 17 99 48 C110 78 89 116 47 124 C20 112 4 86 11 61 C13 51 17 43 23 36Z"
+            fill="#ffd08c" opacity="0.78"/>
+      <path d="M62 11 C77 4 93 4 109 14 C91 19 78 28 68 43 C69 30 67 20 62 11Z"
+            fill="#72a85d"/>
+      <path d="M66 21 C58 4 45 -4 29 0" fill="none" stroke="#7b5a2b" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="36" cy="62" r="6" fill="#4a2b1b"/>
+      <circle cx="78" cy="62" r="6" fill="#4a2b1b"/>
+      <path d="M45 93 C55 82 68 82 78 93" fill="none" stroke="#7f3f36" stroke-width="5" stroke-linecap="round"/>
+      <path d="M35 72 C25 88 28 102 38 113 C48 100 48 86 35 72Z" fill="#68c9ff" opacity="0.9"/>
+      <path d="M80 72 C70 89 73 103 83 114 C93 100 93 86 80 72Z" fill="#68c9ff" opacity="0.9"/>
+      <circle cx="32" cy="57" r="2" fill="#fff7e8"/>
+      <circle cx="74" cy="57" r="2" fill="#fff7e8"/>
+    </g>
+
+    <!-- Body -->
+    <ellipse cx="510" cy="295" rx="205" ry="125" fill="#b87945"/>
+    <path d="M350 260 C390 170 530 155 645 210 C575 235 550 325 585 400 C475 435 365 390 350 260Z"
+          fill="#f4d2a1"/>
+    <path d="M560 180 C640 185 710 238 715 310 C718 375 665 410 595 407 C545 358 535 250 560 180Z"
+          fill="#7a4b2a"/>
+
+    <!-- Head -->
+    <ellipse cx="675" cy="258" rx="100" ry="88" fill="#8f5a34"/>
+    <path d="M625 205 C660 170 725 182 760 230 C725 220 680 225 640 262Z"
+          fill="#f0c58f"/>
+
+    <!-- Ears -->
+    <ellipse cx="633" cy="180" rx="35" ry="44" fill="#8f5a34" transform="rotate(-18 633 180)"/>
+    <ellipse cx="633" cy="182" rx="21" ry="27" fill="#df9f84" transform="rotate(-18 633 182)"/>
+    <ellipse cx="730" cy="184" rx="34" ry="42" fill="#714225" transform="rotate(25 730 184)"/>
+    <ellipse cx="730" cy="186" rx="20" ry="25" fill="#c98472" transform="rotate(25 730 186)"/>
+
+    <!-- Face -->
+    <circle cx="710" cy="246" r="13" fill="#231711"/>
+    <circle cx="714" cy="241" r="4" fill="#fff7e8"/>
+    <ellipse cx="772" cy="278" rx="18" ry="13" fill="#4a2b1b"/>
+    <path d="M756 295 C735 305 718 300 703 287" fill="none" stroke="#4a2b1b" stroke-width="5" stroke-linecap="round"/>
+    <path d="M752 304 C732 326 699 326 680 307" fill="none" stroke="#4a2b1b" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Whiskers -->
+    <path d="M762 280 C800 265 825 258 844 260" fill="none" stroke="#5f3b22" stroke-width="3" stroke-linecap="round"/>
+    <path d="M760 291 C800 290 826 296 845 310" fill="none" stroke="#5f3b22" stroke-width="3" stroke-linecap="round"/>
+    <path d="M760 300 C790 315 813 335 830 356" fill="none" stroke="#5f3b22" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Feet -->
+    <ellipse cx="400" cy="390" rx="42" ry="24" fill="#7a4b2a"/>
+    <ellipse cx="585" cy="406" rx="50" ry="25" fill="#5f351f"/>
+    <path d="M376 392 L365 405 M398 397 L390 413 M421 394 L422 410"
+          stroke="#3f2618" stroke-width="3" stroke-linecap="round"/>
+    <path d="M560 408 L550 423 M585 412 L578 428 M611 408 L615 425"
+          stroke="#2e1b11" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- Fur tufts -->
+    <path d="M455 170 C465 138 485 135 490 170 C510 142 530 150 520 184"
+          fill="none" stroke="#7a4b2a" stroke-width="8" stroke-linecap="round"/>
+    <path d="M380 220 C355 205 345 185 355 165 C375 183 390 192 410 200"
+          fill="#f4d2a1"/>
+
+    <!-- Caption -->
+    <text x="78" y="80" class="label">#iloveguineapig</text>
+  </svg>
+</body>
+</html>

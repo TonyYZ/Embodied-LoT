@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>abc</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #1d2433;
+      --muted: #657085;
+      --line: #d5dae5;
+      --solid: #263246;
+      --dashed: #77849a;
+      --accent: #0f766e;
+      --danger: #b42318;
+      --input: #0f8a5f;
+      --return: #bd6b00;
+      --object: #2563ad;
+      --parallel: #7c3c8c;
+      --serial: #187784;
+      --body: #b93854;
+      --plan: #9b5260;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 330px;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 680;
+      letter-spacing: 0;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    button, select, input {
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 6px 9px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      color: #fff;
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+    button.danger {
+      color: var(--danger);
+      border-color: #f0c8c3;
+    }
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    input[type="number"], input[type="text"], select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: #fff;
+      color: var(--ink);
+    }
+    main {
+      position: relative;
+      min-height: 0;
+    }
+    svg {
+      width: 100%;
+      height: calc(100vh - 58px);
+      display: block;
+      background:
+        linear-gradient(#edf0f6 1px, transparent 1px),
+        linear-gradient(90deg, #edf0f6 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    aside {
+      overflow: auto;
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+    }
+    section {
+      padding-bottom: 16px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0;
+    }
+    .stack {
+      display: grid;
+      gap: 8px;
+    }
+    .twocol {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+      font-size: 12px;
+    }
+    .edge.solid line {
+      stroke: var(--solid);
+      stroke-width: 2;
+    }
+    .edge.dashed line {
+      stroke: var(--dashed);
+      stroke-width: 2;
+      stroke-dasharray: 7 5;
+    }
+    .edge text {
+      fill: var(--muted);
+      font-size: 11px;
+      pointer-events: none;
+    }
+    .node circle {
+      stroke: #fff;
+      stroke-width: 2.5;
+      filter: drop-shadow(0 2px 4px rgba(20, 30, 45, 0.14));
+      cursor: grab;
+    }
+    .node.selected circle {
+      stroke: #111827;
+      stroke-width: 4;
+    }
+    .node text {
+      text-anchor: middle;
+      dominant-baseline: middle;
+      fill: #fff;
+      font-size: 12px;
+      font-weight: 680;
+      pointer-events: none;
+    }
+    .node .sub {
+      transform: translateY(15px);
+      fill: #283243;
+      font-size: 11px;
+      font-weight: 580;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 5px;
+      vertical-align: -1px;
+    }
+    .timeline {
+      min-width: 190px;
+      accent-color: var(--accent);
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      aside { border-left: 0; border-top: 1px solid var(--line); }
+      svg { height: 62vh; }
+      header { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1 id="title"></h1>
+        <div class="meta" id="frameMeta"></div>
+      </div>
+      <div class="toolbar">
+        <button id="prevBtn" title="Previous recorded state">Prev</button>
+        <button id="playBtn" class="primary" title="Replay recorded states">Play</button>
+        <button id="nextBtn" title="Next recorded state">Next</button>
+        <input id="timeline" class="timeline" type="range" min="0" max="0" value="0">
+        <label><input id="solidToggle" type="checkbox" checked> solid</label>
+        <label><input id="dashedToggle" type="checkbox" checked> dashed</label>
+        <button id="layoutBtn" title="Reset node positions">Layout</button>
+      </div>
+    </header>
+    <main>
+      <svg id="graph" role="img" aria-label="Concept graph visualization">
+        <defs>
+          <marker id="arrowSolid" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#263246"></path>
+          </marker>
+          <marker id="arrowDashed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#77849a"></path>
+          </marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="nodes"></g>
+      </svg>
+    </main>
+    <aside>
+      <section>
+        <h2>Selection</h2>
+        <div class="stack">
+          <div class="row"><label for="nodeId">id</label><input id="nodeId" type="text"></div>
+          <div class="row"><label for="nodeGate">gate</label><input id="nodeGate" type="number" min="0" max="1" step="0.01"></div>
+          <div class="row"><label for="nodeActivation">activation</label><input id="nodeActivation" type="number" min="0" max="1" step="0.01"></div>
+          <pre id="details">Select a node or edge.</pre>
+        </div>
+      </section>
+      <section>
+        <h2>Structure</h2>
+        <div class="stack">
+          <div class="twocol">
+            <button id="addNodeBtn">Add Node</button>
+            <button id="deleteBtn" class="danger">Delete</button>
+          </div>
+          <div class="row"><label for="edgeSource">source</label><select id="edgeSource"></select></div>
+          <div class="row"><label for="edgeTarget">target</label><select id="edgeTarget"></select></div>
+          <div class="twocol">
+            <button id="addSolidBtn">Solid Edge</button>
+            <button id="addDashedBtn">Dashed Edge</button>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Client Simulation</h2>
+        <div class="stack">
+          <button id="propagateBtn">Propagate Dashed Gates</button>
+          <button id="averageBtn">Average Children</button>
+          <pre id="simNote">Replay uses states recorded by Python. These two buttons run lightweight browser-side approximations for quick editing feedback.</pre>
+        </div>
+      </section>
+      <section>
+        <h2>Legend</h2>
+        <div class="legend" id="legend"></div>
+      </section>
+    </aside>
+  </div>
+  <script id="lot-data" type="application/json">{"version": 1, "name": "abc", "base": {"label": "current", "graph_name": "abc", "nodes": [{"id": "par1", "type": "parallel", "class": "ParallelNode", "activation": 1.0, "gate": 1.0, "children": ["I", "plan_body", "bot_sc", "mid_sc", "top_sc"], "inherited_weight": 1.0}, {"id": "I", "type": "input", "class": "InputNode", "activation": 1.0, "gate": 1.0, "children": [], "modality": "retina", "field": {"shape": [9, 9], "mean": 1.0, "min": 1.0, "max": 1.0, "bounds": [0.0, 1.0, 0.0, 1.0]}}, {"id": "plan_body", "type": "plan", "class": "PlanNode", "activation": 1.0, "gate": 1.0, "children": ["bottom_template", "body_mover"], "position": [0.5, 0.5], "extent": [1.0, 1.0], "velocity": [0.0, 0.0], "step_size": null, "subfield_shape": null}, {"id": "bottom_template", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 0, 0], "pattern_name": "bottom-template", "orientation": "vertical", "dynamic": false}, {"id": "body_mover", "type": "body", "class": "BodyNode", "activation": 1.0, "gate": 1.0, "children": ["body_par"], "position": [0.8333333333333333, 0.5], "extent": [0.33333333333333337, 1.0], "velocity": [0.0, 0.0], "step_size": null}, {"id": "body_par", "type": "parallel", "class": "ParallelNode", "activation": 1.0, "gate": 1.0, "children": ["body_content", "motion_up"], "inherited_weight": 1.0}, {"id": "motion_up", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 0, 0], "pattern_name": "bottom", "orientation": "vertical", "dynamic": true}, {"id": "body_content", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "body-content", "orientation": "vertical", "dynamic": false}, {"id": "bot_sc", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 0, 0], "pattern_name": "bottom-scanner", "orientation": "vertical", "dynamic": false}, {"id": "mid_sc", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [0, 1, 0], "pattern_name": "middle-scanner", "orientation": "vertical", "dynamic": false}, {"id": "top_sc", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [0, 0, 1], "pattern_name": "top-scanner", "orientation": "vertical", "dynamic": false}, {"id": "par2", "type": "parallel", "class": "ParallelNode", "activation": 1.0, "gate": 1.0, "children": ["O", "A", "B", "C"], "inherited_weight": 1.0}, {"id": "O", "type": "return", "class": "ReturnNode", "activation": 1.0, "gate": 1.0, "children": [], "role": "output"}, {"id": "A", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "state-A", "orientation": "vertical", "dynamic": false}, {"id": "B", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "state-B", "orientation": "vertical", "dynamic": false}, {"id": "C", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "state-C", "orientation": "vertical", "dynamic": false}], "edges": [{"source": "par1", "target": "I", "type": "solid"}, {"source": "par1", "target": "plan_body", "type": "solid"}, {"source": "plan_body", "target": "bottom_template", "type": "solid"}, {"source": "plan_body", "target": "body_mover", "type": "solid"}, {"source": "body_mover", "target": "body_par", "type": "solid"}, {"source": "body_par", "target": "body_content", "type": "solid"}, {"source": "body_par", "target": "motion_up", "type": "solid"}, {"source": "par1", "target": "bot_sc", "type": "solid"}, {"source": "par1", "target": "mid_sc", "type": "solid"}, {"source": "par1", "target": "top_sc", "type": "solid"}, {"source": "par2", "target": "O", "type": "solid"}, {"source": "par2", "target": "A", "type": "solid"}, {"source": "par2", "target": "B", "type": "solid"}, {"source": "par2", "target": "C", "type": "solid"}, {"source": "bot_sc", "target": "A", "type": "dashed"}, {"source": "mid_sc", "target": "B", "type": "dashed"}, {"source": "top_sc", "target": "C", "type": "dashed"}], "roots": ["par1", "par2"], "result": 1.0, "body_states": {"body_mover": {"position": [0.8333333333333333, 0.5], "velocity": [0.0, 0.0], "extent": [0.33333333333333337, 1.0]}}, "activation_summary": {"par1": 1.0, "I": 1.0, "plan_body": 1.0, "bottom_template": 1.0, "body_mover": 1.0, "body_par": 1.0, "motion_up": 1.0, "body_content": 1.0, "bot_sc": 1.0, "mid_sc": 1.0, "top_sc": 1.0, "par2": 1.0, "O": 1.0, "A": 1.0, "B": 1.0, "C": 1.0}}, "frames": [{"label": "current", "graph_name": "abc", "nodes": [{"id": "par1", "type": "parallel", "class": "ParallelNode", "activation": 1.0, "gate": 1.0, "children": ["I", "plan_body", "bot_sc", "mid_sc", "top_sc"], "inherited_weight": 1.0}, {"id": "I", "type": "input", "class": "InputNode", "activation": 1.0, "gate": 1.0, "children": [], "modality": "retina", "field": {"shape": [9, 9], "mean": 1.0, "min": 1.0, "max": 1.0, "bounds": [0.0, 1.0, 0.0, 1.0]}}, {"id": "plan_body", "type": "plan", "class": "PlanNode", "activation": 1.0, "gate": 1.0, "children": ["bottom_template", "body_mover"], "position": [0.5, 0.5], "extent": [1.0, 1.0], "velocity": [0.0, 0.0], "step_size": null, "subfield_shape": null}, {"id": "bottom_template", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 0, 0], "pattern_name": "bottom-template", "orientation": "vertical", "dynamic": false}, {"id": "body_mover", "type": "body", "class": "BodyNode", "activation": 1.0, "gate": 1.0, "children": ["body_par"], "position": [0.8333333333333333, 0.5], "extent": [0.33333333333333337, 1.0], "velocity": [0.0, 0.0], "step_size": null}, {"id": "body_par", "type": "parallel", "class": "ParallelNode", "activation": 1.0, "gate": 1.0, "children": ["body_content", "motion_up"], "inherited_weight": 1.0}, {"id": "motion_up", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 0, 0], "pattern_name": "bottom", "orientation": "vertical", "dynamic": true}, {"id": "body_content", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "body-content", "orientation": "vertical", "dynamic": false}, {"id": "bot_sc", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 0, 0], "pattern_name": "bottom-scanner", "orientation": "vertical", "dynamic": false}, {"id": "mid_sc", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [0, 1, 0], "pattern_name": "middle-scanner", "orientation": "vertical", "dynamic": false}, {"id": "top_sc", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [0, 0, 1], "pattern_name": "top-scanner", "orientation": "vertical", "dynamic": false}, {"id": "par2", "type": "parallel", "class": "ParallelNode", "activation": 1.0, "gate": 1.0, "children": ["O", "A", "B", "C"], "inherited_weight": 1.0}, {"id": "O", "type": "return", "class": "ReturnNode", "activation": 1.0, "gate": 1.0, "children": [], "role": "output"}, {"id": "A", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "state-A", "orientation": "vertical", "dynamic": false}, {"id": "B", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "state-B", "orientation": "vertical", "dynamic": false}, {"id": "C", "type": "object", "class": "ObjectNode", "activation": 1.0, "gate": 1.0, "children": [], "pattern": [1, 1, 1], "pattern_name": "state-C", "orientation": "vertical", "dynamic": false}], "edges": [{"source": "par1", "target": "I", "type": "solid"}, {"source": "par1", "target": "plan_body", "type": "solid"}, {"source": "plan_body", "target": "bottom_template", "type": "solid"}, {"source": "plan_body", "target": "body_mover", "type": "solid"}, {"source": "body_mover", "target": "body_par", "type": "solid"}, {"source": "body_par", "target": "body_content", "type": "solid"}, {"source": "body_par", "target": "motion_up", "type": "solid"}, {"source": "par1", "target": "bot_sc", "type": "solid"}, {"source": "par1", "target": "mid_sc", "type": "solid"}, {"source": "par1", "target": "top_sc", "type": "solid"}, {"source": "par2", "target": "O", "type": "solid"}, {"source": "par2", "target": "A", "type": "solid"}, {"source": "par2", "target": "B", "type": "solid"}, {"source": "par2", "target": "C", "type": "solid"}, {"source": "bot_sc", "target": "A", "type": "dashed"}, {"source": "mid_sc", "target": "B", "type": "dashed"}, {"source": "top_sc", "target": "C", "type": "dashed"}], "roots": ["par1", "par2"], "result": 1.0, "body_states": {"body_mover": {"position": [0.8333333333333333, 0.5], "velocity": [0.0, 0.0], "extent": [0.33333333333333337, 1.0]}}, "activation_summary": {"par1": 1.0, "I": 1.0, "plan_body": 1.0, "bottom_template": 1.0, "body_mover": 1.0, "body_par": 1.0, "motion_up": 1.0, "body_content": 1.0, "bot_sc": 1.0, "mid_sc": 1.0, "top_sc": 1.0, "par2": 1.0, "O": 1.0, "A": 1.0, "B": 1.0, "C": 1.0}}]}</script>
+  <script>
+    const payload = JSON.parse(document.getElementById("lot-data").textContent);
+    const colors = {
+      input: "#0f8a5f",
+      return: "#bd6b00",
+      object: "#2563ad",
+      parallel: "#7c3c8c",
+      serial: "#187784",
+      body: "#b93854",
+      plan: "#9b5260"
+    };
+
+    let frameIndex = 0;
+    let current = structuredClone(payload.frames[0] || payload.base);
+    let positions = new Map();
+    let selected = null;
+    let selectedKind = null;
+    let timer = null;
+
+    const svg = document.getElementById("graph");
+    const edgeLayer = document.getElementById("edges");
+    const nodeLayer = document.getElementById("nodes");
+    const title = document.getElementById("title");
+    const frameMeta = document.getElementById("frameMeta");
+    const timeline = document.getElementById("timeline");
+
+    function nodeById(id) {
+      return current.nodes.find(n => n.id === id);
+    }
+
+    function roots() {
+      return new Set(current.roots || []);
+    }
+
+    function graphSize() {
+      const rect = svg.getBoundingClientRect();
+      return { w: Math.max(rect.width, 600), h: Math.max(rect.height, 420) };
+    }
+
+    function layout() {
+      const { w, h } = graphSize();
+      const incoming = new Map(current.nodes.map(n => [n.id, 0]));
+      const children = new Map(current.nodes.map(n => [n.id, []]));
+      current.edges.filter(e => e.type === "solid").forEach(e => {
+        incoming.set(e.target, (incoming.get(e.target) || 0) + 1);
+        if (children.has(e.source)) children.get(e.source).push(e.target);
+      });
+      const rootIds = current.roots && current.roots.length
+        ? current.roots
+        : current.nodes.filter(n => (incoming.get(n.id) || 0) === 0).map(n => n.id);
+      const levels = new Map();
+      const queue = rootIds.map(id => [id, 0]);
+      while (queue.length) {
+        const [id, depth] = queue.shift();
+        if (levels.has(id) && levels.get(id) <= depth) continue;
+        levels.set(id, depth);
+        (children.get(id) || []).forEach(child => queue.push([child, depth + 1]));
+      }
+      current.nodes.forEach((n, i) => {
+        if (!levels.has(n.id)) levels.set(n.id, 1 + (i % 4));
+      });
+      const buckets = new Map();
+      for (const n of current.nodes) {
+        const level = levels.get(n.id) || 0;
+        if (!buckets.has(level)) buckets.set(level, []);
+        buckets.get(level).push(n.id);
+      }
+      const maxLevel = Math.max(...Array.from(buckets.keys()), 1);
+      positions.clear();
+      for (const [level, ids] of buckets.entries()) {
+        ids.forEach((id, i) => {
+          positions.set(id, {
+            x: 80 + level * ((w - 160) / Math.max(maxLevel, 1)),
+            y: 70 + (i + 1) * ((h - 140) / (ids.length + 1))
+          });
+        });
+      }
+    }
+
+    function applyFrame(index) {
+      frameIndex = Math.max(0, Math.min(index, payload.frames.length - 1));
+      const old = positions;
+      current = structuredClone(payload.frames[frameIndex] || payload.base);
+      const next = new Map();
+      current.nodes.forEach(n => {
+        if (old.has(n.id)) next.set(n.id, old.get(n.id));
+      });
+      positions = next;
+      if (positions.size !== current.nodes.length) layout();
+      selected = null;
+      selectedKind = null;
+      render();
+    }
+
+    function render() {
+      title.textContent = payload.name || current.graph_name || "Embodied-LoT graph";
+      frameMeta.textContent = `${current.label || "state"} | result ${fmt(current.result)} | nodes ${current.nodes.length} | edges ${current.edges.length}`;
+      timeline.max = Math.max(payload.frames.length - 1, 0);
+      timeline.value = frameIndex;
+      renderSelectors();
+      renderEdges();
+      renderNodes();
+      renderDetails();
+    }
+
+    function fmt(value) {
+      return Number.isFinite(value) ? Number(value).toFixed(3) : "n/a";
+    }
+
+    function renderEdges() {
+      edgeLayer.innerHTML = "";
+      const showSolid = document.getElementById("solidToggle").checked;
+      const showDashed = document.getElementById("dashedToggle").checked;
+      current.edges.forEach((e, idx) => {
+        if (e.type === "solid" && !showSolid) return;
+        if (e.type === "dashed" && !showDashed) return;
+        const a = positions.get(e.source);
+        const b = positions.get(e.target);
+        if (!a || !b) return;
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.classList.add("edge", e.type);
+        if (selectedKind === "edge" && selected === idx) g.classList.add("selected");
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", a.x);
+        line.setAttribute("y1", a.y);
+        line.setAttribute("x2", b.x);
+        line.setAttribute("y2", b.y);
+        line.setAttribute("marker-end", e.type === "solid" ? "url(#arrowSolid)" : "url(#arrowDashed)");
+        line.addEventListener("click", evt => {
+          evt.stopPropagation();
+          selected = idx;
+          selectedKind = "edge";
+          render();
+        });
+        g.appendChild(line);
+        edgeLayer.appendChild(g);
+      });
+    }
+
+    function renderNodes() {
+      nodeLayer.innerHTML = "";
+      const rootIds = roots();
+      current.nodes.forEach(n => {
+        const p = positions.get(n.id) || {x: 80, y: 80};
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        g.classList.add("node");
+        if (selectedKind === "node" && selected === n.id) g.classList.add("selected");
+        g.setAttribute("transform", `translate(${p.x},${p.y})`);
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("r", rootIds.has(n.id) ? 28 : 24);
+        circle.setAttribute("fill", colors[n.type] || "#475569");
+        circle.addEventListener("pointerdown", evt => dragStart(evt, n.id));
+        circle.addEventListener("click", evt => {
+          evt.stopPropagation();
+          selected = n.id;
+          selectedKind = "node";
+          render();
+        });
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.textContent = shortId(n.id);
+        const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        sub.classList.add("sub");
+        sub.textContent = `${n.type} ${fmt(n.activation)}`;
+        g.appendChild(circle);
+        g.appendChild(text);
+        g.appendChild(sub);
+        nodeLayer.appendChild(g);
+      });
+    }
+
+    function shortId(id) {
+      return String(id).length > 9 ? String(id).slice(0, 8) + "." : String(id);
+    }
+
+    function dragStart(evt, id) {
+      evt.preventDefault();
+      selected = id;
+      selectedKind = "node";
+      const p = positions.get(id);
+      const start = pointer(evt);
+      const ox = p.x - start.x;
+      const oy = p.y - start.y;
+      function move(e) {
+        const q = pointer(e);
+        positions.set(id, { x: q.x + ox, y: q.y + oy });
+        renderEdges();
+        renderNodes();
+      }
+      function up() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      render();
+    }
+
+    function pointer(evt) {
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const ctm = svg.getScreenCTM().inverse();
+      const p = pt.matrixTransform(ctm);
+      return { x: p.x, y: p.y };
+    }
+
+    function renderSelectors() {
+      const source = document.getElementById("edgeSource");
+      const target = document.getElementById("edgeTarget");
+      const options = current.nodes.map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(n.id)}</option>`).join("");
+      const oldSource = source.value;
+      const oldTarget = target.value;
+      source.innerHTML = options;
+      target.innerHTML = options;
+      if (nodeById(oldSource)) source.value = oldSource;
+      if (nodeById(oldTarget)) target.value = oldTarget;
+    }
+
+    function renderDetails() {
+      const details = document.getElementById("details");
+      const idInput = document.getElementById("nodeId");
+      const gateInput = document.getElementById("nodeGate");
+      const actInput = document.getElementById("nodeActivation");
+      if (selectedKind === "node") {
+        const node = nodeById(selected);
+        idInput.disabled = false;
+        gateInput.disabled = false;
+        actInput.disabled = false;
+        idInput.value = node.id;
+        gateInput.value = fmt(node.gate);
+        actInput.value = fmt(node.activation);
+        details.textContent = JSON.stringify(node, null, 2);
+      } else if (selectedKind === "edge") {
+        const edge = current.edges[selected];
+        idInput.disabled = true;
+        gateInput.disabled = true;
+        actInput.disabled = true;
+        idInput.value = "";
+        gateInput.value = "";
+        actInput.value = "";
+        details.textContent = JSON.stringify(edge, null, 2);
+      } else {
+        idInput.disabled = true;
+        gateInput.disabled = true;
+        actInput.disabled = true;
+        idInput.value = "";
+        gateInput.value = "";
+        actInput.value = "";
+        details.textContent = "Select a node or edge.";
+      }
+    }
+
+    function updateSelectedNode(field, value) {
+      if (selectedKind !== "node") return;
+      const node = nodeById(selected);
+      if (!node) return;
+      if (field === "id") {
+        const next = String(value).trim();
+        if (!next || (next !== node.id && nodeById(next))) return;
+        current.edges.forEach(e => {
+          if (e.source === node.id) e.source = next;
+          if (e.target === node.id) e.target = next;
+        });
+        if (positions.has(node.id)) {
+          positions.set(next, positions.get(node.id));
+          positions.delete(node.id);
+        }
+        if (current.roots) current.roots = current.roots.map(id => id === node.id ? next : id);
+        node.id = next;
+        selected = next;
+      } else {
+        node[field] = Math.max(0, Math.min(1, Number(value)));
+      }
+      render();
+    }
+
+    function addNode() {
+      let i = current.nodes.length + 1;
+      let id = `node_${i}`;
+      while (nodeById(id)) id = `node_${++i}`;
+      const n = { id, type: "object", class: "ObjectNode", activation: 0, gate: 1, children: [], pattern: [1,1,1], pattern_name: "universal", orientation: "vertical", dynamic: false };
+      current.nodes.push(n);
+      const { w, h } = graphSize();
+      positions.set(id, { x: w / 2, y: h / 2 });
+      selected = id;
+      selectedKind = "node";
+      render();
+    }
+
+    function deleteSelected() {
+      if (selectedKind === "node") {
+        current.nodes = current.nodes.filter(n => n.id !== selected);
+        current.edges = current.edges.filter(e => e.source !== selected && e.target !== selected);
+        if (current.roots) current.roots = current.roots.filter(id => id !== selected);
+        positions.delete(selected);
+      } else if (selectedKind === "edge") {
+        current.edges.splice(selected, 1);
+      }
+      selected = null;
+      selectedKind = null;
+      render();
+    }
+
+    function addEdge(type) {
+      const source = document.getElementById("edgeSource").value;
+      const target = document.getElementById("edgeTarget").value;
+      if (!source || !target || source === target) return;
+      current.edges.push({ source, target, type });
+      if (type === "solid") {
+        const parent = nodeById(source);
+        if (parent && !parent.children.includes(target)) parent.children.push(target);
+      }
+      render();
+    }
+
+    function propagateDashed() {
+      const incoming = new Map();
+      current.edges.filter(e => e.type === "dashed").forEach(e => {
+        if (!incoming.has(e.target)) incoming.set(e.target, []);
+        const src = nodeById(e.source);
+        if (src) incoming.get(e.target).push(Number(src.activation) || 0);
+      });
+      for (const [target, values] of incoming.entries()) {
+        const node = nodeById(target);
+        if (!node || values.length === 0) continue;
+        const gate = values.reduce((a, b) => a + b, 0) / values.length;
+        node.gate = gate;
+        if (node.type === "input" || node.type === "return") node.activation = gate;
+      }
+      render();
+    }
+
+    function averageChildren() {
+      const solid = current.edges.filter(e => e.type === "solid");
+      for (let pass = 0; pass < current.nodes.length; pass++) {
+        current.nodes.forEach(n => {
+          const children = solid.filter(e => e.source === n.id).map(e => nodeById(e.target)).filter(Boolean);
+          if (!children.length) return;
+          n.activation = children.reduce((sum, child) => sum + (Number(child.activation) || 0), 0) / children.length;
+          if (n.type === "return") n.gate = n.activation;
+        });
+      }
+      render();
+    }
+
+    function play() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+        document.getElementById("playBtn").textContent = "Play";
+        return;
+      }
+      document.getElementById("playBtn").textContent = "Pause";
+      timer = setInterval(() => {
+        if (frameIndex >= payload.frames.length - 1) {
+          applyFrame(0);
+        } else {
+          applyFrame(frameIndex + 1);
+        }
+      }, 650);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch]));
+    }
+
+    function renderLegend() {
+      const legend = document.getElementById("legend");
+      legend.innerHTML = Object.entries(colors)
+        .map(([name, color]) => `<span><i class="swatch" style="background:${color}"></i>${name}</span>`)
+        .join("");
+    }
+
+    document.getElementById("prevBtn").addEventListener("click", () => applyFrame(frameIndex - 1));
+    document.getElementById("nextBtn").addEventListener("click", () => applyFrame(frameIndex + 1));
+    document.getElementById("playBtn").addEventListener("click", play);
+    document.getElementById("layoutBtn").addEventListener("click", () => { layout(); render(); });
+    document.getElementById("solidToggle").addEventListener("change", render);
+    document.getElementById("dashedToggle").addEventListener("change", render);
+    timeline.addEventListener("input", e => applyFrame(Number(e.target.value)));
+    svg.addEventListener("click", () => { selected = null; selectedKind = null; render(); });
+    document.getElementById("nodeId").addEventListener("change", e => updateSelectedNode("id", e.target.value));
+    document.getElementById("nodeGate").addEventListener("change", e => updateSelectedNode("gate", e.target.value));
+    document.getElementById("nodeActivation").addEventListener("change", e => updateSelectedNode("activation", e.target.value));
+    document.getElementById("addNodeBtn").addEventListener("click", addNode);
+    document.getElementById("deleteBtn").addEventListener("click", deleteSelected);
+    document.getElementById("addSolidBtn").addEventListener("click", () => addEdge("solid"));
+    document.getElementById("addDashedBtn").addEventListener("click", () => addEdge("dashed"));
+    document.getElementById("propagateBtn").addEventListener("click", propagateDashed);
+    document.getElementById("averageBtn").addEventListener("click", averageChildren);
+    window.addEventListener("resize", () => { layout(); render(); });
+
+    renderLegend();
+    layout();
+    render();
+  </script>
+</body>
+</html>

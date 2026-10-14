@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>@@TITLE@@</title>
+  <style>
+@@STYLE@@  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1 id="title"></h1>
+        <div class="meta" id="frameMeta"></div>
+      </div>
+    </header>
+    <main>
+      <svg id="graph" role="img" aria-label="Concept graph visualization">
+        <defs>
+          <marker id="arrowSolid" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#475569"></path>
+          </marker>
+          <marker id="arrowDashed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#818cf8"></path>
+          </marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="nodes"></g>
+        <g id="marquee"></g>
+      </svg>
+    </main>
+    <aside>
+      <div class="toolbar">
+        <button id="prevBtn" title="Previous recorded state">Prev</button>
+        <button id="playBtn" class="primary" title="Replay recorded states">Play</button>
+        <button id="nextBtn" title="Next recorded state">Next</button>
+        <input id="timeline" class="timeline" type="range" min="0" max="0" value="0">
+        <label><input id="solidToggle" type="checkbox" checked> solid</label>
+        <label><input id="dashedToggle" type="checkbox" checked> dashed</label>
+        <label><input id="floatToggle" type="checkbox"> auto layout</label>
+        <label><input id="freeToggle" type="checkbox" checked> free</label>
+        <label><input id="labviewToggle" type="checkbox"> LabVIEW</label>
+        <label class="icon-size-control" title="LabVIEW icon size">
+          icon
+          <input id="iconSizeSlider" type="range" min="70" max="135" step="5" value="95">
+          <span id="iconSizeValue">95%</span>
+        </label>
+        <button id="modeSelectBtn" title="Select and drag nodes">Select</button>
+        <label class="node-create-control" title="Choose what the Add button creates">
+          <select id="addAction" aria-label="Add action">
+            <optgroup label="Node">
+              <option value="node:object">object node</option>
+              <option value="node:input">input node</option>
+              <option value="node:return">output node</option>
+              <option value="node:parallel">parallel node</option>
+              <option value="node:serial">serial node</option>
+              <option value="node:body">body node</option>
+              <option value="node:plan">plan node</option>
+            </optgroup>
+            <optgroup label="Edge">
+              <option value="solid">solid edge</option>
+              <option value="dashed">dashed edge</option>
+            </optgroup>
+          </select>
+        </label>
+        <button id="addBtn" title="Add the selected node type, or enter the selected edge-creation mode">Add</button>
+        <button id="removeBtn" class="danger" title="Remove selected node or edge">Remove</button>
+        <button id="layoutBtn" title="Reset node positions">Layout</button>
+      </div>
+      <!-- Selection card -->
+      <div class="card">
+        <div class="card-title">Node / Edge</div>
+        <div class="stack">
+          <div class="row"><label for="nodeId">id</label><input id="nodeId" type="text"></div>
+          <div class="row"><label for="nodeType">type</label>
+            <select id="nodeType">
+              <option value="object">object</option>
+              <option value="input">input</option>
+              <option value="return">output</option>
+              <option value="parallel">parallel</option>
+              <option value="serial">serial</option>
+              <option value="body">body</option>
+              <option value="plan">plan</option>
+            </select>
+          </div>
+          <div class="row"><label for="nodeIcon">icon</label>
+            <select id="nodeIcon"></select>
+          </div>
+          <div class="row"><label for="nodeIconFile">sprite</label><input id="nodeIconFile" type="file" accept="image/*"></div>
+          <button id="clearIconSpriteBtn" title="Remove custom sprite from selected node">Clear Sprite</button>
+          <div class="row"><label for="nodeGate">gate</label><input id="nodeGate" type="number" min="0" max="1" step="0.01"></div>
+          <div class="row"><label for="nodeActivation">activation</label><input id="nodeActivation" type="number" min="0" max="1" step="0.01"></div>
+          <div id="pixelPreviewRow" class="hidden" style="margin-top:6px">
+            <div class="card-title" style="margin-bottom:8px">Field values</div>
+            <div id="pixelPreview" class="pixel-preview"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Field window card -->
+      <div id="fieldPanel" class="card hidden">
+        <div class="card-title" id="fieldPanelTitle">Field Window</div>
+        <div class="stack">
+          <div id="trigramPalette" class="trigram-palette"></div>
+          <textarea id="fieldEditor" spellcheck="false"></textarea>
+          <button id="applyFieldBtn">Apply Field</button>
+          <div class="note" id="fieldNote">Browser snapshot only — does not call Python evaluate().</div>
+        </div>
+      </div>
+
+      <!-- Object pattern card -->
+      <div id="objectPatternPanel" class="card hidden">
+        <div class="card-title">Object Pattern</div>
+        <div class="stack">
+          <div id="patternTrigramPalette" class="trigram-palette"></div>
+          <div class="row"><label for="patternName">name</label><input id="patternName" type="text"></div>
+          <div class="row"><label for="patternEditor">pattern</label><input id="patternEditor" type="text" placeholder="1 0 0"></div>
+          <div class="row"><label for="orientationEditor">orient</label>
+            <select id="orientationEditor">
+              <option value="vertical">vertical</option>
+              <option value="horizontal">horizontal</option>
+            </select>
+          </div>
+          <label style="margin:2px 0"><input id="dynamicEditor" type="checkbox" style="width:auto"> dynamic</label>
+          <button id="applyPatternBtn">Apply Pattern</button>
+          <div class="note" id="patternNote">Applied across replay frames in browser.</div>
+        </div>
+      </div>
+
+      <!-- Simulation card -->
+      <div class="card">
+        <div class="card-title">Client Simulation</div>
+        <div class="stack">
+          <button id="scanBtn">Scan Input Siblings</button>
+          <button id="propagateBtn">Propagate Dashed Gates</button>
+          <button id="averageBtn">Average Children</button>
+          <div class="note" id="simNote">Lightweight browser feedback only.</div>
+        </div>
+      </div>
+
+      <!-- Export card -->
+      <div class="card">
+        <div class="card-title">Export Structure</div>
+        <div class="stack">
+          <div class="row"><label for="exportFormat">format</label>
+            <select id="exportFormat">
+              <option value="tree">tree</option>
+              <option value="python">python code</option>
+              <option value="json">json</option>
+            </select>
+          </div>
+          <button id="copyExportBtn">Copy Export</button>
+          <pre id="structureExport"></pre>
+        </div>
+      </div>
+
+      <!-- Legend card -->
+      <div class="card">
+        <div class="card-title">Legend</div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <!-- Code view card -->
+      <div class="card">
+        <div class="card-title">Code View</div>
+        <pre id="details">Select a node or edge.</pre>
+      </div>
+    </aside>
+  </div>
+  <script id="lot-data" type="application/json">@@DATA@@</script>
+  <script>
+@@SCRIPT@@  </script>
+</body>
+</html>
