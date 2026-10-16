@@ -86,6 +86,39 @@ left-to-right, like trigram bands) and takes the **mean** of the children's
 scores. Partial matches therefore still count; this is deliberate, not an
 AND.
 
+### Imagined evaluation
+
+Without a field, every node of an imagined subtree is still evaluated on
+every step. Dashed loops inside a body therefore change its content over time
+while it stays the same body, and bodies nested under plans or serial nodes
+move. (`embodied_lot.EVALUATE_IMAGINED_SUBTREES`; `False` reproduces an
+earlier shortcut.)
+
+### Ludo dynamics (grid world)
+
+By default (`graph.dynamics = "ludo"`; "legacy" keeps the original step),
+`step()` runs a board-game grid world:
+- observers (dashed sources, including parents) perceive the imagined scene
+  drawn on the previous tick, within their own grid region;
+- every dashed effect takes one tick, for leaf and group targets alike;
+- a dynamic trigram that is on (strictly above 0.5) sends each body in its
+  own region one whole-cell movement order (each time a body walks in, it
+  gets another), carried out one cell at a time at a
+  rate set by its activation;
+- cells nobody draws are unknown (0.5); imagined yin bands are known yin (0);
+- motion runs from a trigram's figure side across (top/H* moves left), and
+  a dynamic template turns its content to face its motion instead of moving
+  anything (nested turns add up, and observers and motion inside turned
+  content turn with it);
+- a body starts centred in the region its place in the tree gives it (bodies
+  are written `body[h,w,speed]`; nobody sets their position).
+
+`python -m grace_lot.analysis.ludo_traces` builds an interactive explainer
+(`results/ludo_viz/ludo.html`).
+
+Bodies can therefore be driven back and forth by observers that watch them.
+See HANDOFF.md (item 10).
+
 ### Evaluation
 
 `evaluate()` is stateless:
@@ -149,6 +182,23 @@ exploratory; they do not mutate the original Python graph.
 To change the page, edit the plain files in `visualizer/`. `visualize_lot.py`
 only inserts the title and the graph data. `viewer.js` contains a JavaScript
 copy of the evaluator, which has to be kept in step with `embodied_lot.py`.
+
+## GRACE locomotion pipeline
+
+`grace_lot/` tests whether LoT programs inferred from human locomotion videos
+(the GRACE database) predict human similarity judgments. The stages are kept
+separate and each is configured in `configs/grace_poc.toml`:
+
+| Package | Stage |
+| --- | --- |
+| `grace_lot/grace/` | video -> MediaPipe pose -> normalised skeleton -> T x H x W field sequence |
+| `grace_lot/lot_adapter/` | program trees, `lot_trajectory` rollouts, distances, program similarity |
+| `grace_lot/inference/` | grammar, prior, likelihood, MH proposals, sampler |
+| `grace_lot/analysis/` | human matrix, kinematic baselines, RSA, ablations, plots |
+
+The design is in `docs/grace_proposal.md` and the first results are in
+`docs/grace_results.md`. The raw videos, caches and results are gitignored.
+The only change to the core is an opt-in `render_output(..., place_bodies=True)`.
 
 ## Historical Material
 

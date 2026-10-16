@@ -1,0 +1,6 @@
+# Extra packages for the GRACE x LoT pipeline (grace_lot/). The core LoT needs only numpy.
+numpy
+mediapipe        # pose estimation (Pose Landmarker heavy; model file in data/models/)
+opencv-python    # video reading and skeleton rasterisation
+scipy            # Spearman correlations
+matplotlib       # figures

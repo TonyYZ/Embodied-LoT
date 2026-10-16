@@ -19,8 +19,8 @@ from trigrams import BOTTOM, TOP, UNIVERSAL, VOID, V, Orientation
 
 class DashedGateSemanticsTests(unittest.TestCase):
     def test_body_motion_respects_template_axis(self):
-        for orientation, velocity in [(V, (-0.05, 0.0)),
-                                      (Orientation.HORIZONTAL, (0.0, -0.05))]:
+        for orientation, velocity in [(V, (-0.05, 0.0)),                    # bottom moves up,
+                                      (Orientation.HORIZONTAL, (0.0, 0.05))]:   # and right: away from its figure
             with self.subTest(orientation=orientation):
                 body = BodyNode("body", position=(0.5, 0.5),
                                 extent=(0.2, 0.2), step_size=0.1)
@@ -32,7 +32,7 @@ class DashedGateSemanticsTests(unittest.TestCase):
                 np.testing.assert_allclose(body.position, np.array([0.5, 0.5]) + velocity)
                 field = ReceptiveField(np.arange(16).reshape(4, 4) / 16)
                 sub = body._motion_subfield(template, field)
-                expected = field.activation[:2, :] if orientation == V else field.activation[:, :2]
+                expected = field.activation[:2, :] if orientation == V else field.activation[:, 2:]
                 np.testing.assert_allclose(sub.activation, expected)
 
     def test_opposing_half_motions_do_not_translate_body(self):
@@ -134,6 +134,29 @@ class DashedGateSemanticsTests(unittest.TestCase):
             graph.derived_fields((3, 3))["parallel"].activation,
             [[0.75, 0.75, 0.75], [0.25, 0.25, 0.25], [0.25, 0.25, 0.25]],
         )
+
+
+class EmptyFieldTests(unittest.TestCase):
+    def test_strips_thinner_than_a_pixel_scan_to_zero(self):
+        # On a 9-wide field, a 4-way split nested in a 4-way split yields
+        # zero-width strips: widths (2, 2, 3, 2), then (0, 1, 1, 0) inside each 2.
+        H = Orientation.HORIZONTAL
+        outer = SerialNode("outer", H)
+        for i in range(4):
+            inner = SerialNode(f"inner{i}", H)
+            for j in range(4):
+                plan = PlanNode(f"plan{i}{j}")
+                plan.children = [ObjectNode(f"t{i}{j}", TOP), ObjectNode(f"c{i}{j}", UNIVERSAL)]
+                inner.children.append(plan)
+            outer.children.append(inner)
+
+        activation = outer.evaluate(ReceptiveField.uniform(9, 9, 1.0))
+
+        self.assertTrue(np.isfinite(activation))
+        empty = outer.children[0].children[0]
+        self.assertEqual(ReceptiveField.uniform(9, 9).band(0, 4, H).band(0, 4, H).width, 0)
+        self.assertEqual(empty.activation, 0.0)
+        self.assertGreater(outer.children[0].children[1].activation, 0.0)
 
 
 if __name__ == "__main__":

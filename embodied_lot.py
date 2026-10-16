@@ -26,7 +26,6 @@ that ask for it, such as a ``VOID`` plan template, use that complement.
 from __future__ import annotations
 
 import warnings
-from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from enum import Enum
 from typing import Dict, Iterator, List, Optional, Set, Tuple
@@ -89,6 +88,98 @@ TRIGRAM_MOTION: Dict[str, Tuple[Tuple, Tuple]] = {
 }
 
 
+# Imagined (field-free) evaluation reaches every node of a subtree on every step, so dashed
+# loops and dynamic trigrams anywhere inside bodies, plans and serial nodes are live. Set to
+# False to reproduce the earlier shortcut, where a plan/body copied its last child's gate
+# without evaluating it, and a SerialNode without a field returned 0 without evaluating its
+# children. Nothing changes when a field is present.
+EVALUATE_IMAGINED_SUBTREES = True
+
+# Temporal dynamics used by ``ConceptGraph.step()``:
+#   "legacy"  the original step: bodies drift along their first dynamic trigram, and
+#             imagined dashed targets update within the same step.
+#   "ludo"    a board-game grid world (see ``ConceptGraph._step_ludo``):
+#             * observers perceive the previous tick's imagery in their own grid region and are
+#               not drawn. An observer is any node that is a dashed-edge source but not a dashed
+#               target (or a leaf with an input window). A parent observer perceives the pattern
+#               its children form, read the way its type composes them (serial strips, parallel
+#               pooling, plan template, body window); its whole subtree is its perceptual pattern;
+#             * every dashed effect takes one tick: gates set at tick t act from tick t+1,
+#               whether the target is a leaf or a whole group;
+#             * when an imagined dynamic trigram switches on (activation crosses
+#               ONSET_THRESHOLD, strictly), it issues one movement order to every body whose
+#               window overlaps its own region (strip or body window), wherever the body
+#               sits in the tree. While it stays on, a body that enters its region (again) gets
+#               one order too; a body that stays inside gets no more. An order is one body extent in whole cells,
+#               in its trigram direction, carried out at step_size x activation cells per tick.
+#               Orders add up; bodies move one cell at a time and stay on the grid.
+DEFAULT_DYNAMICS = "ludo"
+ONSET_THRESHOLD = 0.5
+
+# A structure node's gate scales its whole composite: its own activation, the weight its
+# subtree is drawn with, and (ludo) the effective activation of motion leaves beneath it.
+# A plan template's gate keeps its separate role as the template probability p. With False,
+# structure gates are ignored as before (they only mattered as plan templates).
+GATE_STRUCTURES = True
+
+# What an undrawn cell means in rendered imagery. With True, a cell nobody draws is unknown
+# (0.5). Imagined yang bands pull it towards 1 and imagined yin bands towards 0 (known yin);
+# a neutral bit (0.5) and a dynamic (motion) trigram draw nothing. Yang and yin paint are pooled separately by noisy-OR
+# (Y, N) and the cell is 0.5 + 0.5 * (Y - N). Observers are unaffected: they score only their
+# yang bands, so their yin bands act as masks. With False (the earlier renderer), undrawn
+# cells are 0 and yin bands paint half strength into the same noisy-OR as yang.
+UNKNOWN_BACKGROUND = True
+
+# Where a body starts. With True, nobody specifies body positions: ``reset_gates()`` centres
+# every body in the region its place in the tree gives it (its serial strip, its parent body's
+# window, or the whole field), and any position passed to ``BodyNode`` is overwritten. Extent
+# and step size stay parameters. With False, bodies keep the position they were built with.
+TREE_PLACED_BODIES = True
+
+# Motion runs from a dynamic trigram's figure side across to the background, on both axes:
+# top/V* moves down, bottom/V* up, top/H* left, bottom/H* right. With False, horizontal motion
+# keeps the earlier mirrored sign (top/H* moved right, towards its figure).
+MOTION_AWAY_FROM_FIGURE = True
+
+# A dynamic template orients its content instead of selecting part of the field. Each dynamic
+# leaf in the template gives a direction (its motion), and the content's "up" is turned to
+# face it: a serial template gives one oriented slot per strip; any other template (a leaf,
+# parallel, plan, body) gives one slot over its region, facing the sum of its dynamic leaves'
+# directions. Diagonals become stair-stepped cell bands. As for static templates, the content
+# is oriented with probability p (the template's gate) and used unchanged with 1 - p. Dynamic
+# leaves inside templates give orientation only: in ludo they issue no movement orders.
+# With False, a dynamic template selects the half of the field in its motion direction.
+ORIENTING_TEMPLATES = True
+
+
+def _sg(node) -> float:
+    """The gate a structure applies to its composite (1 when GATE_STRUCTURES is off)."""
+    return node.gate if GATE_STRUCTURES else 1.0
+
+
+def _compose(yang_complement: np.ndarray, yin_complement: np.ndarray) -> np.ndarray:
+    """A rendered field from the noisy-OR complements of yang and yin paint."""
+    if UNKNOWN_BACKGROUND:
+        return np.clip(0.5 + 0.5 * (yin_complement - yang_complement), 0.0, 1.0)
+    return np.clip(1.0 - yang_complement, 0.0, 1.0)
+
+
+def unknown_value() -> float:
+    """What "not known yet" reads as: 0.5, or 0 with the earlier renderer."""
+    return 0.5 if UNKNOWN_BACKGROUND else 0.0
+
+
+def blank_board(shape: Tuple[int, int]) -> np.ndarray:
+    """A field with nothing drawn on it: every cell unknown."""
+    return np.full(shape, unknown_value())
+
+
+def _clamp(x, lo: float = 0.0, hi: float = 1.0) -> float:
+    """Scalar clip to [lo, hi]: the same as float(np.clip(x, lo, hi)), but about 10x faster."""
+    x = float(x)
+    return lo if x < lo else hi if x > hi else x
+
+
 def trigram_symbol(pattern: tuple) -> str:
     """Trigram name for a 3-band pattern, or '' for anything else."""
     return _TRIGRAM_NAMES.get(pattern, "")
@@ -119,6 +210,131 @@ def is_empty(region: Region) -> bool:
     return r1 <= r0 or c1 <= c0
 
 
+def _orientation_map(region: Region, v: Tuple[float, float]):
+    """Which cell of the content's own upright frame each cell of ``region`` shows.
+
+    The content's up points along ``v = (dy, dx)`` (numpy axes; (-1, 0) is upright). The frame
+    is the region's extent along and across ``v``; each region cell, taken at its centre, falls
+    in one frame cell. Returns ``(Hc, Wc, rows, cols, (uy, ux, ry, rx))``: the frame size, the
+    frame cell of every region cell, and the frame's up and right axes in the region.
+    """
+    r0, r1, c0, c1 = region
+    h, w = r1 - r0, c1 - c0
+    norm = float(np.hypot(*v))
+    uy, ux = v[0] / norm, v[1] / norm
+    ry, rx = ux, -uy                                   # the content's right: up turned clockwise
+    Y, X = np.meshgrid(np.arange(h) + 0.5 - h / 2, np.arange(w) + 0.5 - w / 2, indexing="ij")
+    Hf, Wf = abs(uy) * h + abs(ux) * w, abs(ry) * h + abs(rx) * w
+    Hc, Wc = max(1, round(Hf)), max(1, round(Wf))
+    rows = np.clip(np.floor((-(Y * uy + X * ux) + Hf / 2) / Hf * Hc), 0, Hc - 1).astype(int)
+    cols = np.clip(np.floor((Y * ry + X * rx + Wf / 2) / Wf * Wc), 0, Wc - 1).astype(int)
+    return Hc, Wc, rows, cols, (uy, ux, ry, rx)
+
+
+def _orient_field(field: "ReceptiveField", region: Region, v: Tuple[float, float]) -> "ReceptiveField":
+    """``field`` inside ``region`` seen in the content's upright frame (facing ``v``).
+
+    Each frame cell averages the region cells that fall in it; a frame cell no region cell
+    falls in (a corner of a diagonal frame) reads as unknown. Motion vectors are turned too.
+    """
+    Hc, Wc, rows, cols, (uy, ux, ry, rx) = _orientation_map(region, v)
+    r0, r1, c0, c1 = region
+    total, count = np.zeros((Hc, Wc)), np.zeros((Hc, Wc))
+    np.add.at(total, (rows, cols), field.activation[r0:r1, c0:c1])
+    np.add.at(count, (rows, cols), 1.0)
+    activation = np.where(count > 0, total / np.maximum(count, 1.0), unknown_value())
+    motion = None
+    if field.motion is not None:
+        m = field.motion[r0:r1, c0:c1]
+        motion = np.zeros((Hc, Wc, 2))
+        np.add.at(motion[..., 0], (rows, cols), -(m[..., 0] * uy + m[..., 1] * ux))
+        np.add.at(motion[..., 1], (rows, cols), m[..., 0] * ry + m[..., 1] * rx)
+        motion /= np.maximum(count, 1.0)[..., None]
+    return ReceptiveField(activation, motion)     # its own root: nested bodies carve from the frame
+
+
+def _view_field(board: "ReceptiveField", chain, rect: Region) -> "ReceptiveField":
+    """The board seen through a view: carried into each turned frame of ``chain``, then cropped to ``rect``."""
+    field = board
+    for slot, v in chain:
+        field = _orient_field(field, slot, v)
+    return field.subfield(*rect)
+
+
+def _view_mask(shape: Tuple[int, int], chain, rect: Region) -> np.ndarray:
+    """The board cells a view covers: those whose place in the last frame of ``chain`` falls in ``rect``."""
+    R, C = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]), indexing="ij")
+    ok = np.ones(shape, dtype=bool)
+    for (r0, r1, c0, c1), v in chain:
+        ok &= (R >= r0) & (R < r1) & (C >= c0) & (C < c1)
+        _, _, rows, cols, _ = _orientation_map((r0, r1, c0, c1), v)
+        R2, C2 = np.zeros_like(R), np.zeros_like(C)
+        R2[ok], C2[ok] = rows[R[ok] - r0, C[ok] - c0], cols[R[ok] - r0, C[ok] - c0]
+        R, C = R2, C2
+    r0, r1, c0, c1 = rect
+    return ok & (R >= r0) & (R < r1) & (C >= c0) & (C < c1)
+
+
+def _view_turn(chain, vector: Tuple[float, float]) -> Tuple[float, float]:
+    """A direction in a view's last frame, expressed on the board (each frame's turn applied outwards)."""
+    fy, fx = vector
+    for _, v in reversed(chain):
+        norm = float(np.hypot(*v))
+        uy, ux = v[0] / norm, v[1] / norm
+        ry, rx = ux, -uy
+        fy, fx = -fy * uy + fx * ry, -fy * ux + fx * rx    # frame rows run along -up, columns along right
+    return fy, fx
+
+
+def _view_unturn(chain, vector: Tuple[float, float]) -> Tuple[float, float]:
+    """A direction on the board, expressed in a view's last frame (the inverse of ``_view_turn``)."""
+    by, bx = vector
+    for _, v in chain:
+        norm = float(np.hypot(*v))
+        uy, ux = v[0] / norm, v[1] / norm
+        ry, rx = ux, -uy
+        by, bx = -(by * uy + bx * ux), by * ry + bx * rx
+    return by, bx
+
+
+def _frame_shape(chain, shape: Tuple[int, int]) -> Tuple[int, int]:
+    """The size in cells of a view's last frame (the board when the chain is empty)."""
+    if not chain:
+        return shape
+    Hc, Wc, *_ = _orientation_map(*chain[-1])
+    return Hc, Wc
+
+
+def _has_dynamic(node: "Node") -> bool:
+    return any(isinstance(n, ObjectNode) and n.is_dynamic for n in walk(node))
+
+
+def orient_slots(template: "Node", region: Region) -> List[Tuple[Region, Optional[Tuple[float, float]]]]:
+    """Where a template puts its content, and which way the content faces there.
+
+    Returns ``(slot, direction)`` pairs; direction None means upright. Static parts give the
+    usual slots (a leaf's yang bands, a serial's strips). A dynamic leaf, or any non-serial
+    structure, gives one slot over its region facing the sum of its dynamic leaves' motions.
+    """
+    if isinstance(template, ObjectNode) and not template.is_dynamic:
+        bands = [band_region(region, i, template.n_bands, template.orientation)
+                 for i, bit in enumerate(template.pattern) if bit > 0]
+        return [(b, None) for b in bands if not is_empty(b)]
+    if isinstance(template, SerialNode):
+        kids = content_children(template)
+        slots: List[Tuple[Region, Optional[Tuple[float, float]]]] = []
+        for i, child in enumerate(kids):
+            strip = band_region(region, i, len(kids), template.split_orientation)
+            slots.extend(orient_slots(child, strip) or [(strip, None)])
+        return slots
+    dy = dx = 0.0
+    for n in walk(template):
+        if isinstance(n, ObjectNode) and n.is_dynamic:
+            my, mx = BodyNode._template_motion(n)
+            dy, dx = dy + my, dx + mx
+    return [(region, None if abs(dy) < 1e-12 and abs(dx) < 1e-12 else (dy, dx))]
+
+
 # ============================================================
 # 3. Receptive field
 # ============================================================
@@ -141,7 +357,8 @@ class ReceptiveField:
     ) -> None:
         if activation.ndim != 2:
             raise ValueError("activation must be 2-D (H, W).")
-        if not (0 <= activation.min() and activation.max() <= 1 + 1e-6):
+        # A band thinner than one pixel gives an empty field, which scans to 0.
+        if activation.size and not (0 <= activation.min() and activation.max() <= 1 + 1e-6):
             warnings.warn("Clipping activation values to [0, 1].")
         self.activation = np.clip(activation, 0.0, 1.0).astype(float)
         self.motion = motion
@@ -242,8 +459,13 @@ class DashedEdge(_Edge):
 # 5. Nodes
 # ============================================================
 
-class Node(ABC):
-    """Base node: an activation in [0, 1], a gate (default 1), and solid children."""
+class Node:
+    """Base node: an activation in [0, 1], a gate (default 1), and solid children.
+
+    Subclasses must define ``evaluate``. (This is a plain class rather than an
+    ABC because ``isinstance`` against ABCs is several times slower, and the
+    evaluator calls it constantly.)
+    """
 
     node_type: str = "node"
 
@@ -253,9 +475,9 @@ class Node(ABC):
         self.gate: float = 1.0
         self.children: List["Node"] = []
 
-    @abstractmethod
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         """Compute and store this node's activation. ``field`` is None when there is no field context."""
+        raise NotImplementedError(f"{type(self).__name__} must define evaluate()")
 
     @property
     def yin_activation(self) -> float:
@@ -288,7 +510,7 @@ class InputNode(Node):
                  modality: Optional[str] = None, initial_weight: float = 1.0) -> None:
         super().__init__(node_id)
         self.field = field
-        self.gate = float(np.clip(initial_weight, 0.0, 1.0))
+        self.gate = _clamp(initial_weight)
         self.activation = self.gate
         if modality is not None:
             self.modality = modality
@@ -393,7 +615,7 @@ class ObjectNode(Node):
 
 # ---- Structure nodes ------------------------------------------------------
 
-class StructureNode(Node, ABC):
+class StructureNode(Node):
     """A node that combines its children's activations."""
 
 
@@ -431,12 +653,13 @@ class ParallelNode(StructureNode):
             acts = [a for a in (s.evaluate(None) for s in scanners) if a > 0]
             result = float(np.mean(acts)) if acts else 0.0
         elif not scanners:
-            result = float(np.clip(sum(w for _, w in pooled) / len(pooled), 0.0, 1.0))
+            result = _clamp(sum(w for _, w in pooled) / len(pooled))
         else:
             total_w = sum(w for _, w in pooled)
             scores = [sum(w * s.evaluate(f) for f, w in pooled) / total_w for s in scanners]
-            result = float(np.clip(np.mean(scores), 0.0, 1.0))
+            result = _clamp(np.mean(scores))
 
+        result *= _sg(self)
         for out in outputs:
             out.gate, out.activation = 1.0, result
         self.activation = result
@@ -449,7 +672,8 @@ class SerialNode(StructureNode):
     The mean is intentional: a partial match still counts. Strips are read
     like bands, so for vertical splits children[0] is the bottom strip and
     for horizontal splits children[0] is the left strip. "A above B" is
-    therefore ``[B, A]`` with a vertical split. With no field the activation is 0.
+    therefore ``[B, A]`` with a vertical split. With no field (imagined), every child is
+    evaluated field-free and the activation is their mean (see EVALUATE_IMAGINED_SUBTREES).
     """
 
     node_type = "serial"
@@ -463,13 +687,17 @@ class SerialNode(StructureNode):
         return field.band(i, n, self.split_orientation)
 
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        if field is None and self.children and EVALUATE_IMAGINED_SUBTREES:
+            # Imagined: no field to split into strips; evaluate every child and average.
+            self.activation = float(np.mean([child.evaluate(None) for child in self.children])) * _sg(self)
+            return self.activation
         if not self.children or field is None:
             self.activation = 0.0
             return 0.0
         n = len(self.children)
         self.activation = float(np.mean(
             [child.evaluate(self._make_strip(field, i, n)) for i, child in enumerate(self.children)]
-        ))
+        )) * _sg(self)
         return self.activation
 
 
@@ -484,7 +712,8 @@ class BodyNode(StructureNode):
         activation = p * mean(content on template's yang bands)
                    + (1 - p) * content on the whole window
 
-    With no field this becomes ``(1 - p) * content.gate``, which is how a
+    With no field this becomes ``(1 - p) * content``, where the content is
+    evaluated field-free (an imagined leaf returns its gate). This is how a
     ``VOID`` template blocks its content (the explicit yin reading).
 
     ``ConceptGraph.step()`` then calls ``update_motion()``. That moves the
@@ -506,6 +735,7 @@ class BodyNode(StructureNode):
         self.velocity = list(velocity)
         self.step_size = None if step_size is None else float(step_size)
         self.subfield_shape = subfield_shape   # used by PlanNode only
+        self.orders: List[list] = []             # ludo: [axis, direction, cells left, rate, credit, leaf id]
         self._grid: Optional[np.ndarray] = None
 
     # -- window --------------------------------------------------------
@@ -524,7 +754,10 @@ class BodyNode(StructureNode):
             return None
         self._ensure_support_from_field(field)
         root = ReceptiveField(field._root_activation, field._root_motion)
-        H, W = root.shape
+        return root.subfield(*self.window(*root.shape))
+
+    def window(self, H: int, W: int) -> Region:
+        """The body's rectangle in an H x W root field, clamped to the field edges."""
         cy, cx = self.position
         eh, ew = self.extent
         h_px, w_px = max(1, round(eh * H)), max(1, round(ew * W))
@@ -533,7 +766,7 @@ class BodyNode(StructureNode):
         r1, c1 = min(H, r0 + h_px), min(W, c0 + w_px)
         if r1 <= r0: r1 = min(H, r0 + 1)
         if c1 <= c0: c1 = min(W, c0 + 1)
-        return root.subfield(r0, r1, c0, c1)
+        return r0, r1, c0, c1
 
     # -- motion --------------------------------------------------------
 
@@ -547,7 +780,9 @@ class BodyNode(StructureNode):
         directions, magnitudes = TRIGRAM_MOTION.get(
             PATTERN_TO_NAME.get(template.pattern), ((0, 0), (0, 0)))
         motion = float(np.mean(np.asarray(directions) * np.asarray(magnitudes)))
-        return (motion, 0.0) if template.orientation == Orientation.VERTICAL else (0.0, motion)
+        if template.orientation == Orientation.VERTICAL:
+            return motion, 0.0                 # bands count up, rows count down: away from the figure
+        return 0.0, (-motion if MOTION_AWAY_FROM_FIGURE else motion)
 
     def update_motion(self) -> None:
         """Set the velocity from the first dynamic trigram, then move and clamp the centre inside the field."""
@@ -568,8 +803,8 @@ class BodyNode(StructureNode):
             return
         for axis in (0, 1):
             half = self.extent[axis] / 2
-            self.position[axis] = float(np.clip(
-                self.position[axis] + self.velocity[axis], half, 1.0 - half))
+            self.position[axis] = _clamp(
+                self.position[axis] + self.velocity[axis], half, 1.0 - half)
 
     # -- replacement rule ----------------------------------------------
 
@@ -592,21 +827,29 @@ class BodyNode(StructureNode):
     def _plan_activate(self, children: List[Node], field: Optional[ReceptiveField]) -> float:
         """Apply the replacement rule recursively: ``children[0]`` is a template and the rest is the plan's content."""
         if len(children) == 1:
-            if field is None:
+            if field is None and not EVALUATE_IMAGINED_SUBTREES:
                 children[0].activation = children[0].gate
                 return children[0].gate
-            return children[0].evaluate(field)
+            return children[0].evaluate(field)      # imagined leaves return their gate
 
         template, rest = children[0], children[1:]
-        p = float(np.clip(template.gate, 0.0, 1.0))
+        p = _clamp(template.gate)
         template.evaluate(field)
+        orienting = ORIENTING_TEMPLATES and _has_dynamic(template)
 
         if field is None:
+            if orienting:
+                # Imagined: turning the content does not change it, so both terms are the content.
+                self.activation = self._plan_activate(rest, None)
+                return self.activation
             # Imagined: there is no region to scan, so the yang term is 0.
             self.activation = (1.0 - p) * self._plan_activate(rest, None)
             return self.activation
 
-        if not isinstance(template, ObjectNode):
+        if orienting:
+            subs = [field.subfield(*slot) if v is None else _orient_field(field, slot, v)
+                    for slot, v in orient_slots(template, field.region) if not is_empty(slot)]
+        elif not isinstance(template, ObjectNode):
             subs = [field]
         elif template.is_dynamic:
             subs = [self._motion_subfield(template, field)]
@@ -624,7 +867,7 @@ class BodyNode(StructureNode):
         window = self._carve_subfield(field)
         if self._grid is None and window is not None:
             self._grid = np.zeros(window.shape)
-        self.activation = self._plan_activate(self.children, window)
+        self.activation = self._plan_activate(self.children, window) * _sg(self)
         if window is not None and isinstance(self.children[-1], ObjectNode):
             self._update_grid(self.children[-1])
         return self.activation
@@ -679,6 +922,11 @@ class ConceptGraph:
         self._solid: List[SolidEdge] = []
         self._dashed: List[DashedEdge] = []
         self.root: Optional[Node] = None   # primary root; the default target of add_field_slot()
+        self.dynamics = DEFAULT_DYNAMICS   # "legacy" or "ludo" (see the module constant)
+        self.grid: Tuple[int, int] = (12, 12)   # ludo: the board, in cells
+        self._imagery: Optional[np.ndarray] = None
+        self._prev_act: Dict[str, float] = {}
+        self._inside: Dict[str, set] = {}        # ludo: bodies inside each switched-on motion leaf's region
 
     # -- construction / access ----------------------------------------
 
@@ -768,9 +1016,12 @@ class ConceptGraph:
             parents[edge.target.node_id].append(edge.source)
         return parents
 
-    def _has_input_context(self, node: Node) -> bool:
-        """True if ``node`` is observed: some ancestor ``ParallelNode`` owns an ``InputNode``."""
-        parents = self._parents()
+    def _has_input_context(self, node: Node, parents: Optional[Dict[str, List[Node]]] = None) -> bool:
+        """True if ``node`` is observed: some ancestor ``ParallelNode`` owns an ``InputNode``.
+
+        Pass ``parents`` (from ``_parents()``) when checking many nodes against the same graph.
+        """
+        parents = self._parents() if parents is None else parents
         seen: Set[str] = set()
         stack = list(parents.get(node.node_id, []))
         while stack:
@@ -786,11 +1037,30 @@ class ConceptGraph:
     # -- evaluation ----------------------------------------------------
 
     def reset_gates(self) -> None:
-        """Set every gate back to 1. ``evaluate()`` calls this itself and ``step()`` does not."""
+        """Set every gate back to 1. ``evaluate()`` calls this itself and ``step()`` does not.
+
+        With ``TREE_PLACED_BODIES``, every body is first centred in its tree region (``place_bodies``).
+        In ludo dynamics, dashed targets start unknown (gate ``unknown_value()``, 0.5: not yet
+        conditioned), and pending
+        movement orders, onset memory and imagery are cleared.
+        """
         for node in self._nodes.values():
             node.gate = 1.0
             if isinstance(node, PORTALS):
                 node.activation = 1.0
+        if TREE_PLACED_BODIES:
+            self.place_bodies()
+        if self.dynamics == "ludo":
+            for edge in self._dashed:
+                edge.target.gate = unknown_value()
+                if not isinstance(edge.target, PORTALS):
+                    edge.target.activation = unknown_value()
+            for node in self._nodes.values():
+                if isinstance(node, BodyNode):
+                    node.orders = []
+            self._prev_act = {}
+            self._inside = {}
+            self._imagery = None
 
     def _dashed_topological_order(self) -> List[Node]:
         in_degree: Dict[str, int] = defaultdict(int)
@@ -820,7 +1090,7 @@ class ConceptGraph:
             r.evaluate(None)
         outputs = [n for n in self._nodes.values() if isinstance(n, OutputNode)]
         last = outputs[-1] if outputs else roots[-1]
-        return float(np.clip(last.activation, 0.0, 1.0))
+        return _clamp(last.activation)
 
     def _propagate_dashed(self) -> None:
         """Set each dashed target's gate, in topological order.
@@ -829,16 +1099,19 @@ class ConceptGraph:
         into their activation straight away, so imagined chains propagate in
         one pass. Observed nodes wait for the next scan.
         """
+        if not self._dashed:
+            return
         sources: Dict[str, List[Node]] = defaultdict(list)
         for edge in self._dashed:
             sources[edge.target.node_id].append(edge.source)
+        parents = self._parents()
         for node in self._dashed_topological_order():
             srcs = sources.get(node.node_id)
             if not srcs:
                 continue
-            node.gate = float(np.clip(np.mean([s.activation for s in srcs]), 0.0, 1.0))
+            node.gate = _clamp(np.mean([s.activation for s in srcs]))
             if isinstance(node, PORTALS) or (
-                    isinstance(node, ObjectNode) and not self._has_input_context(node)):
+                    isinstance(node, ObjectNode) and not self._has_input_context(node, parents)):
                 node.activation = node.gate
 
     def _update_bodies(self) -> None:
@@ -867,11 +1140,259 @@ class ConceptGraph:
             node = self._find_input_node(modality, at_node_id=at_node_id)
             restore = (node, node.field)
             node.field = field
-        result = self._scan()
-        self._propagate_dashed()
-        self._update_bodies()
+        if self.dynamics == "ludo":
+            result = self._step_ludo()
+        else:
+            result = self._scan()
+            self._propagate_dashed()
+            self._update_bodies()
         if restore is not None and detach_after:
             restore[0].field = restore[1]
+        return result
+
+    # -- ludo dynamics: a board-game grid world ------------------------
+
+    def assign_roles(self) -> None:
+        """Ludo: mark every node as observing (perceives, not drawn) or imagined (drawn).
+
+        Observer roots are dashed sources that are not dashed targets (any node type), and leaves
+        with an input window. Every node in an observer root's subtree belongs to its perceptual
+        pattern. ``self._observer_roots`` keeps the top-most ones, which perceive directly.
+        """
+        sources = {e.source.node_id for e in self._dashed}
+        targets = {e.target.node_id for e in self._dashed}
+        parents = self._parents()
+        roots = [n for n in self._nodes.values() if not isinstance(n, PORTALS) and (
+            (n.node_id in sources and n.node_id not in targets)
+            or (isinstance(n, ObjectNode) and self._has_input_context(n, parents)))]
+        observing = set()
+        for r in roots:
+            observing.update(n.node_id for n in walk(r))
+        for node in self._nodes.values():
+            node.role = "observer" if node.node_id in observing else "imagined"
+        inside = set()
+        for r in roots:
+            inside.update(n.node_id for n in walk(r) if n is not r)
+        self._observer_roots = [r for r in roots if r.node_id not in inside]
+
+    def place_bodies(self) -> None:
+        """Centre every body in the region its place in the tree gives it (on ``self.grid``).
+
+        A body inside turned content is placed in its turned frame (``node_views``).
+        """
+        self.node_views(self.grid, place=True)
+
+    def node_views(self, shape: Tuple[int, int], place: bool = False) -> Dict[str, List[tuple]]:
+        """Where every node sits on the board, as ``(weight, chain, rect)`` views.
+
+        A view reaches the node's region through ``chain``, a tuple of turned frames
+        ``(slot, direction)``; each slot is in the previous frame's cells (the board first).
+        ``rect`` is the node's region in the last frame. Content under a template gets one view
+        per slot (weight p / n; turned when the template is dynamic) and one unturned view over
+        the whole region (weight 1 - p), mirroring the replacement rule. A turn nested inside
+        turned content is added to the chain, so the turns compose and their angles add.
+
+        A body lives in its view's last frame: its position and extent are fractions of that
+        frame, and its ``rect`` is its window there. With ``place=True``, each body is first
+        centred in the region it receives (on its first view).
+        """
+        H, W = shape
+        views: Dict[str, List[tuple]] = defaultdict(list)
+        placed = set()
+
+        def visit(node: Node, weight: float, chain: tuple, rect: Region) -> None:
+            if weight < 1e-9 or is_empty(rect):
+                return
+            if isinstance(node, BodyNode) and not isinstance(node, PlanNode):
+                fh, fw = _frame_shape(chain, (H, W))
+                if place and node.extent is not None and node.node_id not in placed:
+                    r0, r1, c0, c1 = rect
+                    node.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
+                    placed.add(node.node_id)
+                if node.position is not None:
+                    rect = node.window(fh, fw)
+            views[node.node_id].append((weight, chain, rect))
+            kids = content_children(node)
+            if isinstance(node, BodyNode) and len(kids) > 1:
+                plan(kids, weight, chain, rect)
+                return
+            for i, child in enumerate(kids):
+                visit(child, weight, chain, band_region(rect, i, len(kids), node.split_orientation)
+                      if isinstance(node, SerialNode) else rect)
+
+        def plan(children: List[Node], weight: float, chain: tuple, rect: Region) -> None:
+            if len(children) == 1:
+                visit(children[0], weight, chain, rect)
+                return
+            template, rest = children[0], children[1:]
+            visit(template, weight, chain, rect)
+            p = _clamp(template.gate)
+            slots = [s for s in orient_slots(template, rect) if not is_empty(s[0])] if ORIENTING_TEMPLATES \
+                else [(rect, None)]
+            for slot, v in slots:
+                if v is None:
+                    plan(rest, weight * p / len(slots), chain, slot)
+                else:
+                    Hc, Wc, *_ = _orientation_map(slot, v)
+                    plan(rest, weight * p / len(slots), chain + ((slot, v),), (0, Hc, 0, Wc))
+            plan(rest, weight * (1.0 - p), chain, rect)
+
+        for r in self.roots:
+            visit(r, 1.0, (), (0, H, 0, W))
+        return views
+
+    def view_masks(self, shape: Tuple[int, int]) -> Dict[str, np.ndarray]:
+        """Every node's board cells: the union of its views' cells."""
+        out = {}
+        for nid, vs in self.node_views(shape).items():
+            out[nid] = np.logical_or.reduce([_view_mask(shape, chain, rect) for _, chain, rect in vs])
+        return out
+
+    def _render_imagery(self) -> np.ndarray:
+        """The whole imagined scene on the grid: every root drawn with bodies in place (noisy-OR)."""
+        yang, yin = np.ones(self.grid), np.ones(self.grid)
+        for r in self.roots:
+            a, b = self._paint(self.grid, r.node_id, place_bodies=True)
+            yang, yin = yang * a, yin * b
+        return _compose(yang, yin)
+
+    def _perceive(self) -> None:
+        """Each top-most observer evaluates its subtree against last tick's imagery, through its views.
+
+        A view is a sub-field of the whole board, carried into any turned frames above the
+        observer (``node_views``), so bodies inside an observing pattern carve their windows in
+        absolute grid coordinates. An observer with several views (it sits in a template's
+        content) takes their weighted mean. Observers with an input window keep scanning it.
+        """
+        board = ReceptiveField(self._imagery if self._imagery is not None else blank_board(self.grid))
+        views = self.node_views(self.grid)
+        parents = self._parents()
+        for node in getattr(self, "_observer_roots", []):
+            if isinstance(node, ObjectNode) and self._has_input_context(node, parents):
+                continue
+            vs = views.get(node.node_id, [])
+            if not vs:
+                for n in walk(node):
+                    n.activation = 0.0
+                continue
+            scores = [w * node.evaluate(_view_field(board, chain, rect)) for w, chain, rect in vs]
+            node.activation = float(sum(scores) / sum(w for w, _, _ in vs))
+
+    def _propagate_delayed(self) -> None:
+        """Every dashed target takes the mean of its sources' current activations; it acts next tick."""
+        sources: Dict[str, List[Node]] = defaultdict(list)
+        for edge in self._dashed:
+            sources[edge.target.node_id].append(edge.source)
+        new = {nid: _clamp(np.mean([s.activation for s in srcs])) for nid, srcs in sources.items()}
+        for nid, gate in new.items():
+            node = self._nodes[nid]
+            node.gate = gate
+            if isinstance(node, PORTALS):
+                node.activation = gate
+
+    def _moving_bodies(self, views) -> Dict[str, tuple]:
+        """Each placed body's home (its first view's chain and frame size) and its board cells."""
+        out = {}
+        for b in self._nodes.values():
+            vs = views.get(b.node_id)
+            if isinstance(b, BodyNode) and not isinstance(b, PlanNode) and b.position is not None \
+                    and b.extent is not None and vs:
+                cells = np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs])
+                out[b.node_id] = (vs[0][1], _frame_shape(vs[0][1], self.grid), cells)
+        return out
+
+    def _issue_orders(self) -> None:
+        """A switched-on imagined dynamic trigram orders every body that enters its space.
+
+        Its space is its own region on the board, through each of its views (``node_views``). A
+        body is ordered when its window comes to overlap a view's cells while the trigram is
+        on: at the tick it switches on, or whenever a body walks in, including one that left
+        and came back. A body that stays inside gets no further orders. Only presence is
+        remembered, not who was ordered. The push is the trigram's motion turned by the view's
+        frames; a diagonal push is one order per axis.
+        """
+        parents = self._parents()
+        views = self.node_views(self.grid)
+        bodies_at = self._moving_bodies(views)
+        in_templates = set()                     # dynamic leaves in templates give orientation, not orders
+        if ORIENTING_TEMPLATES:
+            for b in self._nodes.values():
+                if isinstance(b, BodyNode):
+                    for t in content_children(b)[:-1]:
+                        in_templates.update(n.node_id for n in walk(t))
+        for node in self._nodes.values():
+            if not (isinstance(node, ObjectNode) and node.is_dynamic
+                    and getattr(node, "role", None) == "imagined") or node.node_id in in_templates:
+                continue
+            a = node.activation
+            anc = node
+            while parents.get(anc.node_id):              # a gated-off composite issues no orders
+                anc = parents[anc.node_id][0]
+                a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
+            self._prev_act[node.node_id] = a
+            keys = [f"{node.node_id}#{k}" for k in range(len(views.get(node.node_id, [])))]
+            if not a > ONSET_THRESHOLD:                   # strictly above: unknown (0.5) is not "on"
+                for key in [k for k in self._inside if k.split("#")[0] == node.node_id]:
+                    del self._inside[key]
+                continue
+            motion = BodyNode._template_motion(node)
+            for key, (_, chain, rect) in zip(keys, views.get(node.node_id, [])):
+                space = _view_mask(self.grid, chain, rect)
+                bodies = [self._nodes[b] for b, (_, _, cells) in bodies_at.items() if (space & cells).any()]
+                was_inside = self._inside.get(key, set())
+                self._inside[key] = {b.node_id for b in bodies}
+                push = _view_turn(chain, motion)              # on the board
+                for body in bodies:
+                    if body.node_id in was_inside:        # already inside: no new order
+                        continue
+                    home, frame, _ = bodies_at[body.node_id]
+                    for axis, m in enumerate(_view_unturn(home, push)):   # in the body's own frame
+                        if abs(m) < 1e-9:
+                            continue
+                        cells_on_axis = frame[axis]
+                        extent_cells = max(1, round(body.extent[axis] * cells_on_axis))
+                        rate = (body.step_size or 0.0) * cells_on_axis * a * abs(m)
+                        if rate > 0:
+                            body.orders.append([axis, 1 if m > 0 else -1, extent_cells, rate, 0.0, node.node_id])
+
+    def _move_bodies_ludo(self) -> None:
+        """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
+
+        A body moves on its own frame's cells (the board, or the turned frame it lives in).
+        """
+        homes = self._moving_bodies(self.node_views(self.grid))
+        for body in self._nodes.values():
+            if not isinstance(body, BodyNode) or isinstance(body, PlanNode) or body.position is None:
+                continue
+            H, W = homes[body.node_id][1] if body.node_id in homes else self.grid
+            net = [0, 0]
+            for order in body.orders:
+                order[4] += order[3]
+                k = min(int(order[4]), 1, order[2])
+                order[4] -= k
+                order[2] -= k
+                net[order[0]] += order[1] * k
+            body.orders = [o for o in body.orders if o[2] > 0]
+            for axis, n in ((0, H), (1, W)):
+                size = max(1, round(body.extent[axis] * n))
+                cell = round(body.position[axis] * n) + net[axis]
+                cell = min(max(cell, size // 2), n - size + size // 2)
+                body.position[axis] = cell / n
+            body.velocity = [net[0] / H, net[1] / W]
+
+    def _step_ludo(self) -> float:
+        """One tick: scan, perceive last tick's imagery, issue orders, propagate (for next tick), move, draw.
+
+        Orders are issued before propagation, so they see the gates set last tick, both on motion
+        leaves (through this tick's scan) and on their ancestors.
+        """
+        self.assign_roles()
+        result = self._scan()
+        self._perceive()
+        self._issue_orders()
+        self._propagate_delayed()
+        self._move_bodies_ludo()
+        self._imagery = self._render_imagery()
         return result
 
     def evaluate_against(self, field: ReceptiveField, at_node_id: Optional[str] = None,
@@ -953,20 +1474,33 @@ class ConceptGraph:
     # -- spatial read-outs ---------------------------------------------
 
     def render_output(self, shape: Tuple[int, int] = (9, 9),
-                      output_root_id: Optional[str] = None) -> ReceptiveField:
+                      output_root_id: Optional[str] = None,
+                      place_bodies: bool = False) -> ReceptiveField:
         """Draw the imagined (output) subgraph as a field.
 
         This follows the replacement rule spatially: a template's yang bands
         receive the content with weight p, and the whole region receives it
-        with weight 1 - p. An ObjectNode paints its yang bands at
-        ``gate * weight`` and its yin bands at half that (unknown, not absent).
-        Overlapping contributions combine by noisy-OR: ``1 - prod(1 - c)``.
+        with weight 1 - p. An ObjectNode paints its bands at ``gate * weight``;
+        overlapping paint combines by noisy-OR. How yin bands and undrawn cells
+        read is set by ``UNKNOWN_BACKGROUND``.
         The default root is the last root (the imagined one by convention).
+
+        With ``place_bodies=True``, a moving BodyNode is drawn in its own
+        window (``BodyNode.window``), which is the region ``evaluate()`` carves
+        for it, instead of its parent's whole region. This makes body motion
+        visible in the output. The default keeps the original behaviour.
         """
+        return ReceptiveField(_compose(*self._paint(shape, output_root_id, place_bodies)))
+
+    def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str],
+               place_bodies: bool) -> Tuple[np.ndarray, np.ndarray]:
+        """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint."""
         H, W = shape
         roots = self.roots
         out_root = self._nodes[output_root_id] if output_root_id is not None else roots[-1]
-        complement = np.ones((H, W))
+        # cv: [yang paint (and, in the earlier renderer, yin paint), yin paint, place bodies, frame size].
+        # An oriented slot swaps in a canvas for the content's upright frame (render_oriented).
+        cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W)]     # ..., frame size
 
         def yang_regions(node: Node, region: Region) -> List[Region]:
             if isinstance(node, ObjectNode):
@@ -989,34 +1523,61 @@ class ConceptGraph:
                 render_node(children[0], region, weight)
                 return
             template, rest = children[0], children[1:]
-            p = float(np.clip(template.gate, 0.0, 1.0))
+            p = _clamp(template.gate)
             if p > 1e-9:
-                for sub in yang_regions(template, region):
-                    render_plan(rest, sub, weight * p)
+                slots = orient_slots(template, region) if ORIENTING_TEMPLATES else \
+                    [(sub, None) for sub in yang_regions(template, region)]
+                for sub, v in slots:
+                    if v is None:
+                        render_plan(rest, sub, weight * p)
+                    elif not is_empty(sub):
+                        render_oriented(rest, sub, v, weight * p)
             if 1.0 - p > 1e-9:
                 render_plan(rest, region, weight * (1.0 - p))
+
+        def render_oriented(children: List[Node], slot: Region, v, weight: float) -> None:
+            """Draw ``children`` upright in their own frame, then show it in ``slot`` facing ``v``."""
+            Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
+            saved = cv[:]
+            cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc)]   # bodies live in the frame
+            render_plan(children, (0, Hc, 0, Wc), weight)
+            frame_yang, frame_yin = cv[0], cv[1]
+            cv[:] = saved
+            r0, r1, c0, c1 = slot
+            cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
+            cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
 
         def render_node(node: Node, region: Region, weight: float) -> None:
             if weight < 1e-9 or is_empty(region):
                 return
+            if getattr(node, "role", None) == "observer":
+                return                           # perceptual patterns are not part of the imagery
             if isinstance(node, ObjectNode):
+                if UNKNOWN_BACKGROUND and node.is_dynamic:
+                    return                       # a motion trigram specifies motion, not a static figure
                 for i, bit in enumerate(node.pattern):
-                    contrib = float(np.clip(weight * node.gate * (1.0 if bit > 0 else 0.5), 0, 1))
-                    if contrib >= 1e-9:
-                        r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
-                        complement[r0:r1, c0:c1] *= 1.0 - contrib
+                    r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
+                    w = _clamp(weight * node.gate)
+                    if UNKNOWN_BACKGROUND:
+                        cv[0][r0:r1, c0:c1] *= 1.0 - w * _clamp(2 * bit - 1)
+                        cv[1][r0:r1, c0:c1] *= 1.0 - w * _clamp(1 - 2 * bit)
+                    else:
+                        cv[0][r0:r1, c0:c1] *= 1.0 - _clamp(w * (1.0 if bit > 0 else 0.5))
             elif isinstance(node, BodyNode):
-                render_plan(content_children(node), region, weight)
+                if cv[2] and not isinstance(node, PlanNode) and node.position is not None:
+                    region = node.window(*cv[3])
+                render_plan(content_children(node), region, weight * _sg(node))
             elif isinstance(node, SerialNode):
                 kids = content_children(node)
                 for i, child in enumerate(kids):
-                    render_node(child, band_region(region, i, len(kids), node.split_orientation), weight)
+                    render_node(child, band_region(region, i, len(kids), node.split_orientation),
+                                weight * _sg(node))
             elif isinstance(node, ParallelNode):
                 for child in content_children(node):
-                    render_node(child, region, weight)
+                    render_node(child, region, weight * _sg(node))
 
         render_node(out_root, (0, H, 0, W), 1.0)
-        return ReceptiveField(np.clip(1.0 - complement, 0.0, 1.0))
+        return cv[0], cv[1]
 
     def derived_fields(self, shape: Tuple[int, int] = (9, 9)) -> Dict[str, ReceptiveField]:
         """One display field per node (used by the visualizer).
@@ -1031,11 +1592,12 @@ class ConceptGraph:
         full = (0, H, 0, W)
         neutral = lambda: np.full((H, W), 0.5, dtype=float)
         parents = {edge.target.node_id: edge.source for edge in self._solid}
+        parents_list = self._parents()
         cache: Dict[str, np.ndarray] = {}
 
         def strength(node: Node) -> float:
-            value = node.activation if self._has_input_context(node) else node.gate
-            return float(np.clip(value, 0.0, 1.0))
+            value = node.activation if self._has_input_context(node, parents_list) else node.gate
+            return _clamp(value)
 
         def resize(values: np.ndarray) -> np.ndarray:
             if values.shape == (H, W):
@@ -1048,7 +1610,7 @@ class ConceptGraph:
             result = np.zeros((H, W), dtype=float)
             for i, bit in enumerate(node.pattern):
                 r0, r1, c0, c1 = band_region(full, i, node.n_bands, node.orientation)
-                result[r0:r1, c0:c1] = float(np.clip(bit, 0.0, 1.0))
+                result[r0:r1, c0:c1] = _clamp(bit)
             return result
 
         def render(node: Node, orientation: Optional[Orientation] = None) -> np.ndarray:
@@ -1079,7 +1641,7 @@ class ConceptGraph:
                     values = render(content, template.orientation
                                     if dynamic and isinstance(content, SerialNode) else None)
             else:
-                values = np.full((H, W), float(np.clip(node.activation, 0, 1)))
+                values = np.full((H, W), _clamp(node.activation))
             if orientation is None:
                 cache[node.node_id] = values
             return values

@@ -8,3 +8,8 @@ __pycache__/
 /top_replay.html
 /demos_gallery.html
 /demos_gallery/
+
+# GRACE pipeline: raw videos, caches, model weights and results (not redistributed)
+/GRACE video database/
+/data/
+/results/

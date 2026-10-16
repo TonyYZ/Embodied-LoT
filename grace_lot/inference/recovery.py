@@ -1,0 +1,189 @@
+"""Synthetic recovery: can inference find programs that the LoT itself generated?
+
+    python -m grace_lot.inference.recovery [--n 24] [--actors 15] [--noise 0.05]
+
+For each of n "true" programs drawn from the prior:
+  1. Render it (``lot_trajectory``) and make ``actors`` noisy copies (Gaussian
+     noise per cell, clipped to [0, 1]). These stand in for one manner's videos.
+     With ``--shift k``, each copy is also shifted in time by up to k frames
+     (edge frames repeated), mimicking actors who start a movement at
+     different times.
+  2. Run exactly the configured inference (prior, likelihood, proposals,
+     tempering, iterations).
+  3. Score the result:
+     search_ok        the best log-posterior found is >= the truth's (search did not fail)
+     equiv_mass       posterior mass on programs that render identically to the truth
+     exact_mass       posterior mass on the truth itself
+     sim_to_truth     E_post[full similarity to the truth], compared with
+     sim_prior        E_prior[full similarity to the truth] (the chance level)
+
+Programs that render the same as the truth are indistinguishable by any
+likelihood, so ``equiv_mass``, not ``exact_mass``, is the target. A low
+``search_ok`` rate or ``equiv_mass`` is an implementation or mixing failure.
+Nothing here touches human data.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import random
+import time
+from multiprocessing import Pool
+from pathlib import Path
+
+import numpy as np
+
+from grace_lot.config import load_config
+from grace_lot.inference.grammar import Grammar
+from grace_lot.inference.likelihood import TrajectoryLikelihood
+from grace_lot.inference.mh import ladder_for, posterior, r_hat, run_tempered
+from grace_lot.inference.prior import SizePrior
+from grace_lot.inference.proposals import ProposalMixture, _addable
+from grace_lot.lot_adapter.adapter import LotRenderer
+from grace_lot.lot_adapter.distance import DISTANCES, euclid
+from grace_lot.lot_adapter.program import Program, size, with_edges
+from grace_lot.lot_adapter.similarity import MEASURES
+
+EQUIV_TOL = 1e-4
+
+
+def sample_prior_program(g: Grammar, prior: SizePrior, rng: random.Random) -> Program:
+    """An exact draw from the prior by rejection: propose (generator tree + uniform edges), accept with exp(prior - proposal - M)."""
+    while True:
+        t = g.sample(rng)
+        k = rng.randrange(g.max_dashed + 1)
+        options = _addable(Program(t), g)
+        if k > len(options):
+            continue
+        prog = with_edges(t, rng.sample(options, k))
+        lp = prior(prog)
+        if lp == -math.inf:
+            continue
+        log_q = g.log_prob(t) - math.log(g.max_dashed + 1) - math.log(math.comb(len(options), k))
+        if math.log(rng.random()) < lp - log_q:      # lp <= log_q when lambda >= 1 (description-length prior)
+            return prog
+
+
+def make_truths(g, prior, renderer, n, rng, min_size=3):
+    """n prior draws with size >= min_size and a non-empty rendering. Half are required to change over time."""
+    truths = []
+    while len(truths) < n:
+        p = sample_prior_program(g, prior, rng)
+        y = renderer(p)
+        if size(p.tree) < min_size or y.max() < 0.1:
+            continue
+        if p.tree.kind == "outputs" and len(p.tree.children) < 2:
+            continue                     # multi-output truths: permutation must matter
+        moving = bool(np.abs(np.diff(y, axis=0)).max() > 0.05)
+        if len(truths) < n // 2 and not moving:
+            continue
+        truths.append(p)
+    return truths
+
+
+def recover_one(job) -> dict:
+    cfg, truth_str, k, actors, noise, seed, shift = job
+    from grace_lot.lot_adapter.program import parse_program
+    truth = parse_program(truth_str)
+    inf, pre = cfg["inference"], cfg["preprocess"]
+    from grace_lot.lot_adapter.program import apply_semantics
+    apply_semantics(cfg["lot"])
+    g = Grammar.from_config(cfg["lot"])
+    renderer = LotRenderer(pre["frames"], pre["field_size"])
+    rng = np.random.default_rng(seed)
+    y = renderer(truth)
+    def actor_copy():
+        s = int(rng.integers(-shift, shift + 1)) if shift else 0
+        idx = np.clip(np.arange(len(y)) - s, 0, len(y) - 1)
+        return np.clip(y[idx] + rng.normal(0, noise, y.shape), 0, 1)
+    parts_mode = cfg.get("interface", {}).get("representation", "occupancy") == "parts"
+    if parts_mode:
+        # Anonymous outputs: every actor shows the true channels in its own random order.
+        from grace_lot.inference.likelihood import MatchedPartsLikelihood
+        yk = y if y.ndim == 4 else y[:, None]
+        obs = []
+        for _ in range(actors):
+            perm = rng.permutation(yk.shape[1])
+            s_ = int(rng.integers(-shift, shift + 1)) if shift else 0
+            idx = np.clip(np.arange(len(yk)) - s_, 0, len(yk) - 1)
+            obs.append(np.clip(yk[idx][:, perm] + rng.normal(0, noise, yk.shape), 0, 1))
+        lik = MatchedPartsLikelihood(obs, renderer, inf["beta"])
+        truth_lik = MatchedPartsLikelihood([yk], renderer, inf["beta"])
+        same_render = lambda p: truth_lik.assignments(p)[0][2] < EQUIV_TOL
+    else:
+        obs = [actor_copy() for _ in range(actors)]
+        lik = TrajectoryLikelihood(obs, renderer, DISTANCES[inf["distance"]], inf["beta"])
+        same_render = lambda p: euclid(renderer(p), y) < EQUIV_TOL
+    prior = SizePrior.from_config(g, inf)
+    prop = ProposalMixture(g, inf["move_weights"])
+    taus = ladder_for(inf, len(obs))
+    t0 = time.time()
+    chains = [run_tempered(prior, lik, prop, inf["iterations"], inf["burn_in"], inf["thin"],
+                           random.Random(seed * 100 + c), taus, inf.get("swap_every", 1))
+              for c in range(inf["chains"])]
+    post = posterior(chains)
+    truth_lp = prior(truth) + lik(truth)
+    best_lp = max(c.best_log_post for c in chains)
+    equiv = sum(w for p, w in post.items() if same_render(p))
+    full = MEASURES["tree_unordered"] if parts_mode else MEASURES["full"]   # output order is arbitrary
+    sim_post = sum(w * full(p, truth) for p, w in post.items())
+    prng = random.Random(seed)
+    sim_prior = float(np.mean([full(sample_prior_program(g, prior, prng), truth) for _ in range(200)]))
+    best = max(chains, key=lambda c: c.best_log_post).best
+    return {"k": k, "truth": truth_str, "truth_size": size(truth.tree), "truth_edges": len(truth.dashed),
+            "truth_log_post": truth_lp, "best_log_post": best_lp, "search_ok": best_lp >= truth_lp - 1e-6,
+            "equiv_mass": equiv, "exact_mass": post.get(truth, 0.0),
+            "map": str(best), "map_equiv": bool(same_render(best)),
+            "sim_to_truth": sim_post, "sim_prior": sim_prior,
+            "r_hat": r_hat([c.log_post[inf["burn_in"]:] for c in chains]),
+            "swap_rates": [round(s, 2) for s in chains[0].swaps], "seconds": time.time() - t0}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config")
+    ap.add_argument("--n", type=int, default=24)
+    ap.add_argument("--actors", type=int, default=15)
+    ap.add_argument("--noise", type=float, default=0.05)
+    ap.add_argument("--shift", type=int, default=0, help="max per-actor time shift in frames")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--workers", type=int, default=24)
+    ap.add_argument("--set", nargs="*", default=[], help="config overrides such as inference.iterations=40000")
+    args = ap.parse_args()
+    from grace_lot.inference.run import apply_overrides
+    cfg = apply_overrides(load_config(args.config), args.set)
+    from grace_lot.lot_adapter.program import apply_semantics
+    apply_semantics(cfg["lot"])
+    g = Grammar.from_config(cfg["lot"])
+    prior = SizePrior.from_config(g, cfg["inference"])
+    renderer = LotRenderer(cfg["preprocess"]["frames"], cfg["preprocess"]["field_size"])
+    truths = make_truths(g, prior, renderer, args.n, random.Random(12345))
+    jobs = [(cfg, str(t), k, args.actors, args.noise, 1000 + k, args.shift) for k, t in enumerate(truths)]
+    results = []
+    with Pool(min(args.workers, len(jobs))) as pool:
+        for r in pool.imap_unordered(recover_one, jobs):
+            results.append(r)
+            print(f"[{r['k']:2d}] ok={r['search_ok']!s:5} equiv={r['equiv_mass']:.2f} exact={r['exact_mass']:.2f} "
+                  f"sim={r['sim_to_truth']:.2f} (prior {r['sim_prior']:.2f}) R-hat={r['r_hat']:.2f} "
+                  f"{r['seconds']:.0f}s  {r['truth']}", flush=True)
+    results.sort(key=lambda r: r["k"])
+    summary = {
+        "n": len(results), "actors": args.actors, "noise": args.noise, "shift": args.shift,
+        "search_ok_rate": float(np.mean([r["search_ok"] for r in results])),
+        "mean_equiv_mass": float(np.mean([r["equiv_mass"] for r in results])),
+        "map_equiv_rate": float(np.mean([r["map_equiv"] for r in results])),
+        "mean_exact_mass": float(np.mean([r["exact_mass"] for r in results])),
+        "mean_sim_to_truth": float(np.mean([r["sim_to_truth"] for r in results])),
+        "mean_sim_prior": float(np.mean([r["sim_prior"] for r in results])),
+        "results": results,
+    }
+    out = Path(args.out) if args.out else cfg["data"]["results_dir"].parent / "grace_recovery"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "recovery.json").write_text(json.dumps(summary, indent=1))
+    print(json.dumps({k: v for k, v in summary.items() if k != "results"}, indent=1))
+
+
+if __name__ == "__main__":
+    main()

@@ -157,3 +157,136 @@ and browser-side evaluation for edited structures.
    mean of its strips.
 7. Band and strip geometry lives in one place, `band_region()` in
    `embodied_lot.py`. Use it rather than re-deriving row/column slices.
+8. Imagined (field-free) evaluation reaches every node on every step
+   (`EVALUATE_IMAGINED_SUBTREES = True`). Dashed loops and dynamic trigrams
+   inside bodies, plans and serial nodes are therefore live. A body can hold an
+   internal cycle and change state while remaining the same body. A field-free
+   `SerialNode` averages its children. `False` reproduces the earlier
+   shortcut; GRACE configs select it with `lot.imagined_evaluation`
+   ("full" | "legacy"), and runs made before the change pin "legacy".
+9. Motion is graded: velocity = trigram direction x activation x step, so a
+   weaker activation of a motion node moves the body more slowly.
+10. `step()` has two dynamics (`ConceptGraph.dynamics`, default from
+    `embodied_lot.DEFAULT_DYNAMICS`, now "ludo"; GRACE configs use
+    `lot.dynamics`, and the four existing configs pin "legacy"):
+    - **"legacy"**: bodies drift along their first dynamic trigram, and
+      imagined dashed targets update within the same step.
+    - **"ludo"**: a board-game grid world (`ConceptGraph.grid` cells).
+      - Any node that is a dashed source but not a dashed target (or a leaf
+        with an input window) is an **observer**.
+        - It perceives the previous tick's imagery in its own grid region
+          (strip or body window) and is not drawn.
+        - A parent observer perceives the pattern its children form, read the
+          way its type composes them: serial strips, parallel pooling, plan
+          template, body window. Its whole subtree is its perceptual pattern,
+          and only the top-most observer perceives directly.
+        - Everything else is imagined and drawn. Consequence: an internal
+          imagined oscillator must use nodes that are both sources and targets;
+          `plan(VOID t, x)` with only `plan -> t` makes the plan an observer.
+      - Every dashed effect takes one tick, and dashed targets start unknown
+        (gate 0.5; 0 when `UNKNOWN_BACKGROUND` is off).
+        Orders are issued before propagation in each tick, so a gate set at
+        tick t acts from tick t+1 whether its target is a leaf or a group.
+      - When an imagined dynamic trigram's effective activation rises strictly
+        above `ONSET_THRESHOLD` (so seeing only unknown, 0.5, is not "on"), it
+        issues one **order** to every body whose window overlaps the trigram's
+        own region (its strip, or its body's window) at that tick. Where the
+        body sits in the tree does not matter. While the trigram stays on, every
+        body that enters its region gets one order, including one that left and
+        came back. A body that stays inside gets no more. Only presence is
+        remembered (`_inside`), not which bodies were ordered. An order is one
+        body extent in
+        whole cells, in the trigram's direction. Orders add as vectors.
+      - A body advances at most one cell per order per tick, at
+        `step_size x activation` cells per tick via accumulated credit. Weaker
+        activation therefore means the token moves less often. Positions are
+        always whole cells.
+    The self-observing oscillator in `test_grace_lot.py` is the reference example.
+11. Dashed edges may target any node. A structure's gate scales its whole
+    composite (`GATE_STRUCTURES`; config `lot.gate_structures`):
+    - its own activation;
+    - the weight its subtree is drawn with;
+    - in ludo, the effective activation of motion leaves beneath it.
+    A plan template's gate keeps its separate role as the template
+    probability. The GRACE search grammar chooses targets with
+    `lot.dashed_targets` ("leaves" | "any"); existing configs use "leaves",
+    which reproduces earlier search spaces.
+12. Undrawn imagery is unknown, 0.5 (`UNKNOWN_BACKGROUND`; config
+    `lot.unknown_background`, default true; the four existing configs pin
+    false).
+    - Imagined yang bands pull a cell towards 1, and imagined yin bands pull it
+      towards 0 (known yin).
+    - A neutral bit draws nothing, and neither does a dynamic (motion) trigram:
+      it specifies motion, not a static figure.
+    - Yang and yin paint pool separately by noisy-OR (Y, N), and a cell reads
+      0.5 + 0.5(Y - N).
+    - Observers still score only their yang bands, so their yin bands act as
+      masks.
+    - With false, undrawn cells are 0 and yin paints half strength into the
+      yang noisy-OR. This is bit-for-bit the earlier renderer (fuzz-checked).
+13. Saved run configs written before a semantics key existed are read with its
+    legacy value (`program.saved_lot`), and new runs record every semantics
+    key explicitly (`program.resolved_lot`). Re-analysing old runs is
+    therefore unaffected by the new defaults.
+14. Body positions are not parameters (`TREE_PLACED_BODIES`; config
+    `lot.tree_placed_bodies`, default true; the four existing configs pin
+    false).
+    - `reset_gates()` centres every body in the region its place in the tree
+      gives it: its serial strip, its parent body's window, or the whole
+      field.
+    - Grammar bodies are `body[h,w,speed]`, so `body_positions` is unused.
+      Earlier runs keep `body[y,x,h,w,speed]` with hand-set positions.
+    - Extent stays a fraction of the whole board.
+    - A vertical serial stacks its children bottom-up (band 0 is the bottom,
+      as in trigrams).
+15. Motion runs from a dynamic trigram's figure side across to the
+    background on both axes (`MOTION_AWAY_FROM_FIGURE`; config
+    `lot.motion_away_from_figure`, default true; the four existing configs
+    pin false).
+    - `top/V*` moves down, `bottom/V*` up, `top/H*` left and `bottom/H*`
+      right.
+    - Before, horizontal motion was mirrored: horizontal bands count from
+      the left and columns grow rightward, so the vertical rule's cancelling
+      reversal was missing.
+    - Observed motion is scored as |motion|, so perception is unaffected.
+16. Dynamic templates orient their content (`ORIENTING_TEMPLATES`; config
+    `lot.orienting_templates`, default true; the four existing configs pin
+    false, which keeps the earlier half-field selection).
+    - Each dynamic leaf in a template gives a direction (its motion), and the
+      content's up is turned to face it (`orient_slots`, `_orientation_map`).
+    - A serial template gives one slot per strip. Any other template gives one
+      slot over its region, facing the sum of its dynamic leaves' directions.
+      Static parts keep their usual slots (yang bands).
+    - Turning is a rotation done on whole cells. Every slot cell shows one
+      cell of the content's upright frame, so the four axis directions are
+      exact permutations and diagonals become stair-stepped bands.
+    - Observers read the field carried into that frame; frame cells nothing
+      maps to read as unknown.
+    - As for static templates, with p (the template's gate) the content is
+      oriented, and with 1 - p it is used unchanged. Field-free, turning
+      changes nothing, so an orienting plan evaluates to its content.
+    - Dynamic leaves inside templates issue no ludo orders.
+    - Turns compose: a dynamic template inside turned content turns again,
+      so the angles add. This holds for drawing and observing alike.
+    - Ludo geometry follows the turns through `node_views`. Each node gets
+      views `(weight, chain, rect)`: one per template slot (p / n) plus the
+      unturned 1 - p view, each with its chain of turned frames.
+      - Observers perceive through their views (a weighted mean).
+      - A motion leaf's space is the union of its views' board cells
+        (`view_masks`), and its push is turned back to the board
+        (`_view_turn`). A diagonal push is one order per axis.
+      - Content under a static template now uses the template's yang slots
+        too; before, it took the plan's whole region.
+    - Bodies nested in turned content live in their turned frame. Their
+      position and extent are fractions of that frame, and tree placement,
+      drawing and windows all work in the frame's cells. A frame is its own
+      root when observed, so a nested body carves its window from it.
+      - Moves run along the frame's axes: a board push is turned into the
+        body's frame (`_view_unturn`), and a diagonal is one order per axis.
+      - Overlap with a motion leaf's space uses the body's board cells
+        (`_moving_bodies`).
+      - A body copied into several slots has one state, kept in its first
+        view's frame.
+    - The visualizer's `derived_fields` is not turned.
+17. `python -m grace_lot.analysis.ludo_traces` writes `results/ludo_viz/`: the
+    engine traces, and `ludo.html`, a step-through explainer of the examples.
