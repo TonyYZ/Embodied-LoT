@@ -93,7 +93,7 @@ SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameb
                   "unknown_background": (True, False), "tree_placed_bodies": (True, False),
                   "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
                   "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
-                  "output_leaves": (True, False)}
+                  "output_leaves": (True, False), "content_windows": (True, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:
@@ -237,6 +237,11 @@ def leaves(p: P) -> List[P]:
 
 def is_valid(p: P) -> bool:
     return all(n.kind == LEAF or len(n.children) >= MIN_CHILDREN[n.kind] for _, n in nodes(p))
+
+
+def windows_as_content(p: P) -> bool:
+    """No ``out``/``in`` window is a template: in a body or plan, a window may only be the last child (the content)."""
+    return all(c.kind not in (OUT, IN) for _, n in nodes(p) if n.kind in ("body", "plan") for c in n.children[:-1])
 
 
 # ---- compilation ----------------------------------------------------------

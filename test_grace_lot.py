@@ -156,6 +156,34 @@ class InferenceTests(unittest.TestCase):
         tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
         self.assertLess(tv, 0.03)
 
+    def test_windows_are_never_templates(self):
+        """With content_windows, `out`/`in` may only be a body's or plan's content; the search stays exact and complete."""
+        from grace_lot.inference.diagnostics import enumerate_support
+        from grace_lot.lot_adapter.program import parse_program, windows_as_content
+        args = (["top", "bottom"], ["parallel", "plan"], False, [], [], [], 3, 4, 0.5, 2)
+        g = Grammar(*args, max_dashed=1, max_outputs=2, output_leaves=True, content_windows=True)
+        prior = SizePrior(g, 1.0)
+        self.assertEqual(prior(parse_program("(plan out top/V)")), -math.inf)
+        self.assertGreater(prior(parse_program("(plan top/V out)")), -math.inf)
+        legacy = SizePrior(Grammar(*args, max_dashed=1, max_outputs=2, output_leaves=True), 1.0)
+        self.assertGreater(legacy(parse_program("(plan out top/V)")), -math.inf)    # saved runs keep the old support
+        r = reachability(g, prior)
+        self.assertEqual(r["reached"], r["support"])
+        self.assertEqual(r["outside_support"], 0)
+        states = enumerate_support(g, prior)
+        self.assertTrue(all(windows_as_content(t.tree) for t in states))
+        Z = sum(math.exp(prior(t)) for t in states)
+        key = lambda t: (len(t.tree.children), size(t.tree), len(t.dashed))
+        exact = Counter()
+        for t in states:
+            exact[key(t)] += math.exp(prior(t)) / Z
+        samples = [s for seed in range(3) for s in run_chain(
+            prior, lambda p: 0.0, ProposalMixture(g, MOVES), 150_000, 5_000, 5, random.Random(seed)).samples]
+        self.assertTrue(all(windows_as_content(s.tree) for s in samples))
+        emp = Counter(key(t) for t in samples)
+        tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
+        self.assertLess(tv, 0.03)
+
     def test_output_windows_read_the_board_in_their_region(self):
         """An output is its window's region, stretched to the grid: content leaving it goes unknown; carried by a body it stays."""
         import numpy as np

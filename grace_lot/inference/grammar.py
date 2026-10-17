@@ -44,6 +44,7 @@ class Grammar:
     max_outputs: int = 0          # > 0: the root is an ``outputs`` container with 1..max_outputs anonymous channels
     dashed_targets: str = "leaves"   # "leaves" or "any": which nodes dashed edges may target
     output_leaves: bool = False      # outputs are ``out`` leaves (1..max_outputs, anywhere in the forest's trees)
+    content_windows: bool = False    # with output_leaves: windows are never templates (enforced by the prior)
 
     @classmethod
     def from_config(cls, lot: dict) -> "Grammar":
@@ -53,7 +54,8 @@ class Grammar:
                    positions, [] if sized else lot["body_extents"], [] if sized else lot["body_speeds"],
                    lot["max_depth"], lot["max_nodes"], lot["p_leaf"], lot["max_children"],
                    lot.get("max_dashed", 0), lot.get("max_outputs", 0), lot.get("dashed_targets", "leaves"),
-                   bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True))
+                   bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True),
+                   bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True) and lot.get("content_windows", True))
 
     # -- attribute domains (also used by the symmetric moves) ---------
 

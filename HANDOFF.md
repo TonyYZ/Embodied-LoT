@@ -364,3 +364,12 @@ and browser-side evaluation for edited structures.
       learners (now in `legacy/learners/`) and visualizers.
 22. `python -m grace_lot.analysis.gameboard_traces` writes `results/gameboard_viz/`: the
     engine traces, and `gameboard.html`, a step-through explainer of the examples.
+23. Windows are never templates (`lot.content_windows`, default true with output
+    leaves; runs saved without the key read it as false).
+    - In a body or plan the last child is the content and every earlier child a
+      template (nested left to right). An `out` or `in` leaf may only be the
+      content, just as windows neither send nor receive dashed edges.
+    - Enforced by the prior (-inf), like the 1..max_outputs window count, so valid
+      programs keep their prior and MH stays exact (tested).
+    - The diag4 run predates it: 81-98% of its posterior mass used a window as a
+      pass-through template, mostly to stack several outputs in one body.

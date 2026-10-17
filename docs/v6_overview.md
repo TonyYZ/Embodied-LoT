@@ -41,6 +41,7 @@ relative to the tree. Nothing has an absolute size until it is evaluated on a bo
   - It delivers only the region it occupies in its tree, in its own frame.
   - That region is stretched to 12x12 when the output is produced.
   - An output sharing a parallel parent with the rest of its tree delivers that whole region.
+  - It may only be content: never a body's or plan's template (`content_windows`).
 - **`in` window:** the symmetric input leaf. GRACE needs none.
 
 ### Compositions

@@ -40,6 +40,7 @@ max_children = 3
 dashed_targets = "any"
 max_dashed = 5
 max_outputs = 6
+content_windows = true                 # `out` / `in` are never templates (diag4 ran without this rule)
 
 [inference]
 prior = "description_length"

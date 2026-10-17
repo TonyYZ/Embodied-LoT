@@ -17,7 +17,8 @@ Two choices of program length L, set by ``prior`` in the config:
     programs (see diagnostics.family_coverage). Kept for comparison only.
 
 Programs outside the grammar, or beyond its depth, size and dashed-edge
-limits, get -inf.
+limits, get -inf. So do programs with a window leaf (``out``/``in``) as a body's or plan's template
+(``content_windows``, the default with output leaves): windows are only ever content.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import math
 
 from grace_lot.inference.grammar import Grammar
 from grace_lot.lot_adapter.program import (LEAF, as_program, candidate_edges, depth, edges_valid, is_valid,
-                                           nodes, size)
+                                           nodes, size, windows_as_content)
 
 
 def n_edge_slots(tree, targets: str = "leaves") -> int:
@@ -70,4 +71,6 @@ class SizePrior:
             return -math.inf
         if g.output_leaves and not 1 <= sum(n.kind == "out" for _, n in nodes(t)) <= g.max_outputs:
             return -math.inf                                # 1..max_outputs output windows
+        if g.content_windows and not windows_as_content(t):
+            return -math.inf                                # windows are content, never templates
         return -self.lambda_size * self.length(prog)
