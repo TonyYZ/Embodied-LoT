@@ -87,8 +87,8 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
                 out[u] = out[u - period]
             break
         seen[sig] = t
-        spaces, shared = graph._render_all()
-        views = graph.node_views((size, size))
+        spaces, shared = graph._render_all()          # reused when the step just drew this same state
+        views = graph.node_views((size, size))        # memoised: recomputed only if something moved
         for k, i in enumerate(ids):
             space = spaces[tree[i]] if embodied_lot.SEPARATE_TREE_SPACES else shared
             vs = views.get(i)

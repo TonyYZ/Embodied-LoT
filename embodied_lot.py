@@ -25,6 +25,7 @@ that ask for it, such as a ``VOID`` plan template, use that complement.
 
 from __future__ import annotations
 
+import math
 import warnings
 from collections import defaultdict, deque
 from functools import lru_cache
@@ -208,6 +209,19 @@ def blank_board(shape: Tuple[int, int]) -> np.ndarray:
     return np.full(shape, unknown_value())
 
 
+def _mean(values) -> float:
+    """``np.mean`` of a short sequence without most of its overhead, bit-for-bit the same.
+
+    One or two values: a plain sum is exact. More: numpy may add in vectorised lanes whose order
+    depends on memory layout, so use the reduction ``np.mean`` itself performs.
+    """
+    values = values if isinstance(values, list) else list(values)
+    n = len(values)
+    if n <= 2:
+        return float(sum(values)) / n
+    return float(np.add.reduce(np.array(values, dtype=float))) / n
+
+
 def _clamp(x, lo: float = 0.0, hi: float = 1.0) -> float:
     """Scalar clip to [lo, hi]: the same as float(np.clip(x, lo, hi)), but about 10x faster."""
     x = float(x)
@@ -298,7 +312,7 @@ def _view_field(board: "ReceptiveField", chain, rect: Region) -> "ReceptiveField
 
 def _view_mask(shape: Tuple[int, int], chain, rect: Region) -> np.ndarray:
     """The board cells a view covers: those whose place in the last frame of ``chain`` falls in ``rect``."""
-    R, C = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]), indexing="ij")
+    R, C = _grid_index(tuple(shape))
     ok = np.ones(shape, dtype=bool)
     for (r0, r1, c0, c1), v in chain:
         ok &= (R >= r0) & (R < r1) & (C >= c0) & (C < c1)
@@ -340,10 +354,18 @@ def _frame_shape(chain, shape: Tuple[int, int]) -> Tuple[int, int]:
     return Hc, Wc
 
 
+@lru_cache(maxsize=16)
+def _grid_index(shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+    """Row and column index arrays of a grid (read-only; shared)."""
+    R, C = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]), indexing="ij")
+    R.flags.writeable = C.flags.writeable = False
+    return R, C
+
+
 def _scatter(complement: np.ndarray, offset: np.ndarray) -> np.ndarray:
     """Move each cell's paint (a noisy-OR complement) by its whole-cell offset; overlaps combine."""
     H, W = complement.shape
-    R, C = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    R, C = _grid_index((H, W))
     out = np.ones_like(complement)
     np.multiply.at(out, (np.clip(R + offset[..., 0], 0, H - 1), np.clip(C + offset[..., 1], 0, W - 1)), complement)
     return out
@@ -450,14 +472,14 @@ class ReceptiveField:
         sub_mot = None if self.motion is None else self.motion[row_start:row_end, col_start:col_end]
         br0, br1, bc0, bc1 = self.bounds
         h, w = max(self.height, 1), max(self.width, 1)
-        return ReceptiveField(
-            self.activation[row_start:row_end, col_start:col_end],
-            sub_mot,
-            bounds=(br0 + (br1 - br0) * row_start / h, br0 + (br1 - br0) * row_end / h,
-                    bc0 + (bc1 - bc0) * col_start / w, bc0 + (bc1 - bc0) * col_end / w),
-            root_activation=self._root_activation,
-            root_motion=self._root_motion,
-        )
+        sub = ReceptiveField.__new__(ReceptiveField)       # the parent is already checked and clipped
+        sub.activation = self.activation[row_start:row_end, col_start:col_end]
+        sub.motion = sub_mot
+        sub.bounds = (br0 + (br1 - br0) * row_start / h, br0 + (br1 - br0) * row_end / h,
+                      bc0 + (bc1 - bc0) * col_start / w, bc0 + (bc1 - bc0) * col_end / w)
+        sub._root_activation = self._root_activation
+        sub._root_motion = self._root_motion
+        return sub
 
     def band(self, i: int, n: int, orientation: Orientation) -> "ReceptiveField":
         """Band ``i`` of ``n`` (vertical: from the bottom; horizontal: from the left)."""
@@ -678,7 +700,7 @@ class ObjectNode(Node):
             values = field.activation[r0:r1, c0:c1]
             if self.is_dynamic and field.motion is not None:
                 values = np.abs(field.motion[r0:r1, c0:c1, axis])
-            means.append(float(values.mean()) if values.size > 0 else 0.0)
+            means.append(float(values.sum()) / values.size if values.size > 0 else 0.0)   # == values.mean()
         return means
 
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
@@ -689,7 +711,7 @@ class ObjectNode(Node):
         else:
             sims = [1.0 - abs(obs - exp)
                     for obs, exp in zip(self._band_means(field), self.pattern) if exp > 0]
-            self.activation = self.gate * float(np.mean(sims)) if sims else 0.0
+            self.activation = self.gate * _mean(sims) if sims else 0.0
         return self.activation
 
     def __repr__(self) -> str:
@@ -736,13 +758,13 @@ class ParallelNode(StructureNode):
 
         if not pooled:
             acts = [a for a in (s.evaluate(None) for s in scanners) if a > 0]
-            result = float(np.mean(acts)) if acts else 0.0
+            result = _mean(acts) if acts else 0.0
         elif not scanners:
             result = _clamp(sum(w for _, w in pooled) / len(pooled))
         else:
             total_w = sum(w for _, w in pooled)
             scores = [sum(w * s.evaluate(f) for f, w in pooled) / total_w for s in scanners]
-            result = _clamp(np.mean(scores))
+            result = _clamp(_mean(scores))
 
         result *= _sg(self)
         for out in outputs:
@@ -775,7 +797,7 @@ class SerialNode(StructureNode):
         if field is None and self.children and EVALUATE_IMAGINED_SUBTREES:
             # Imagined: no field to split into strips; evaluate every child and average.
             kids = [c for c in self.children if not isinstance(c, _WINDOW_LEAVES)]
-            self.activation = (float(np.mean([child.evaluate(None) for child in kids])) if kids else 0.0) * _sg(self)
+            self.activation = (_mean([child.evaluate(None) for child in kids]) if kids else 0.0) * _sg(self)
             return self.activation
         if not self.children or field is None:
             self.activation = 0.0
@@ -783,7 +805,7 @@ class SerialNode(StructureNode):
         n = len(self.children)
         scores = [child.evaluate(self._make_strip(field, i, n)) for i, child in enumerate(self.children)
                   if not isinstance(child, _WINDOW_LEAVES)]            # a window keeps its strip but only reads/writes
-        self.activation = (float(np.mean(scores)) if scores else 0.0) * _sg(self)
+        self.activation = (_mean(scores) if scores else 0.0) * _sg(self)
         return self.activation
 
 
@@ -869,7 +891,7 @@ class BodyNode(StructureNode):
         """
         directions, magnitudes = TRIGRAM_MOTION.get(
             PATTERN_TO_NAME.get(template.pattern), ((0, 0), (0, 0)))
-        motion = float(np.mean(np.asarray(directions) * np.asarray(magnitudes)))
+        motion = _mean([float(d) * float(m) for d, m in zip(directions, magnitudes)])
         if template.orientation == Orientation.VERTICAL:
             return motion, 0.0                 # bands count up, rows count down: away from the figure
         return 0.0, (-motion if MOTION_AWAY_FROM_FIGURE else motion)
@@ -946,7 +968,7 @@ class BodyNode(StructureNode):
         else:
             subs = self._yang_subfields(template, field)
 
-        yang_scan = float(np.mean([self._plan_activate(rest, s) for s in subs])) if subs else 0.0
+        yang_scan = _mean([self._plan_activate(rest, s) for s in subs]) if subs else 0.0
         full_scan = self._plan_activate(rest, field)
         return p * yang_scan + (1.0 - p) * full_scan
 
@@ -1019,6 +1041,18 @@ class ConceptGraph:
         self._inside: Dict[str, set] = {}        # ludo: bodies inside each switched-on motion leaf's region
         self._mass: Dict[str, dict] = {}         # ludo: each root's mass particles (MOTION_KINDS)
         self._tick = 0
+        self._version = 0                        # bumped by every structural change (metadata cache key)
+        self._meta_key = None
+        self._meta_cache: Dict[str, object] = {}
+
+    def _meta(self, name: str, build):
+        """Structure-derived metadata (roots, parents, roles ...), rebuilt only after the structure changes."""
+        key = (self._version, len(self._nodes), len(self._solid), len(self._dashed), id(self._solid), id(self._dashed))
+        if key != self._meta_key:
+            self._meta_key, self._meta_cache = key, {}
+        if name not in self._meta_cache:
+            self._meta_cache[name] = build()
+        return self._meta_cache[name]
 
     # -- construction / access ----------------------------------------
 
@@ -1026,6 +1060,7 @@ class ConceptGraph:
         if node.node_id in self._nodes:
             raise ValueError(f"Duplicate node id: {node.node_id!r}.")
         self._nodes[node.node_id] = node
+        self._version += 1
 
     def add_nodes(self, nodes: List[Node]) -> None:
         for n in nodes:
@@ -1035,6 +1070,7 @@ class ConceptGraph:
         self._solid.append(SolidEdge(parent, child))
         if child not in parent.children:
             parent.children.append(child)
+        self._version += 1
 
     def connect(self, parent: Node, *children: Node) -> Node:
         """Add solid edges from ``parent`` to each child, adding any node that is new. Returns ``parent``.
@@ -1056,6 +1092,7 @@ class ConceptGraph:
         within the same call.
         """
         self._dashed.append(DashedEdge(condition, target))
+        self._version += 1
 
     def remove_node(self, node: Node) -> None:
         """Delete a node, its edges, and its place in any parent's children."""
@@ -1065,6 +1102,7 @@ class ConceptGraph:
             if node in other.children:
                 other.children.remove(node)
         del self._nodes[node.node_id]
+        self._version += 1
 
     def replace_node(self, old: Node, new: Node) -> None:
         """Put ``new`` in place of ``old`` (same id), keeping all of old's edges."""
@@ -1077,6 +1115,7 @@ class ConceptGraph:
             node.children = [new if c is old else c for c in node.children]
         if self.root is old:
             self.root = new
+        self._version += 1
 
     def __getitem__(self, node_id: str) -> Node:
         return self._nodes[node_id]
@@ -1099,21 +1138,30 @@ class ConceptGraph:
     @property
     def roots(self) -> List[Node]:
         """Nodes with no solid-edge parent, in insertion order."""
-        has_parent = {e.target.node_id for e in self._solid}
-        return [n for nid, n in self._nodes.items() if nid not in has_parent]
+        def build():
+            has_parent = {e.target.node_id for e in self._solid}
+            return [n for nid, n in self._nodes.items() if nid not in has_parent]
+        return list(self._meta("roots", build))
 
     def _parents(self) -> Dict[str, List[Node]]:
-        parents: Dict[str, List[Node]] = defaultdict(list)
-        for edge in self._solid:
-            parents[edge.target.node_id].append(edge.source)
-        return parents
+        def build():
+            parents: Dict[str, List[Node]] = defaultdict(list)
+            for edge in self._solid:
+                parents[edge.target.node_id].append(edge.source)
+            return parents
+        return self._meta("parents", build)
 
     def _has_input_context(self, node: Node, parents: Optional[Dict[str, List[Node]]] = None) -> bool:
         """True if ``node`` is observed: some ancestor ``ParallelNode`` owns an ``InputNode``.
 
-        Pass ``parents`` (from ``_parents()``) when checking many nodes against the same graph.
+        Memoised per node until the graph's structure changes.
         """
-        parents = self._parents() if parents is None else parents
+        memo = self._meta("input_context", dict)
+        if node.node_id not in memo:
+            memo[node.node_id] = self._input_context(node, self._parents())
+        return memo[node.node_id]
+
+    def _input_context(self, node: Node, parents: Dict[str, List[Node]]) -> bool:
         seen: Set[str] = set()
         stack = list(parents.get(node.node_id, []))
         while stack:
@@ -1202,7 +1250,7 @@ class ConceptGraph:
             srcs = sources.get(node.node_id)
             if not srcs:
                 continue
-            node.gate = _clamp(np.mean([s.activation for s in srcs]))
+            node.gate = _clamp(_mean([s.activation for s in srcs]))
             if isinstance(node, PORTALS) or (
                     isinstance(node, ObjectNode) and not self._has_input_context(node, parents)):
                 node.activation = node.gate
@@ -1252,6 +1300,9 @@ class ConceptGraph:
         with an input window. Every node in an observer root's subtree belongs to its perceptual
         pattern. ``self._observer_roots`` keeps the top-most ones, which perceive directly.
         """
+        if self._meta("roles_done", lambda: [False])[0]:
+            return                                        # roles depend only on structure
+        self._meta_cache["roles_done"] = [True]
         sources = {e.source.node_id for e in self._dashed}
         targets = {e.target.node_id for e in self._dashed}
         parents = self._parents()
@@ -1275,7 +1326,29 @@ class ConceptGraph:
         """
         self.node_views(self.grid, place=True)
 
+    def _view_inputs(self) -> tuple:
+        """Everything node views depend on besides structure: body placement, template gates, flags."""
+        def build():
+            bodies = [n for n in self._nodes.values() if isinstance(n, BodyNode) and not isinstance(n, PlanNode)]
+            templates = [t for n in self._nodes.values() if isinstance(n, BodyNode)
+                         for t in content_children(n)[:-1]]
+            return bodies, templates
+        bodies, templates = self._meta("view_inputs", build)
+        return (tuple((None if b.position is None else tuple(b.position), None if b.extent is None else tuple(b.extent))
+                      for b in bodies),
+                tuple(t.gate for t in templates), ORIENTING_TEMPLATES, TREE_SIZED_BODIES, MOTION_AWAY_FROM_FIGURE)
+
     def node_views(self, shape: Tuple[int, int], place: bool = False) -> Dict[str, List[tuple]]:
+        """Memoised ``_node_views``: recomputed only when structure, body placement or template gates change."""
+        if place:
+            return self._node_views(shape, place)          # placing changes body positions: never cached
+        key = (self._meta("structure", lambda: object()), tuple(shape), self._view_inputs())
+        memo = getattr(self, "_views_memo", None)
+        if memo is None or memo[0] != key:
+            self._views_memo = (key, self._node_views(shape))
+        return self._views_memo[1]
+
+    def _node_views(self, shape: Tuple[int, int], place: bool = False) -> Dict[str, List[tuple]]:
         """Where every node sits on the board, as ``(weight, chain, rect)`` views.
 
         A view reaches the node's region through ``chain``, a tuple of turned frames
@@ -1362,21 +1435,53 @@ class ConceptGraph:
         return self._render_all()[1]
 
     def _render_all(self):
-        """Each tree's own space, and all of them overlaid (for display, and perception with shared spaces)."""
+        """Each tree's own space, and all of them overlaid (for display, and perception with shared spaces).
+
+        A tree is redrawn only when something its drawing depends on changed: any gate in the tree, its
+        bodies' placement, its mass offsets, its input fields, or the semantics flags. Otherwise the last
+        drawing is reused (the same inputs give the same drawing).
+        """
+        cache = self.__dict__.setdefault("_draw_cache", {})
         yang, yin, spaces = np.ones(self.grid), np.ones(self.grid), {}
         for r in self.roots:
-            a, b = self._paint_root(self.grid, r.node_id, place_bodies=True)
-            spaces[r.node_id] = _compose(a, b)
+            key = self._draw_key(r.node_id)
+            hit = cache.get(r.node_id)
+            if hit is None or hit[0] != key:
+                a, b = self._paint_root(self.grid, r.node_id, place_bodies=True)
+                hit = cache[r.node_id] = (key, a, b, _compose(a, b))
+            _, a, b, spaces[r.node_id] = hit
             yang, yin = yang * a, yin * b
         return spaces, _compose(yang, yin)
 
+    def _draw_key(self, root_id: str) -> tuple:
+        """Everything a tree's drawing depends on (besides structure, which is part of the key)."""
+        def build():
+            per = {}
+            for r in self.roots:
+                ns = list(walk(r))
+                per[r.node_id] = (ns, [n for n in ns if isinstance(n, BodyNode) and not isinstance(n, PlanNode)],
+                                  [n for n in ns if isinstance(n, InWindowNode)])
+            return per
+        nodes, bodies, inputs = self._meta("draw_nodes", build)[root_id]
+        st = self._mass.get(root_id)
+        return (self._meta("structure", lambda: object()), tuple(self.grid),
+                tuple(n.gate for n in nodes),
+                tuple((None if b.position is None else tuple(b.position), None if b.extent is None else tuple(b.extent))
+                      for b in bodies),
+                None if st is None else st["off"].tobytes(),
+                tuple(id(n.field) for n in inputs),
+                UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
+                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics)
+
     def tree_index(self) -> Dict[str, str]:
         """Which root (tree) each node belongs to."""
-        out: Dict[str, str] = {}
-        for r in self.roots:
-            for n in walk(r):
-                out.setdefault(n.node_id, r.node_id)
-        return out
+        def build():
+            out: Dict[str, str] = {}
+            for r in self.roots:
+                for n in walk(r):
+                    out.setdefault(n.node_id, r.node_id)
+            return out
+        return self._meta("tree_index", build)
 
     def _paint_root(self, shape: Tuple[int, int], root_id: Optional[str], place_bodies: bool):
         """One root's paint, with its mass drawn at the displaced positions (ludo, MOTION_KINDS)."""
@@ -1421,7 +1526,7 @@ class ConceptGraph:
         sources: Dict[str, List[Node]] = defaultdict(list)
         for edge in self._dashed:
             sources[edge.target.node_id].append(edge.source)
-        new = {nid: _clamp(np.mean([s.activation for s in srcs])) for nid, srcs in sources.items()}
+        new = {nid: _clamp(_mean([s.activation for s in srcs])) for nid, srcs in sources.items()}
         for nid, gate in new.items():
             node = self._nodes[nid]
             node.gate = gate
@@ -1457,12 +1562,14 @@ class ConceptGraph:
             by_tree = defaultdict(dict)
             for b, v in bodies_at.items():
                 by_tree[tree.get(b)][b] = v
-        in_templates = set()                     # dynamic leaves in templates give orientation, not orders
-        if ORIENTING_TEMPLATES:
+        def build_templates():                   # dynamic leaves in templates give orientation, not orders
+            out = set()
             for b in self._nodes.values():
                 if isinstance(b, BodyNode):
                     for t in content_children(b)[:-1]:
-                        in_templates.update(n.node_id for n in walk(t))
+                        out.update(n.node_id for n in walk(t))
+            return out
+        in_templates = self._meta("in_templates", build_templates) if ORIENTING_TEMPLATES else set()
         for node in self._nodes.values():
             if not (isinstance(node, ObjectNode) and node.is_dynamic
                     and getattr(node, "role", None) == "imagined") or node.node_id in in_templates:
@@ -1526,7 +1633,7 @@ class ConceptGraph:
         H, W = self.grid
         fy, fn = self._paint(self.grid, root.node_id, True, layer="free")
         paint = (fy < 1 - 1e-9) | (fn < 1 - 1e-9)                      # source cells that carry mass
-        R, C = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+        R, C = _grid_index((H, W))
         where = (R + st["off"][..., 0], C + st["off"][..., 1])          # where each source cell's mass is now
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
@@ -1609,7 +1716,7 @@ class ConceptGraph:
     def _move_mass(self) -> None:
         """Mass orders (and random pushes) move particles at most one cell per tick; mass stays on the board."""
         H, W = self.grid
-        R, C = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+        R, C = _grid_index((H, W))
         for st in self._mass.values():
             keep = []
             for o in st["orders"]:                     # [particles, axis, direction, cells left, rate, credit, delay]
@@ -1666,7 +1773,7 @@ class ConceptGraph:
                 net[order[0]] += order[1] * k
             body.orders = [o for o in body.orders if o[2] > 0]
             for ax in (0, 1):                                    # random pushes (universal), whole cells
-                step = int(np.clip(np.trunc(body.jitter[ax]), -1, 1))
+                step = max(-1, min(1, math.trunc(body.jitter[ax])))
                 net[ax] += step
                 body.jitter[ax] -= step
             for axis, n in ((0, H), (1, W)):
