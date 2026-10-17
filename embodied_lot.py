@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import warnings
 from collections import defaultdict, deque
+from functools import lru_cache
 from enum import Enum
 from typing import Dict, Iterator, List, Optional, Set, Tuple
 
@@ -151,6 +152,39 @@ MOTION_AWAY_FROM_FIGURE = True
 # With False, a dynamic template selects the half of the field in its motion direction.
 ORIENTING_TEMPLATES = True
 
+# A program's meaning comes purely from its tree: no numbers inside it. A body fills the region
+# its place in the tree gives it (its serial strip, its parent body's window, the whole field,
+# or its turned frame), set by ``place_bodies``; any extent or step passed to ``BodyNode`` is
+# overwritten. In ludo a body moves at the motion leaf's gate (times its groups' gates) times
+# its trigram's motion strength, in cells per tick. With False, bodies keep their extent and
+# step parameters (earlier runs).
+TREE_SIZED_BODIES = True
+
+# Each motion trigram has its own kind of motion (ludo), and motion moves mass as well as bodies.
+# Mass: cells drawn by imagined leaves outside any body are particles with an accumulated
+# whole-cell offset; the tree keeps drawing its pattern at the displaced positions, and vacated
+# cells read as unknown. Bodies stay whole tokens. Kinds:
+#   top / bottom      bulk: everything in the leaf's space moves together (a body by its own
+#                     extent, mass by the space's extent)
+#   upper / lower     gradient: layers leave one per tick (at full gate) from the leading edge, so
+#                     mass spreads like diffusion and bodies leave in a queue
+#   center            the two halves of the space (along the leaf's axis) move apart, each by
+#                     half its own size (centrifugal)
+#   periphery         the two halves move together, each by half its own size (centripetal)
+#   universal         each particle or body gets a random push along the leaf's axis every tick
+#                     while the leaf is on (seeded by leaf and tick: a program's video is fixed)
+# Everything moves at the gate: one cell (or layer) per tick when it is fully open. With False,
+# every motion trigram moves bodies in bulk at its motion strength, and mass does not move.
+MOTION_KINDS = True
+
+# Separate trees are separate spaces (ludo). Each root draws in its own space; its observers
+# perceive only that space, and its motion leaves move only its own bodies and mass. Things share
+# a space only by being composed under a common node, which makes them one tree. Trees can still
+# be linked by dashed edges. With False, all roots are drawn on one shared board (earlier runs).
+SEPARATE_TREE_SPACES = True
+_MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
+                "center": "out", "periphery": "in", "universal": "random"}
+
 
 def _sg(node) -> float:
     """The gate a structure applies to its composite (1 when GATE_STRUCTURES is off)."""
@@ -210,6 +244,7 @@ def is_empty(region: Region) -> bool:
     return r1 <= r0 or c1 <= c0
 
 
+@lru_cache(maxsize=4096)
 def _orientation_map(region: Region, v: Tuple[float, float]):
     """Which cell of the content's own upright frame each cell of ``region`` shows.
 
@@ -303,6 +338,15 @@ def _frame_shape(chain, shape: Tuple[int, int]) -> Tuple[int, int]:
         return shape
     Hc, Wc, *_ = _orientation_map(*chain[-1])
     return Hc, Wc
+
+
+def _scatter(complement: np.ndarray, offset: np.ndarray) -> np.ndarray:
+    """Move each cell's paint (a noisy-OR complement) by its whole-cell offset; overlaps combine."""
+    H, W = complement.shape
+    R, C = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+    out = np.ones_like(complement)
+    np.multiply.at(out, (np.clip(R + offset[..., 0], 0, H - 1), np.clip(C + offset[..., 1], 0, W - 1)), complement)
+    return out
 
 
 def _has_dynamic(node: "Node") -> bool:
@@ -550,6 +594,47 @@ class OutputNode(Node):
 PORTALS = (InputNode, OutputNode)
 
 
+class WindowNode(Node):
+    """An output window: a leaf that reads whatever is drawn in the region its place in the tree gives it.
+
+    Like an input window it holds no pattern. It draws nothing, scans nothing and takes no dashed
+    edges. A program's output channels are its windows: channel k at each tick is the board inside
+    window k's region (its strip, its body's window, or its turned frame), unknown elsewhere. If what
+    was drawn there moves away, the channel goes unknown.
+    """
+
+    node_type = "out"
+
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        self.activation = 0.0
+        return 0.0
+
+
+class InWindowNode(Node):
+    """An input window: the mirror image of an output window. A leaf that shows an external field.
+
+    Its region comes from its place in the tree (a strip, a body's window, a turned frame), and it
+    writes its field into its tree's space there, resized to the window's cells. Values read on the
+    board's scale: 1 figure, 0 known empty, 0.5 unknown. Its gate weights what it writes. Observers
+    whose region covers it perceive it like anything drawn. It scans nothing and takes no dashed
+    edges. Set its data with ``ConceptGraph.set_window_input``. (``InputNode`` is the earlier portal, kept
+    for the original demos and learners.)
+    """
+
+    node_type = "in"
+
+    def __init__(self, node_id: str, field: Optional[np.ndarray] = None) -> None:
+        super().__init__(node_id)
+        self.field = field
+
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        self.activation = 0.0
+        return 0.0
+
+
+_WINDOW_LEAVES = (WindowNode, InWindowNode)       # read or write a region; never scanned or averaged
+
+
 def content_children(node: Node) -> List[Node]:
     """A node's children, without its input/output windows."""
     return [c for c in node.children if not isinstance(c, PORTALS)]
@@ -643,7 +728,7 @@ class ParallelNode(StructureNode):
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         inputs   = [c for c in self.children if isinstance(c, InputNode)]
         outputs  = [c for c in self.children if isinstance(c, OutputNode)]
-        scanners = content_children(self)
+        scanners = [c for c in content_children(self) if not isinstance(c, _WINDOW_LEAVES)]   # windows only read/write
 
         pooled = [(n.field, n.gate) for n in inputs if n.field is not None and n.gate > 1e-8]
         if field is not None and self.inherited_weight > 1e-8:
@@ -689,15 +774,16 @@ class SerialNode(StructureNode):
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         if field is None and self.children and EVALUATE_IMAGINED_SUBTREES:
             # Imagined: no field to split into strips; evaluate every child and average.
-            self.activation = float(np.mean([child.evaluate(None) for child in self.children])) * _sg(self)
+            kids = [c for c in self.children if not isinstance(c, _WINDOW_LEAVES)]
+            self.activation = (float(np.mean([child.evaluate(None) for child in kids])) if kids else 0.0) * _sg(self)
             return self.activation
         if not self.children or field is None:
             self.activation = 0.0
             return 0.0
         n = len(self.children)
-        self.activation = float(np.mean(
-            [child.evaluate(self._make_strip(field, i, n)) for i, child in enumerate(self.children)]
-        )) * _sg(self)
+        scores = [child.evaluate(self._make_strip(field, i, n)) for i, child in enumerate(self.children)
+                  if not isinstance(child, _WINDOW_LEAVES)]            # a window keeps its strip but only reads/writes
+        self.activation = (float(np.mean(scores)) if scores else 0.0) * _sg(self)
         return self.activation
 
 
@@ -735,7 +821,8 @@ class BodyNode(StructureNode):
         self.velocity = list(velocity)
         self.step_size = None if step_size is None else float(step_size)
         self.subfield_shape = subfield_shape   # used by PlanNode only
-        self.orders: List[list] = []             # ludo: [axis, direction, cells left, rate, credit, leaf id]
+        self.orders: List[list] = []             # ludo: [axis, direction, cells left, rate, credit, leaf id, delay]
+        self.jitter = [0.0, 0.0]                 # ludo: accumulated random pushes (universal), per axis
         self._grid: Optional[np.ndarray] = None
 
     # -- window --------------------------------------------------------
@@ -761,8 +848,11 @@ class BodyNode(StructureNode):
         cy, cx = self.position
         eh, ew = self.extent
         h_px, w_px = max(1, round(eh * H)), max(1, round(ew * W))
-        r0 = max(0, round(cy * H) - h_px // 2)
-        c0 = max(0, round(cx * W) - w_px // 2)
+        if TREE_SIZED_BODIES:                  # position is the exact centre: the window starts at centre - size/2
+            r0, c0 = max(0, round(cy * H - h_px / 2)), max(0, round(cx * W - w_px / 2))
+        else:
+            r0 = max(0, round(cy * H) - h_px // 2)
+            c0 = max(0, round(cx * W) - w_px // 2)
         r1, c1 = min(H, r0 + h_px), min(W, c0 + w_px)
         if r1 <= r0: r1 = min(H, r0 + 1)
         if c1 <= c0: c1 = min(W, c0 + 1)
@@ -927,6 +1017,8 @@ class ConceptGraph:
         self._imagery: Optional[np.ndarray] = None
         self._prev_act: Dict[str, float] = {}
         self._inside: Dict[str, set] = {}        # ludo: bodies inside each switched-on motion leaf's region
+        self._mass: Dict[str, dict] = {}         # ludo: each root's mass particles (MOTION_KINDS)
+        self._tick = 0
 
     # -- construction / access ----------------------------------------
 
@@ -1057,7 +1149,8 @@ class ConceptGraph:
                     edge.target.activation = unknown_value()
             for node in self._nodes.values():
                 if isinstance(node, BodyNode):
-                    node.orders = []
+                    node.orders, node.jitter = [], [0.0, 0.0]
+            self._mass, self._tick, self._spaces = {}, 0, {}
             self._prev_act = {}
             self._inside = {}
             self._imagery = None
@@ -1201,17 +1294,20 @@ class ConceptGraph:
         placed = set()
 
         def visit(node: Node, weight: float, chain: tuple, rect: Region) -> None:
-            if weight < 1e-9 or is_empty(rect):
+            if (weight < 1e-9 and not place) or is_empty(rect):    # placing reaches unweighted bodies too
                 return
             if isinstance(node, BodyNode) and not isinstance(node, PlanNode):
                 fh, fw = _frame_shape(chain, (H, W))
-                if place and node.extent is not None and node.node_id not in placed:
+                if place and (TREE_SIZED_BODIES or node.extent is not None) and node.node_id not in placed:
                     r0, r1, c0, c1 = rect
                     node.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
+                    if TREE_SIZED_BODIES:              # the body fills its region
+                        node.extent = [(r1 - r0) / fh, (c1 - c0) / fw]
                     placed.add(node.node_id)
                 if node.position is not None:
                     rect = node.window(fh, fw)
-            views[node.node_id].append((weight, chain, rect))
+            if weight >= 1e-9:
+                views[node.node_id].append((weight, chain, rect))
             kids = content_children(node)
             if isinstance(node, BodyNode) and len(kids) > 1:
                 plan(kids, weight, chain, rect)
@@ -1241,6 +1337,19 @@ class ConceptGraph:
             visit(r, 1.0, (), (0, H, 0, W))
         return views
 
+    def windows(self) -> List["WindowNode"]:
+        """The output windows, in program order (each is one output channel)."""
+        return [n for n in self._nodes.values() if isinstance(n, WindowNode)]
+
+    def input_windows(self) -> List["InWindowNode"]:
+        """The input windows, in program order."""
+        return [n for n in self._nodes.values() if isinstance(n, InWindowNode)]
+
+    def set_window_input(self, which, field: np.ndarray) -> None:
+        """Give input window ``which`` (its index in program order, or its node id) a field to show."""
+        node = self._nodes[which] if isinstance(which, str) else self.input_windows()[which]
+        node.field = np.clip(np.asarray(field, dtype=float), 0.0, 1.0)
+
     def view_masks(self, shape: Tuple[int, int]) -> Dict[str, np.ndarray]:
         """Every node's board cells: the union of its views' cells."""
         out = {}
@@ -1250,13 +1359,36 @@ class ConceptGraph:
 
     def _render_imagery(self) -> np.ndarray:
         """The whole imagined scene on the grid: every root drawn with bodies in place (noisy-OR)."""
-        yang, yin = np.ones(self.grid), np.ones(self.grid)
-        for r in self.roots:
-            a, b = self._paint(self.grid, r.node_id, place_bodies=True)
-            yang, yin = yang * a, yin * b
-        return _compose(yang, yin)
+        return self._render_all()[1]
 
-    def _perceive(self) -> None:
+    def _render_all(self):
+        """Each tree's own space, and all of them overlaid (for display, and perception with shared spaces)."""
+        yang, yin, spaces = np.ones(self.grid), np.ones(self.grid), {}
+        for r in self.roots:
+            a, b = self._paint_root(self.grid, r.node_id, place_bodies=True)
+            spaces[r.node_id] = _compose(a, b)
+            yang, yin = yang * a, yin * b
+        return spaces, _compose(yang, yin)
+
+    def tree_index(self) -> Dict[str, str]:
+        """Which root (tree) each node belongs to."""
+        out: Dict[str, str] = {}
+        for r in self.roots:
+            for n in walk(r):
+                out.setdefault(n.node_id, r.node_id)
+        return out
+
+    def _paint_root(self, shape: Tuple[int, int], root_id: Optional[str], place_bodies: bool):
+        """One root's paint, with its mass drawn at the displaced positions (ludo, MOTION_KINDS)."""
+        rid = root_id if root_id is not None else self.roots[-1].node_id
+        st = self._mass.get(rid) if MOTION_KINDS and self.dynamics == "ludo" else None
+        if st is None or not place_bodies or tuple(shape) != tuple(self.grid) or not st["off"].any():
+            return self._paint(shape, root_id, place_bodies)
+        fy, fn = self._paint(shape, rid, True, layer="free")
+        by, bn = self._paint(shape, rid, True, layer="bodies")
+        return _scatter(fy, st["off"]) * by, _scatter(fn, st["off"]) * bn
+
+    def _perceive(self, views=None) -> None:
         """Each top-most observer evaluates its subtree against last tick's imagery, through its views.
 
         A view is a sub-field of the whole board, carried into any turned frames above the
@@ -1264,12 +1396,18 @@ class ConceptGraph:
         absolute grid coordinates. An observer with several views (it sits in a template's
         content) takes their weighted mean. Observers with an input window keep scanning it.
         """
-        board = ReceptiveField(self._imagery if self._imagery is not None else blank_board(self.grid))
-        views = self.node_views(self.grid)
+        shared = ReceptiveField(self._imagery if self._imagery is not None else blank_board(self.grid))
+        spaces = getattr(self, "_spaces", None) or {}
+        tree = self.tree_index() if SEPARATE_TREE_SPACES else {}
+        views = self.node_views(self.grid) if views is None else views
         parents = self._parents()
         for node in getattr(self, "_observer_roots", []):
             if isinstance(node, ObjectNode) and self._has_input_context(node, parents):
                 continue
+            board = shared
+            if SEPARATE_TREE_SPACES:                          # an observer sees only its own tree's space
+                own = spaces.get(tree.get(node.node_id))
+                board = ReceptiveField(own if own is not None else blank_board(self.grid))
             vs = views.get(node.node_id, [])
             if not vs:
                 for n in walk(node):
@@ -1290,18 +1428,18 @@ class ConceptGraph:
             if isinstance(node, PORTALS):
                 node.activation = gate
 
-    def _moving_bodies(self, views) -> Dict[str, tuple]:
+    def _moving_bodies(self, views, cells: bool = True) -> Dict[str, tuple]:
         """Each placed body's home (its first view's chain and frame size) and its board cells."""
         out = {}
         for b in self._nodes.values():
             vs = views.get(b.node_id)
             if isinstance(b, BodyNode) and not isinstance(b, PlanNode) and b.position is not None \
                     and b.extent is not None and vs:
-                cells = np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs])
-                out[b.node_id] = (vs[0][1], _frame_shape(vs[0][1], self.grid), cells)
+                mask = np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs])                     if cells else None
+                out[b.node_id] = (vs[0][1], _frame_shape(vs[0][1], self.grid), mask)
         return out
 
-    def _issue_orders(self) -> None:
+    def _issue_orders(self, views=None) -> None:
         """A switched-on imagined dynamic trigram orders every body that enters its space.
 
         Its space is its own region on the board, through each of its views (``node_views``). A
@@ -1312,8 +1450,13 @@ class ConceptGraph:
         frames; a diagonal push is one order per axis.
         """
         parents = self._parents()
-        views = self.node_views(self.grid)
+        views = self.node_views(self.grid) if views is None else views
         bodies_at = self._moving_bodies(views)
+        if SEPARATE_TREE_SPACES:                              # a motion leaf moves only bodies of its own tree
+            tree = self.tree_index()
+            by_tree = defaultdict(dict)
+            for b, v in bodies_at.items():
+                by_tree[tree.get(b)][b] = v
         in_templates = set()                     # dynamic leaves in templates give orientation, not orders
         if ORIENTING_TEMPLATES:
             for b in self._nodes.values():
@@ -1324,7 +1467,7 @@ class ConceptGraph:
             if not (isinstance(node, ObjectNode) and node.is_dynamic
                     and getattr(node, "role", None) == "imagined") or node.node_id in in_templates:
                 continue
-            a = node.activation
+            a = node.gate                                 # an imagined leaf's gate (its activation equals it)
             anc = node
             while parents.get(anc.node_id):              # a gated-off composite issues no orders
                 anc = parents[anc.node_id][0]
@@ -1335,10 +1478,14 @@ class ConceptGraph:
                 for key in [k for k in self._inside if k.split("#")[0] == node.node_id]:
                     del self._inside[key]
                 continue
+            near = by_tree[tree.get(node.node_id)] if SEPARATE_TREE_SPACES else bodies_at
+            if MOTION_KINDS:
+                self._issue_kinds(node, a, list(zip(keys, views.get(node.node_id, []))), near, parents)
+                continue
             motion = BodyNode._template_motion(node)
             for key, (_, chain, rect) in zip(keys, views.get(node.node_id, [])):
                 space = _view_mask(self.grid, chain, rect)
-                bodies = [self._nodes[b] for b, (_, _, cells) in bodies_at.items() if (space & cells).any()]
+                bodies = [self._nodes[b] for b, (_, _, cells) in near.items() if (space & cells).any()]
                 was_inside = self._inside.get(key, set())
                 self._inside[key] = {b.node_id for b in bodies}
                 push = _view_turn(chain, motion)              # on the board
@@ -1351,30 +1498,184 @@ class ConceptGraph:
                             continue
                         cells_on_axis = frame[axis]
                         extent_cells = max(1, round(body.extent[axis] * cells_on_axis))
-                        rate = (body.step_size or 0.0) * cells_on_axis * a * abs(m)
+                        rate = a * abs(m) if TREE_SIZED_BODIES else (body.step_size or 0.0) * cells_on_axis * a * abs(m)
                         if rate > 0:
                             body.orders.append([axis, 1 if m > 0 else -1, extent_cells, rate, 0.0, node.node_id])
 
-    def _move_bodies_ludo(self) -> None:
+    # -- motion kinds: bodies and mass ------------------------------------------------
+
+    def _mass_state(self, root_id: str) -> dict:
+        """A root's mass: each board cell's drawn content is a particle with a whole-cell offset."""
+        st = self._mass.get(root_id)
+        if st is None:
+            H, W = self.grid
+            st = {"off": np.zeros((H, W, 2), dtype=int), "jit": np.zeros((H, W, 2)), "orders": []}
+            self._mass[root_id] = st
+        return st
+
+    def _issue_kinds(self, node: "ObjectNode", a: float, keyed_views, bodies_at, parents) -> None:
+        """One switched-on motion leaf's motion this tick, by its trigram's kind (see MOTION_KINDS)."""
+        import zlib
+        kind = _MOTION_KIND.get(PATTERN_TO_NAME.get(node.pattern))
+        if kind is None:
+            return
+        root = node
+        while parents.get(root.node_id):
+            root = parents[root.node_id][0]
+        st = self._mass_state(root.node_id)
+        H, W = self.grid
+        fy, fn = self._paint(self.grid, root.node_id, True, layer="free")
+        paint = (fy < 1 - 1e-9) | (fn < 1 - 1e-9)                      # source cells that carry mass
+        R, C = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+        where = (R + st["off"][..., 0], C + st["off"][..., 1])          # where each source cell's mass is now
+        motion = BodyNode._template_motion(node)
+        axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
+        for key, (_, chain, rect) in keyed_views:
+            space = _view_mask(self.grid, chain, rect)
+            rows, cols = np.nonzero(space)
+            if not rows.size:
+                continue
+            bodies = [self._nodes[b] for b, (_, _, cells) in bodies_at.items() if (space & cells).any()]
+            was = self._inside.get(key, set())
+            self._inside[key] = {b.node_id for b in bodies}
+            fresh = [b for b in bodies if b.node_id not in was]
+            inside = paint & space[where]
+            was_m = self._inside.get(key + "m", set())
+            now_m = set(np.flatnonzero(inside).tolist())
+            self._inside[key + "m"] = now_m
+            fresh_m = np.zeros((H, W), dtype=bool)
+            fresh_m.flat[sorted(now_m - was_m)] = True
+            if kind in ("bulk", "gradient"):
+                norm = float(np.hypot(*motion))
+                if norm < 1e-12:
+                    continue
+                d = _view_turn(chain, (motion[0] / norm, motion[1] / norm))
+            else:
+                d = _view_turn(chain, axis_vec)
+            rng = np.random.default_rng(zlib.crc32(f"{node.node_id}|{key}|{self._tick}".encode()))
+            for axis, comp in enumerate(d):
+                if abs(comp) < 1e-9:
+                    continue
+                lo, hi = (rows.min(), rows.max()) if axis == 0 else (cols.min(), cols.max())
+                span, centre = int(hi - lo + 1), (lo + hi + 1) / 2.0
+                coord = where[axis]
+                sign = 1 if comp > 0 else -1
+                rate = a * abs(comp)
+                if kind == "random":
+                    st["jit"][..., axis] += np.where(inside, rng.uniform(-1, 1, (H, W)) * rate, 0.0)
+                    for b in bodies:
+                        self._push_body(b, bodies_at, axis, float(rng.uniform(-1, 1)) * rate, jitter=True)
+                    continue
+                if kind == "bulk":
+                    if fresh_m.any():
+                        st["orders"].append([fresh_m, axis, sign, span, rate, 0.0, 0.0])
+                    for b in fresh:
+                        self._push_body(b, bodies_at, axis, sign * rate, node_id=node.node_id)
+                elif kind == "gradient":                                # layers from the leading edge
+                    levels = sorted(set(coord[fresh_m].tolist()), reverse=sign > 0)
+                    for k, v in enumerate(levels):
+                        st["orders"].append([fresh_m & (coord == v), axis, sign, span, rate, 0.0, k / a])
+                    lead = lambda b: -sign * float(np.nonzero(bodies_at[b.node_id][2])[axis].mean())
+                    for k, b in enumerate(sorted(fresh, key=lead)):
+                        self._push_body(b, bodies_at, axis, sign * rate, node_id=node.node_id, delay=k / a)
+                else:                                                   # out / in: the two halves
+                    for half in (-1, 1):
+                        part = fresh_m & (np.sign(coord + 0.5 - centre) == half)
+                        go = half if kind == "out" else -half
+                        if part.any():
+                            st["orders"].append([part, axis, go, max(1, round(span / 4)), rate, 0.0, 0.0])
+                    for b in fresh:
+                        side = np.sign(float(np.nonzero(bodies_at[b.node_id][2])[axis].mean()) + 0.5 - centre)
+                        if side:
+                            go = side if kind == "out" else -side
+                            self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
+
+    def _push_body(self, body, bodies_at, axis: int, signed_rate: float, node_id: str = "",
+                   delay: float = 0.0, half: bool = False, jitter: bool = False) -> None:
+        """Order (or jitter) a body along a board axis, expressed in the body's own frame."""
+        home, frame, _ = bodies_at[body.node_id]
+        vec = [0.0, 0.0]
+        vec[axis] = signed_rate
+        for ax, m in enumerate(_view_unturn(home, tuple(vec))):
+            if abs(m) < 1e-9:
+                continue
+            if jitter:
+                body.jitter[ax] += m
+                continue
+            cells = max(1, round(body.extent[ax] * frame[ax]))
+            body.orders.append([ax, 1 if m > 0 else -1, max(1, round(cells / 2)) if half else cells,
+                                abs(m), 0.0, node_id, delay])
+
+    def _move_mass(self) -> None:
+        """Mass orders (and random pushes) move particles at most one cell per tick; mass stays on the board."""
+        H, W = self.grid
+        R, C = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+        for st in self._mass.values():
+            keep = []
+            for o in st["orders"]:                     # [particles, axis, direction, cells left, rate, credit, delay]
+                if o[6] >= 1 - 1e-9:
+                    o[6] -= 1
+                    keep.append(o)
+                    continue
+                o[5] += o[4]
+                k = min(int(o[5]), 1, o[3])
+                o[5] -= k
+                o[3] -= k
+                if k:
+                    st["off"][o[0], o[1]] += o[2] * k
+                if o[3] > 0:
+                    keep.append(o)
+            st["orders"] = keep
+            step = np.trunc(st["jit"]).clip(-1, 1).astype(int)
+            st["off"] += step
+            st["jit"] -= step
+            st["off"][..., 0] = np.clip(R + st["off"][..., 0], 0, H - 1) - R
+            st["off"][..., 1] = np.clip(C + st["off"][..., 1], 0, W - 1) - C
+
+    def motion_state(self) -> tuple:
+        """Everything about mass that can change a later frame (for periodicity checks)."""
+        out = tuple((rid, st["off"].tobytes(), np.round(st["jit"], 6).tobytes(),
+                     tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
+                           for o in st["orders"]))
+                    for rid, st in sorted(self._mass.items()))
+        jit = tuple(tuple(round(v, 6) for v in getattr(n, "jitter", ())) for n in self._nodes.values()
+                    if isinstance(n, BodyNode))
+        random_now = any(isinstance(n, ObjectNode) and n.is_dynamic and PATTERN_TO_NAME.get(n.pattern) == "universal"
+                         for n in self._nodes.values())
+        return out, jit, (self._tick if random_now else 0)
+
+    def _move_bodies_ludo(self, views=None) -> None:
         """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
 
         A body moves on its own frame's cells (the board, or the turned frame it lives in).
         """
-        homes = self._moving_bodies(self.node_views(self.grid))
+        homes = self._moving_bodies(self.node_views(self.grid) if views is None else views, cells=False)
         for body in self._nodes.values():
             if not isinstance(body, BodyNode) or isinstance(body, PlanNode) or body.position is None:
                 continue
             H, W = homes[body.node_id][1] if body.node_id in homes else self.grid
             net = [0, 0]
             for order in body.orders:
+                if len(order) > 6 and order[6] >= 1 - 1e-9:     # queued: waits its turn
+                    order[6] -= 1
+                    continue
                 order[4] += order[3]
                 k = min(int(order[4]), 1, order[2])
                 order[4] -= k
                 order[2] -= k
                 net[order[0]] += order[1] * k
             body.orders = [o for o in body.orders if o[2] > 0]
+            for ax in (0, 1):                                    # random pushes (universal), whole cells
+                step = int(np.clip(np.trunc(body.jitter[ax]), -1, 1))
+                net[ax] += step
+                body.jitter[ax] -= step
             for axis, n in ((0, H), (1, W)):
                 size = max(1, round(body.extent[axis] * n))
+                if TREE_SIZED_BODIES:                    # move the window's start cell; keep it on the board
+                    start = round(body.position[axis] * n - size / 2) + net[axis]
+                    start = min(max(start, 0), n - size)
+                    body.position[axis] = (start + size / 2) / n
+                    continue
                 cell = round(body.position[axis] * n) + net[axis]
                 cell = min(max(cell, size // 2), n - size + size // 2)
                 body.position[axis] = cell / n
@@ -1388,11 +1689,15 @@ class ConceptGraph:
         """
         self.assign_roles()
         result = self._scan()
-        self._perceive()
-        self._issue_orders()
+        views = self.node_views(self.grid)      # unchanged until the bodies move
+        self._perceive(views)
+        self._issue_orders(views)
         self._propagate_delayed()
-        self._move_bodies_ludo()
-        self._imagery = self._render_imagery()
+        self._move_bodies_ludo(views)
+        if MOTION_KINDS:
+            self._move_mass()
+        self._spaces, self._imagery = self._render_all()
+        self._tick += 1
         return result
 
     def evaluate_against(self, field: ReceptiveField, at_node_id: Optional[str] = None,
@@ -1490,17 +1795,20 @@ class ConceptGraph:
         for it, instead of its parent's whole region. This makes body motion
         visible in the output. The default keeps the original behaviour.
         """
-        return ReceptiveField(_compose(*self._paint(shape, output_root_id, place_bodies)))
+        return ReceptiveField(_compose(*self._paint_root(shape, output_root_id, place_bodies)))
 
     def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str],
-               place_bodies: bool) -> Tuple[np.ndarray, np.ndarray]:
-        """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint."""
+               place_bodies: bool, layer: str = "all") -> Tuple[np.ndarray, np.ndarray]:
+        """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint.
+
+        ``layer`` "free" keeps only paint drawn outside bodies (mass), "bodies" only paint inside them.
+        """
         H, W = shape
         roots = self.roots
         out_root = self._nodes[output_root_id] if output_root_id is not None else roots[-1]
         # cv: [yang paint (and, in the earlier renderer, yin paint), yin paint, place bodies, frame size].
         # An oriented slot swaps in a canvas for the content's upright frame (render_oriented).
-        cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W)]     # ..., frame size
+        cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W), False]   # ..., frame size, inside a body
 
         def yang_regions(node: Node, region: Region) -> List[Region]:
             if isinstance(node, ObjectNode):
@@ -1539,7 +1847,7 @@ class ConceptGraph:
             """Draw ``children`` upright in their own frame, then show it in ``slot`` facing ``v``."""
             Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
             saved = cv[:]
-            cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc)]   # bodies live in the frame
+            cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4]]   # bodies live in the frame
             render_plan(children, (0, Hc, 0, Wc), weight)
             frame_yang, frame_yin = cv[0], cv[1]
             cv[:] = saved
@@ -1552,9 +1860,24 @@ class ConceptGraph:
                 return
             if getattr(node, "role", None) == "observer":
                 return                           # perceptual patterns are not part of the imagery
+            if isinstance(node, InWindowNode):
+                if node.field is None or (layer != "all" and cv[4] != (layer == "bodies")):
+                    return
+                r0, r1, c0, c1 = region          # the field, resized to the window's cells
+                f = node.field[np.arange(r1 - r0) * node.field.shape[0] // (r1 - r0)][
+                    :, np.arange(c1 - c0) * node.field.shape[1] // (c1 - c0)]
+                w = _clamp(weight * node.gate)
+                if UNKNOWN_BACKGROUND:
+                    cv[0][r0:r1, c0:c1] *= 1.0 - w * np.clip(2 * f - 1, 0, 1)
+                    cv[1][r0:r1, c0:c1] *= 1.0 - w * np.clip(1 - 2 * f, 0, 1)
+                else:
+                    cv[0][r0:r1, c0:c1] *= 1.0 - w * f
+                return
             if isinstance(node, ObjectNode):
                 if UNKNOWN_BACKGROUND and node.is_dynamic:
                     return                       # a motion trigram specifies motion, not a static figure
+                if layer != "all" and cv[4] != (layer == "bodies"):
+                    return                       # the other layer (mass vs bodies)
                 for i, bit in enumerate(node.pattern):
                     r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
                     w = _clamp(weight * node.gate)
@@ -1566,7 +1889,10 @@ class ConceptGraph:
             elif isinstance(node, BodyNode):
                 if cv[2] and not isinstance(node, PlanNode) and node.position is not None:
                     region = node.window(*cv[3])
+                was_inside = cv[4]
+                cv[4] = was_inside or not isinstance(node, PlanNode)
                 render_plan(content_children(node), region, weight * _sg(node))
+                cv[4] = was_inside
             elif isinstance(node, SerialNode):
                 kids = content_children(node)
                 for i, child in enumerate(kids):
@@ -1665,11 +1991,11 @@ class ConceptGraph:
         return {nid: n.activation for nid, n in self._nodes.items()}
 
     def body_states(self) -> Dict[str, Dict]:
-        """The position, velocity and extent of every moving body."""
+        """The position, velocity and extent of every placed moving body."""
         return {
             nid: {"position": list(n.position), "velocity": list(n.velocity), "extent": list(n.extent)}
             for nid, n in self._nodes.items()
-            if isinstance(n, BodyNode) and not isinstance(n, PlanNode)
+            if isinstance(n, BodyNode) and not isinstance(n, PlanNode) and n.position is not None
         }
 
     def __repr__(self) -> str:

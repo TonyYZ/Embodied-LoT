@@ -40,6 +40,8 @@ unknown_background = false                # pinned: undrawn cells rendered as 0 
 tree_placed_bodies = false                # pinned: bodies were placed by their (y, x) parameters in these results
 motion_away_from_figure = false           # pinned: horizontal motion used the earlier mirrored sign
 orienting_templates = false               # pinned: dynamic templates selected a half-field
+tree_sized_bodies = false                 # pinned: bodies had size and speed parameters in these results
+motion_kinds = false                      # pinned: every motion trigram moved bodies in bulk in these results
 
 [inference]
 prior = "description_length"

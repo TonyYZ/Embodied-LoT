@@ -38,10 +38,15 @@ def enumerate_trees(g: Grammar, d: int = 0, budget: int = None) -> List[P]:
     budget = g.max_nodes if budget is None else budget
     if budget < 1:
         return []
+    if g.multi_output(d) and g.output_leaves:       # one plain tree, or a forest of 2+ trees (no node of its own)
+        return enumerate_trees(g, 1, budget) + [P("outputs", (), kids) for k in g.child_counts("outputs")
+                                                for kids in _child_lists(g, 1, budget, k)]
     if g.multi_output(d):
         return [P("outputs", (), kids) for k in g.child_counts("outputs")
                 for kids in _child_lists(g, 1, budget - 1, k)]
     out = [P(LEAF, (n, o, dy)) for n in g.primitives for o in g.orientations for dy in g.dynamics]
+    if g.output_leaves:
+        out.append(P("out"))
     if g.leaf_forced(d):
         return out
     for kind in g.compositions:
@@ -88,7 +93,7 @@ def neighbours(prog: Program, g: Grammar) -> Iterator[Program]:
                     if v != n.params[attr]:
                         params = list(n.params); params[attr] = v
                         yield Program(replace(t, path, n._replace(params=tuple(params))), prog.dashed)
-        elif n.kind not in ("body", "outputs"):                       # composition type
+        elif n.kind not in ("body", "outputs", "out", "in"):          # composition type
             for k in g.compositions:
                 if k not in (n.kind, "body") and len(n.children) >= MIN_CHILDREN[k]:
                     yield Program(replace(t, path, n._replace(kind=k)), prog.dashed)
@@ -124,7 +129,7 @@ def neighbours(prog: Program, g: Grammar) -> Iterator[Program]:
             shift = lambda e: e[:d] + e[d + 1:] if e[:d] == path else e
             yield with_edges(replace(t, path, n.children[0]), [(shift(a), shift(b)) for a, b in prog.dashed])
     for path, n in nodes(t):                                          # add / remove child
-        if n.kind == LEAF:
+        if n.kind in (LEAF, "out", "in"):
             continue
         d = len(path)
         if len(n.children) < max(g.child_counts(n.kind)):
@@ -153,7 +158,10 @@ def _get(t, path):
 def reachability(g: Grammar, prior: SizePrior) -> Dict[str, object]:
     support = set(enumerate_support(g, prior))
     leaf0 = P(LEAF, (g.primitives[0], "V", False))
-    start = Program(P("outputs", (), (leaf0,)) if g.max_outputs else leaf0)
+    if g.output_leaves:                       # the smallest program with a window: (parallel leaf out)
+        start = Program(P("parallel", (), (leaf0, P("out"))))
+    else:
+        start = Program(P("outputs", (), (leaf0,)) if g.max_outputs else leaf0)
     seen: Set[Program] = {start}
     queue = deque([start])
     while queue:

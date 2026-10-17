@@ -1,0 +1,77 @@
+# GRACE x Embodied-LoT under the current LoT semantics (all defaults): ludo dynamics, the unknown
+# (0.5) background, tree-placed bodies, motion away from the figure, orienting templates, and
+# dashed edges that may target parent nodes. Otherwise as configs/grace_frozen.toml (occupancy
+# interface), with body extent 0.5 added. lambda and beta are chosen on the validation actors
+# (grace_lot.inference.select): best validation top-1 among settings with median R-hat <= max_r_hat.
+# The test actors are sealed.
+
+[data]
+raw_dir = "GRACE video database"
+processed_dir = "data/processed"
+results_dir = "results/grace_v3"
+model_path = "data/models/pose_landmarker_heavy.task"
+similarity_csv = "GRACE video database/Norming_Study_3.csv"
+substitutes = { "10F_scurrying.mp4" = "11F_scurrying.mp4" }
+
+[preprocess]
+min_visibility = 0.5
+edge_margin = 0.01
+frames = 16
+field_size = 12
+window_x = [-0.65, 0.65]
+window_y = [-0.6, 0.7]
+thickness = 0.08
+raster_scale = 8
+
+[lot]
+primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void"]
+compositions = ["parallel", "serial_h", "serial_v", "plan", "body"]
+allow_dynamic = true
+body_positions = [0.25, 0.5, 0.75]      # unused: bodies are placed by the tree
+body_extents = [0.34, 0.5, 0.67, 1.0]
+body_speeds = [0.0, 0.03, 0.06]
+max_depth = 4
+max_nodes = 10
+p_leaf = 0.55
+max_children = 3
+max_dashed = 3
+dashed_targets = "any"                 # dashed edges may target parent nodes
+tree_sized_bodies = false                 # pinned: bodies had size and speed parameters in these results
+motion_kinds = false                      # pinned: every motion trigram moved bodies in bulk in these results
+
+[inference]
+prior = "description_length"
+lambda_size = 1.0
+body_param_cost = 0.5
+dashed_cost = 1.0
+beta = 250.0
+distance = "euclid"
+iterations = 40000
+burn_in = 10000
+thin = 30
+chains = 4
+seed = 1
+move_weights = { regenerate = 0.2, leaf = 0.15, composition = 0.08, body = 0.07, swap = 0.05, add_dashed = 0.08, remove_dashed = 0.08, wrap = 0.06, unwrap = 0.06, add_child = 0.085, remove_child = 0.085 }
+replicas = 12
+hot_beta = 20.0
+swap_every = 1
+
+[split]
+test_actors = ["02M", "04M", "06F", "09F", "11M"]
+val_actors = ["01F", "02F", "03F", "07M", "10M"]
+
+[selection]
+max_r_hat = 1.1                         # choose only among settings whose MCMC converges (median R-hat)
+# Grid searched on the validation actors (grace_lot.inference.select).
+lambda_size    = [1.0, 2.0, 4.0]
+beta           = [250.0, 1000.0, 4000.0]
+# Stage 2, at the best (lambda, beta): search bounds, MCMC length and proposal mixture.
+[selection.variants]
+bigger_search  = ["lot.max_nodes=14", "lot.max_depth=5", "lot.max_dashed=4"]
+longer_mcmc    = ["inference.iterations=80000", "inference.burn_in=20000", "inference.thin=60", "inference.replicas=14"]
+more_regenerate = ["inference.move_weights={'regenerate': 0.35, 'leaf': 0.15, 'composition': 0.05, 'body': 0.05, 'swap': 0.04, 'add_dashed': 0.06, 'remove_dashed': 0.06, 'wrap': 0.04, 'unwrap': 0.04, 'add_child': 0.08, 'remove_child': 0.08}"]
+
+[analysis]
+n_permutations = 10000
+n_bootstrap = 2000
+max_pairs = 400

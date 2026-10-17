@@ -54,7 +54,7 @@ class SizePrior:
         prog = as_program(prog)
         t, k = prog.tree, len(prog.dashed)
         if self.kind == "node_count":
-            return (size(t) + self.body_param_cost * sum(n.kind == "body" for _, n in nodes(t))
+            return (size(t) + self.body_param_cost * sum(n.kind == "body" and bool(n.params) for _, n in nodes(t))
                     + self.dashed_cost * k)
         edge_bits = (math.log(self.grammar.max_dashed + 1) + math.log(math.comb(n_edge_slots(t, self.grammar.dashed_targets), k))
                      if self.grammar.max_dashed else 0.0)
@@ -63,8 +63,11 @@ class SizePrior:
     def __call__(self, prog) -> float:
         prog = as_program(prog)
         g, t = self.grammar, prog.tree
-        if (size(t) > g.max_nodes or depth(t) > g.max_depth or not is_valid(t)
+        forest = 1 if g.output_leaves and t.kind == "outputs" else 0   # a forest's trees are not under a node
+        if (size(t) - forest > g.max_nodes or depth(t) - forest > g.max_depth or not is_valid(t)
                 or len(prog.dashed) > g.max_dashed or not edges_valid(prog, g.dashed_targets)
                 or g.log_prob(t) == -math.inf):
             return -math.inf
+        if g.output_leaves and not 1 <= sum(n.kind == "out" for _, n in nodes(t)) <= g.max_outputs:
+            return -math.inf                                # 1..max_outputs output windows
         return -self.lambda_size * self.length(prog)

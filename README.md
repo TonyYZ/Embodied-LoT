@@ -28,8 +28,6 @@ Run the demos with:
 
 ```text
 python demos.py               # add --visualize to also write demos_gallery.html
-python mcmc_demos.py
-python dreamcoder_demos.py
 python visualize_demo.py      # writes top_replay.html
 python -m unittest test_embodied_lot
 ```
@@ -110,8 +108,9 @@ By default (`graph.dynamics = "ludo"`; "legacy" keeps the original step),
   a dynamic template turns its content to face its motion instead of moving
   anything (nested turns add up, and observers and motion inside turned
   content turn with it);
-- a body starts centred in the region its place in the tree gives it (bodies
-  are written `body[h,w,speed]`; nobody sets their position).
+- programs have no numbers in them: a `body` fills the region its place in
+  the tree gives it, and moves at its motion leaf's gate times the
+  trigram's motion strength.
 
 `python -m grace_lot.analysis.ludo_traces` builds an interactive explainer
 (`results/ludo_viz/ludo.html`).
@@ -140,30 +139,17 @@ scan -> propagate dashed gates -> update BodyNodes
 | `embodied_lot.py` | Core graph, node types, evaluation, body motion, output rendering |
 | `trigrams.py` | Readable aliases for trigram patterns and orientations |
 | `demos.py` | Worked examples (`demo_1` ... `demo_12`) and builders such as `build_above()` and `build_abc()`; importing it runs nothing |
-| `learning_data.py` | `Observation`, `Trajectory` and the scoring code both learners share |
-| `concept_learning.py` | Metropolis-Hastings learner over graph structure |
-| `mcmc_demos.py` | MCMC learner example |
-| `dreamcoder_lot.py` | DreamCoder-style wake/compress learner over flat scanner sets |
-| `dreamcoder_demos.py` | DreamCoder learner examples |
 | `visualize_lot.py` | Writes the standalone interactive visualizer and replay pages |
 | `visualizer/` | The visualizer page itself: `page.html`, `viewer.css`, `viewer.js` |
 | `visualize_demo.py` | Generates `top_replay.html` from a small two-component graph |
 
 ## Learners
 
-The two learners are separate experimental approaches. They share their data
-types and scoring (`learning_data.py`), so the same `Observation`s and
-`Trajectory`s can be given to either.
-
-| | MCMC (`concept_learning`) | DreamCoder-style (`dreamcoder_lot`) |
-| --- | --- | --- |
-| Search | Metropolis-Hastings over local mutations | Enumeration of library combinations |
-| Hypotheses | Trees of Serial/Parallel/Plan/Body nodes with trigram leaves | Flat `ParallelNode(I, scanner, ...)` sets |
-| Moves | change trigram, flip orientation, flip dynamic, add/remove leaf, change structure type | - |
-| Reuse across tasks | none | compresses repeated scanner pairs into cheaper library chunks |
-| Score | Gaussian log-likelihood + size/depth prior | weighted MSE + library cost |
-| Data | Observations and Trajectories | Observations and Trajectories |
-| Not yet | dashed edges, I/O windows, imagined roots, output fields | everything structural, dynamic scanners |
+The learner is the GRACE program learner in `grace_lot/inference/`: tempered
+Metropolis-Hastings with exact Hastings corrections over program trees, scored on
+rendered videos. The first two learners (an MCMC learner over observing concept
+graphs, and a DreamCoder-style wake/compress learner) are retired to
+`legacy/learners/` with their demos and toy data; see the README there.
 
 ## Visualization
 

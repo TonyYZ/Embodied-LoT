@@ -1,8 +1,10 @@
 """Synthetic recovery: can inference find programs that the LoT itself generated?
 
-    python -m grace_lot.inference.recovery [--n 24] [--actors 15] [--noise 0.05]
+    python -m grace_lot.inference.recovery [--n 24] [--actors 15] [--noise 0.05] [--truths PROGRAM ...]
+                                           [--from-run RUN_DIR --manners MANNER ...]
 
-For each of n "true" programs drawn from the prior:
+For each "true" program (the MAP programs of ``--manners`` in a fitted run, so the synthetic
+videos resemble those GRACE videos; those given with ``--truths``; then n drawn from the prior):
   1. Render it (``lot_trajectory``) and make ``actors`` noisy copies (Gaussian
      noise per cell, clipped to [0, 1]). These stand in for one manner's videos.
      With ``--shift k``, each copy is also shifted in time by up to k frames
@@ -83,8 +85,18 @@ def make_truths(g, prior, renderer, n, rng, min_size=3):
     return truths
 
 
+def synthetic_copies(y: np.ndarray, n: int, noise: float, shift: int, rng) -> list:
+    """n noisy copies of a rendering (Gaussian noise per cell, clipped), each shifted by up to ``shift`` frames."""
+    out = []
+    for _ in range(n):
+        s = int(rng.integers(-shift, shift + 1)) if shift else 0
+        idx = np.clip(np.arange(len(y)) - s, 0, len(y) - 1)
+        out.append(np.clip(y[idx] + rng.normal(0, noise, y.shape), 0, 1))
+    return out
+
+
 def recover_one(job) -> dict:
-    cfg, truth_str, k, actors, noise, seed, shift = job
+    cfg, truth_str, k, actors, noise, seed, shift, label = job
     from grace_lot.lot_adapter.program import parse_program
     truth = parse_program(truth_str)
     inf, pre = cfg["inference"], cfg["preprocess"]
@@ -94,10 +106,6 @@ def recover_one(job) -> dict:
     renderer = LotRenderer(pre["frames"], pre["field_size"])
     rng = np.random.default_rng(seed)
     y = renderer(truth)
-    def actor_copy():
-        s = int(rng.integers(-shift, shift + 1)) if shift else 0
-        idx = np.clip(np.arange(len(y)) - s, 0, len(y) - 1)
-        return np.clip(y[idx] + rng.normal(0, noise, y.shape), 0, 1)
     parts_mode = cfg.get("interface", {}).get("representation", "occupancy") == "parts"
     if parts_mode:
         # Anonymous outputs: every actor shows the true channels in its own random order.
@@ -109,12 +117,13 @@ def recover_one(job) -> dict:
             s_ = int(rng.integers(-shift, shift + 1)) if shift else 0
             idx = np.clip(np.arange(len(yk)) - s_, 0, len(yk) - 1)
             obs.append(np.clip(yk[idx][:, perm] + rng.normal(0, noise, yk.shape), 0, 1))
-        lik = MatchedPartsLikelihood(obs, renderer, inf["beta"])
+        lik = MatchedPartsLikelihood(obs, renderer, inf["beta"], inf.get("temporal_weight", 0.0))
         truth_lik = MatchedPartsLikelihood([yk], renderer, inf["beta"])
         same_render = lambda p: truth_lik.assignments(p)[0][2] < EQUIV_TOL
     else:
-        obs = [actor_copy() for _ in range(actors)]
-        lik = TrajectoryLikelihood(obs, renderer, DISTANCES[inf["distance"]], inf["beta"])
+        obs = synthetic_copies(y, actors, noise, shift, rng)
+        lik = TrajectoryLikelihood(obs, renderer, DISTANCES[inf["distance"]], inf["beta"],
+                                   inf.get("temporal_weight", 0.0))
         same_render = lambda p: euclid(renderer(p), y) < EQUIV_TOL
     prior = SizePrior.from_config(g, inf)
     prop = ProposalMixture(g, inf["move_weights"])
@@ -132,7 +141,7 @@ def recover_one(job) -> dict:
     prng = random.Random(seed)
     sim_prior = float(np.mean([full(sample_prior_program(g, prior, prng), truth) for _ in range(200)]))
     best = max(chains, key=lambda c: c.best_log_post).best
-    return {"k": k, "truth": truth_str, "truth_size": size(truth.tree), "truth_edges": len(truth.dashed),
+    return {"k": k, "seed": seed, "label": label, "truth": truth_str, "truth_size": size(truth.tree), "truth_edges": len(truth.dashed),
             "truth_log_post": truth_lp, "best_log_post": best_lp, "search_ok": best_lp >= truth_lp - 1e-6,
             "equiv_mass": equiv, "exact_mass": post.get(truth, 0.0),
             "map": str(best), "map_equiv": bool(same_render(best)),
@@ -151,6 +160,9 @@ def main() -> None:
     ap.add_argument("--out", default=None)
     ap.add_argument("--workers", type=int, default=24)
     ap.add_argument("--set", nargs="*", default=[], help="config overrides such as inference.iterations=40000")
+    ap.add_argument("--truths", nargs="*", default=[], help="hand-picked true programs, recovered before the prior draws")
+    ap.add_argument("--from-run", help="a fitted run whose manners' MAP programs serve as true programs")
+    ap.add_argument("--manners", nargs="*", default=[], help="manners of --from-run to take MAP programs from")
     args = ap.parse_args()
     from grace_lot.inference.run import apply_overrides
     cfg = apply_overrides(load_config(args.config), args.set)
@@ -159,8 +171,13 @@ def main() -> None:
     g = Grammar.from_config(cfg["lot"])
     prior = SizePrior.from_config(g, cfg["inference"])
     renderer = LotRenderer(cfg["preprocess"]["frames"], cfg["preprocess"]["field_size"])
-    truths = make_truths(g, prior, renderer, args.n, random.Random(12345))
-    jobs = [(cfg, str(t), k, args.actors, args.noise, 1000 + k, args.shift) for k, t in enumerate(truths)]
+    from grace_lot.lot_adapter.program import parse_program, resolved_lot
+    labelled = [(f"manner:{m}", parse_program(json.loads((Path(args.from_run) / "posteriors" / f"{m}.json").read_text())["map"]))
+                for m in args.manners]
+    labelled += [("hand-picked", parse_program(t)) for t in args.truths]
+    labelled += [("prior draw", t) for t in make_truths(g, prior, renderer, args.n, random.Random(12345))]
+    jobs = [(cfg, str(t), k, args.actors, args.noise, 1000 + k, args.shift, label)
+            for k, (label, t) in enumerate(labelled)]
     results = []
     with Pool(min(args.workers, len(jobs))) as pool:
         for r in pool.imap_unordered(recover_one, jobs):
@@ -171,6 +188,9 @@ def main() -> None:
     results.sort(key=lambda r: r["k"])
     summary = {
         "n": len(results), "actors": args.actors, "noise": args.noise, "shift": args.shift,
+        "lot": resolved_lot(cfg["lot"]), "preprocess": cfg["preprocess"], "inference": cfg["inference"],
+        "data": {k: str(v) for k, v in cfg["data"].items()}, "split": cfg["split"], "from_run": args.from_run,
+        "interface": cfg.get("interface", {"representation": "occupancy"}),
         "search_ok_rate": float(np.mean([r["search_ok"] for r in results])),
         "mean_equiv_mass": float(np.mean([r["equiv_mass"] for r in results])),
         "map_equiv_rate": float(np.mean([r["map_equiv"] for r in results])),

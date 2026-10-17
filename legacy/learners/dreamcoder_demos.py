@@ -12,6 +12,9 @@ visualize_lot.visualize().
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2])]   # legacy: siblings + embodied_lot
 from embodied_lot import TRIGRAM_PATTERNS, Orientation
 from dreamcoder_lot import (
     DreamCoderLearner,

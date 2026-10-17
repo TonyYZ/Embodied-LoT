@@ -8,7 +8,8 @@ edges. A program is an immutable ``P`` node:
     P("parallel", (), children)                         ParallelNode
     P("serial_h", (), children) / P("serial_v", ...)    SerialNode(H / V)
     P("plan",     (), children)                         PlanNode(templates..., content)
-    P("body",     (h, w, speed), children)              BodyNode(extent, step_size), centred by the tree
+    P("body",     (), children)                         BodyNode: sized and placed by the tree
+    P("body",     (h, w, speed), children)              BodyNode(extent, step_size): earlier runs only
     P("body",     (y, x, h, w, speed), children)        BodyNode(position, ...): earlier runs only
 
 A full program is ``Program(tree, dashed)``. ``dashed`` holds dashed gate
@@ -30,12 +31,20 @@ from typing import Iterator, List, NamedTuple, Tuple
 
 from embodied_lot import (
     TRIGRAM_PATTERNS, BodyNode, ConceptGraph, Node, ObjectNode, Orientation,
-    OutputNode, ParallelNode, PlanNode, SerialNode,
+    OutputNode, ParallelNode, WindowNode, InWindowNode, PlanNode, SerialNode,
 )
 
 LEAF = "obj"
 COMPOSITIONS = ("parallel", "serial_h", "serial_v", "plan", "body")
-MIN_CHILDREN = {"parallel": 1, "serial_h": 1, "serial_v": 1, "plan": 2, "body": 1, "outputs": 1}
+MIN_CHILDREN = {"parallel": 1, "serial_h": 1, "serial_v": 1, "plan": 2, "body": 1, "outputs": 1, "out": 0, "in": 0}
+# An output window leaf, written ``out``: it reads the board inside the region its place in the tree
+# gives it (``embodied_lot.WindowNode``). A program's output channels are its ``out`` leaves.
+OUT = "out"
+# An input window leaf, written ``in``: it shows an external field in the region its place in the tree
+# gives it (``embodied_lot.InWindowNode``; data via ``ConceptGraph.set_window_input``). The search grammar
+# does not generate it; programs that perceive external data use it.
+IN = "in"
+
 OUTPUT_ROOT = "par_O"
 # A program whose root is ``P("outputs", (), (c_0, .., c_K-1))`` has K anonymous output
 # channels. Channel k compiles to its own imagined root ``ParallelNode(par_O<k>)[OutputNode(O<k>), c_k]``.
@@ -54,7 +63,9 @@ def apply_semantics(lot_cfg: dict) -> None:
     ``lot.unknown_background`` (undrawn cells render as unknown, 0.5; default true) and
     ``lot.tree_placed_bodies`` (bodies start centred in their tree region; default true),
     ``lot.motion_away_from_figure`` (horizontal motion matches vertical; default true) and
-    ``lot.orienting_templates`` (dynamic templates orient their content; default true).
+    ``lot.orienting_templates`` (dynamic templates orient their content; default true) and
+    ``lot.tree_sized_bodies`` (bodies have no parameters: size from the tree; default true) and
+    ``lot.motion_kinds`` (each motion trigram has its own kind of motion, moving mass too; default true).
     """
     import embodied_lot
     mode = lot_cfg.get("imagined_evaluation", "full")
@@ -71,13 +82,18 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.TREE_PLACED_BODIES = bool(lot_cfg.get("tree_placed_bodies", True))
     embodied_lot.MOTION_AWAY_FROM_FIGURE = bool(lot_cfg.get("motion_away_from_figure", True))
     embodied_lot.ORIENTING_TEMPLATES = bool(lot_cfg.get("orienting_templates", True))
+    embodied_lot.TREE_SIZED_BODIES = bool(lot_cfg.get("tree_sized_bodies", True))
+    embodied_lot.MOTION_KINDS = bool(lot_cfg.get("motion_kinds", True))
+    embodied_lot.SEPARATE_TREE_SPACES = bool(lot_cfg.get("output_leaves", True))
 
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
 # before the key existed, i.e. under the legacy behaviour.
 SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("ludo", "legacy"),
                   "unknown_background": (True, False), "tree_placed_bodies": (True, False),
-                  "motion_away_from_figure": (True, False), "orienting_templates": (True, False)}
+                  "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
+                  "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
+                  "output_leaves": (True, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:
@@ -102,11 +118,15 @@ class P(NamedTuple):
     children: Tuple["P", ...] = ()
 
     def __str__(self) -> str:
+        if self.kind in (OUT, IN):
+            return self.kind
+        if self.kind == OUTPUTS and len(self.children) >= 2:   # a forest: its trees side by side
+            return " ".join(map(str, self.children))
         if self.kind == LEAF:
             name, ori, dyn = self.params
             return f"{name}/{ori}{'*' if dyn else ''}"
         head = self.kind
-        if self.kind == "body":
+        if self.kind == "body" and self.params:             # parameter-free bodies print as plain (body ...)
             head += "[" + ",".join(f"{v:g}" for v in self.params) + "]"
         return f"({head} " + " ".join(map(str, self.children)) + ")"
 
@@ -159,20 +179,25 @@ def parse(text: str) -> P:
     def read() -> P:
         nonlocal pos
         tok = tokens[pos]; pos += 1
+        if tok in (OUT, IN):
+            return P(tok)
         if tok != "(":
             name, rest = tok.split("/")
             return leaf(name, rest[0], rest.endswith("*"))
         head = tokens[pos]; pos += 1
         kind, params = head, ()
-        if head.startswith("body["):
-            kind, params = "body", tuple(float(v) for v in head[5:-1].split(","))
+        if head.startswith("body["):                # earlier runs: body[...] with parameters
+            kind, params = "body", tuple(float(v) for v in head[5:-1].split(",") if v)   # body[] = no parameters
         children = []
         while tokens[pos] != ")":
             children.append(read())
         pos += 1
         return P(kind, params, tuple(children))
 
-    return read()
+    trees = [read()]
+    while pos < len(tokens):                       # several top-level trees: a forest
+        trees.append(read())
+    return trees[0] if len(trees) == 1 else P(OUTPUTS, (), tuple(trees))
 
 
 # ---- tree utilities -------------------------------------------------------
@@ -224,7 +249,7 @@ def candidate_edges(tree: P, targets: str = "leaves") -> list:
     """
     if targets not in ("leaves", "any"):
         raise ValueError(f"unknown dashed_targets {targets!r}")
-    real = [(p, n) for p, n in nodes(tree) if not (p == () and tree.kind == OUTPUTS)]
+    real = [(p, n) for p, n in nodes(tree) if not (p == () and tree.kind == OUTPUTS) and n.kind not in (OUT, IN)]   # windows: no gates
     tgts = [p for p, n in real if targets == "any" or n.kind == LEAF]
     return [(a, b) for a, _ in real for b in tgts if a != b]
 
@@ -249,7 +274,7 @@ def compile_program(prog, name: str = "program") -> ConceptGraph:
         counter += 1
         nid = f"n{counter}"
         by_path[path] = node = _make(q, nid)
-        if q.kind != LEAF:
+        if q.children:
             g.connect(node, *[build(c, path + (i,)) for i, c in enumerate(q.children)])
         else:
             g.add_node(node)
@@ -272,12 +297,18 @@ def _make(q: P, nid: str) -> Node:
         pname, ori, dyn = q.params
         o = Orientation.VERTICAL if ori == "V" else Orientation.HORIZONTAL
         return ObjectNode(nid, TRIGRAM_PATTERNS[pname], o, is_dynamic=dyn, name=pname)
+    if q.kind == OUT:
+        return WindowNode(nid)
+    if q.kind == IN:
+        return InWindowNode(nid)
     if q.kind == "parallel":
         return ParallelNode(nid)
     if q.kind in ("serial_h", "serial_v"):
         return SerialNode(nid, Orientation.HORIZONTAL if q.kind == "serial_h" else Orientation.VERTICAL)
     if q.kind == "plan":
         return PlanNode(nid)
+    if not q.params:
+        return BodyNode(nid)                                          # sized and placed by the tree
     if len(q.params) == 3:
         h, w, speed = q.params
         return BodyNode(nid, extent=(h, w), step_size=speed)       # placed by place_bodies()

@@ -1,0 +1,77 @@
+# Multi-output body-part interface (configs/grace_parts_scan.toml) under the current LoT semantics:
+# ludo dynamics, unknown background, tree-placed bodies, motion away from the figure, orienting templates,
+# dashed edges to any node. A short diagnostic fit; nothing selected or frozen from it.
+
+# PROTOTYPE: anonymous outputs matched to body parts in a 3-detector-per-axis activation space.
+# Derived from configs/grace_parts.toml. Scanner: sigmoid receptive fields, boundaries 1/3 and 2/3,
+# softness scan_softness; activation = max response over salient points. Observed salient points = skeleton
+# points (joints + edge_samples per edge, equal salience); LoT salient points = cells >= lot_salience
+# (yin bands render at 0.5 = 'unknown'). Not tuned on any data. LoT, prior, sampler, matching unchanged.
+
+[data]
+raw_dir = "GRACE video database"
+processed_dir = "data/processed"
+results_dir = "results/grace_v3_parts"
+model_path = "data/models/pose_landmarker_heavy.task"
+similarity_csv = "GRACE video database/Norming_Study_3.csv"
+substitutes = { "10F_scurrying.mp4" = "11F_scurrying.mp4" }
+
+[preprocess]
+min_visibility = 0.5
+edge_margin = 0.01
+frames = 16
+field_size = 12
+window_x = [-0.65, 0.65]
+window_y = [-0.6, 0.7]
+thickness = 0.08
+raster_scale = 8
+
+[lot]
+primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void"]
+compositions = ["parallel", "serial_h", "serial_v", "plan", "body"]
+allow_dynamic = true
+body_positions = [0.25, 0.5, 0.75]
+body_extents = [0.34, 0.67, 1.0]
+body_speeds = [0.0, 0.03, 0.06]
+max_depth = 5
+max_nodes = 16
+p_leaf = 0.55
+max_children = 3
+dashed_targets = "any"
+tree_sized_bodies = false                 # pinned: bodies had size and speed parameters in these results
+motion_kinds = false                      # pinned: every motion trigram moved bodies in bulk in these results
+output_leaves = false                     # pinned: outputs were separate trees under an "outputs" root in these results
+max_dashed = 3
+max_outputs = 6
+
+[inference]
+prior = "description_length"
+lambda_size = 1.0
+body_param_cost = 0.5
+dashed_cost = 1.0
+beta = 250.0
+distance = "euclid"
+iterations = 40000
+burn_in = 10000
+thin = 30
+chains = 4
+seed = 1
+move_weights = { regenerate = 0.2, leaf = 0.15, composition = 0.08, body = 0.07, swap = 0.05, add_dashed = 0.08, remove_dashed = 0.08, wrap = 0.06, unwrap = 0.06, add_child = 0.085, remove_child = 0.085 }
+replicas = 12
+hot_beta = 20.0
+swap_every = 1
+
+[split]
+test_actors = ["02M", "04M", "06F", "09F", "11M"]
+val_actors = ["01F", "02F", "03F", "07M", "10M"]
+
+[analysis]
+n_permutations = 10000
+n_bootstrap = 2000
+max_pairs = 400
+
+[interface]
+representation = "parts_scan"
+scan_softness = 0.05
+lot_salience = 0.75
+edge_samples = 4

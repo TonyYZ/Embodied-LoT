@@ -92,7 +92,7 @@ def change_leaf(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
 
 
 def change_composition(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
-    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind not in (LEAF, "body", OUTPUTS)]
+    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind not in (LEAF, "body", OUTPUTS, "out", "in")]
     if not sites:
         return None
     path, n = rng.choice(sites)
@@ -105,7 +105,7 @@ def change_composition(prog: Program, g: Grammar, rng: random.Random, w) -> Prop
 
 def change_body(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
     sites = [(path, n) for path, n in nodes(prog.tree) if n.kind == "body"]
-    if not sites:
+    if not sites or not g.n_body_params:        # parameter-free bodies: nothing to change
         return None
     path, n = rng.choice(sites)
     i = rng.randrange(g.n_body_params)
@@ -219,14 +219,14 @@ def unwrap(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
 
 
 def _growable(prog: Program, g: Grammar) -> List[tuple]:
-    return [p for p, n in nodes(prog.tree) if n.kind != LEAF and len(n.children) < max(g.child_counts(n.kind))]
+    return [p for p, n in nodes(prog.tree) if n.kind not in (LEAF, "out", "in") and len(n.children) < max(g.child_counts(n.kind))]
 
 
 def _removable(prog: Program) -> List[tuple]:
     """(parent path, child index) pairs: the parent keeps its minimum, and no dashed edge touches the child subtree."""
     out = []
     for p, n in nodes(prog.tree):
-        if n.kind != LEAF and len(n.children) > MIN_CHILDREN[n.kind]:
+        if n.kind not in (LEAF, "out", "in") and len(n.children) > MIN_CHILDREN[n.kind]:
             out += [(p, i) for i in range(len(n.children)) if not _touches(prog, p + (i,))]
     return out
 

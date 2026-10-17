@@ -82,12 +82,14 @@ def build(cfg: dict, observations):
     if representation(cfg) == "parts_scan":
         from grace_lot.inference.likelihood import MatchedScanLikelihood
         itf = cfg["interface"]
-        lik = MatchedScanLikelihood(observations, renderer, inf["beta"], itf["scan_softness"], itf["lot_salience"])
+        lik = MatchedScanLikelihood(observations, renderer, inf["beta"], itf["scan_softness"], itf["lot_salience"],
+                                    inf.get("temporal_weight", 0.0))
     elif representation(cfg) == "parts":
         from grace_lot.inference.likelihood import MatchedPartsLikelihood
-        lik = MatchedPartsLikelihood(observations, renderer, inf["beta"])
+        lik = MatchedPartsLikelihood(observations, renderer, inf["beta"], inf.get("temporal_weight", 0.0))
     else:
-        lik = TrajectoryLikelihood(observations, renderer, DISTANCES[inf["distance"]], inf["beta"])
+        lik = TrajectoryLikelihood(observations, renderer, DISTANCES[inf["distance"]], inf["beta"],
+                                   inf.get("temporal_weight", 0.0))
     return grammar, renderer, prior, lik, ProposalMixture(grammar, inf["move_weights"])
 
 

@@ -26,48 +26,68 @@ GRID = 12
 EXAMPLES = [
     {"key": "one-order",
      "title": "One order",
-     "program": "(parallel (body[1,0.34,0.06] center/H bottom/H*))",
-     "note": "The body's region in the tree is the whole board, so it starts in the middle. Its unconditioned "
-             "motion leaf switches on at the first tick and sends it one order: one body width (4 cells) to the "
-             "right. The token walks there one cell at a time and stops."},
+     "program": "(serial_h (body (parallel center/H bottom/H*)) neutral/H)",
+     "note": "A body has no size or speed of its own: it fills the region its place in the tree gives it, here the "
+             "left strip. Its unconditioned motion leaf switches on at the first tick and sends it one order: one "
+             "body width (6 cells) to the right, at one cell per tick because the leaf's gate is fully open."},
     {"key": "oscillator",
      "title": "Self-observing oscillator",
-     "program": "(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H "
-                "(body[1,0.5,0.06] center/H))) | .0.1>.0.0 .1.1>.1.0",
-     "note": "The body is a child of the serial's right half, so it starts in the right strip. Two observers "
+     "program": "(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) "
+                "| .0.1>.0.0 .1.1>.1.0",
+     "note": "The body is a child of the serial's right half, so it fills the right strip. Two observers "
              "watch the board. When the right observer sees the body, it switches on the leftward motion leaf; the "
              "body walks left until the left observer sees it, which switches on the rightward leaf. A motion "
              "leaf's direction comes from its trigram: motion runs from the figure's side across, so horizontal "
              "'bottom' (figure on the left) moves right and 'top' moves left. It moves the bodies in its own strip."},
     {"key": "arrival",
      "title": "Walking into a lit leaf",
-     "program": "(serial_h top/V* (parallel top/H* (body[0.5,0.5,0.06] center/H)))",
-     "note": "The left strip's downward leaf (top/V*) is on from the start, but no body is there. The right "
-             "strip's leftward leaf sends the body left. As soon as the body enters the left strip, the lit "
-             "downward leaf gives it one order of its own, so it ends up in the lower left. Staying inside earns "
-             "no more; leaving and coming back while the leaf is on would earn another."},
-    {"key": "slow",
-     "title": "Same oscillator, half speed",
-     "program": "(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H "
-                "(body[1,0.5,0.03] center/H))) | .0.1>.0.0 .1.1>.1.0",
-     "note": "Halving the body's step halves its rate: it gains half a cell of credit per tick, so it moves "
-             "every other tick. Positions stay on whole cells."},
+     "program": "(serial_h top/V* (serial_v neutral/V (parallel top/H* (body center/H))))",
+     "note": "The body fills the upper-right quadrant (a vertical serial stacks its children bottom-up). The left "
+             "strip's downward leaf (top/V*) is on from the start, but no body is there. The right side's leftward "
+             "leaf sends the body left. As soon as the body enters the left strip, the lit downward leaf gives it "
+             "one order of its own, so it ends up in the lower left. Staying inside earns no more; leaving and "
+             "coming back while the leaf is on would earn another."},
+    {"key": "mass-bulk",
+     "title": "Mass moves too: bulk",
+     "program": "(serial_h (parallel center/V bottom/H*) neutral/H)",
+     "note": "There is no body here: the stripe drawn by center/V is mass. A bulk trigram (bottom/H*, rightward) "
+             "moves everything in its space together, by the space's width, one cell per tick. The tree keeps "
+             "drawing the stripe, at its displaced position; the cells it leaves read as unknown."},
+    {"key": "mass-gradient",
+     "title": "Gradient: layers peel off",
+     "program": "(serial_h (parallel universal/V lower/H*) neutral/H)",
+     "note": "A gradient trigram (lower/H*, rightward) sends its space's content off layer by layer from the "
+             "leading edge, one layer per tick: the rightmost column first, then the next. The block spreads out on "
+             "the way and packs together again where it lands. Applied to bodies, the same rule makes a queue."},
+    {"key": "mass-halves",
+     "title": "Centrifugal and centripetal",
+     "program": "(serial_h (parallel center/V center/H*) neutral/H (parallel center/H periphery/V*))",
+     "note": "center drives the two halves of its space apart and periphery drives them together, each half moving "
+             "by half its own size, along the leaf's axis. Left (center/H*, horizontal): the stripe's left and "
+             "right halves fly apart, leaving a gap; the right half lands in the empty middle strip. Right "
+             "(periphery/V*, vertical): the top and bottom halves close in on the middle, emptying the top and "
+             "bottom quarters."},
+    {"key": "mass-brownian",
+     "title": "Brownian motion",
+     "program": "(parallel center/H universal/H* universal/V*)",
+     "note": "universal pushes every cell of its space in a random direction along its axis, with a random size, "
+             "every tick. With a horizontal and a vertical universal in one parallel, the stripe's cells wander in "
+             "both directions. The randomness is seeded by the leaf and the tick, so the program's video is fixed."},
     {"key": "narrow",
-     "title": "Narrow body stalls",
-     "program": "(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H "
-                "(body[1,0.34,0.06] center/H))) | .0.1>.0.0 .1.1>.1.0",
-     "note": "An order moves the body one body width. A 4-cell body walks 4 cells left and stops between "
-             "the two observers' views, so nothing switches it back on."},
+     "title": "A third-width body stalls",
+     "program": "(serial_h (parallel bottom/H* center/H) neutral/H (parallel top/H* center/H (body center/H))) "
+                "| .0.1>.0.0 .2.1>.2.0",
+     "note": "With three strips the body fills a third of the board. An order moves it one body width: from the "
+             "right third into the middle one, where neither observer sees it, so nothing switches it back on."},
     {"key": "parent-observers",
      "title": "Parent nodes as observers",
      "program": "(serial_h (parallel bottom/H* (parallel center/H)) (parallel top/H* (parallel center/H) "
-                "(body[1,0.5,0.06] center/H))) | .0.1>.0.0 .1.1>.1.0",
+                "(body center/H))) | .0.1>.0.0 .1.1>.1.0",
      "note": "The observers are now parallel nodes. A parent observer perceives the pattern its children "
              "form, so here it behaves exactly like the leaf version."},
     {"key": "parent-target",
      "title": "Gating a whole group",
-     "program": "(serial_h neutral/H (parallel center/H (parallel top/H*) "
-                "(body[1,0.5,0.06] center/H))) | .1.0>.1.1",
+     "program": "(serial_h neutral/H (parallel center/H (parallel top/H*) (body center/H))) | .1.0>.1.1",
      "note": "The left half is neutral (it draws nothing). The right half holds the observer, a group with the "
              "leftward motion leaf, and the body, so the body starts on the right, inside the group's space. The "
              "dashed edge targets the group, a parent. The group starts unknown (gate 0.5, too weak to fire). Once the right observer sees the body the group opens, its "
@@ -89,7 +109,7 @@ EXAMPLES = [
              "then left inside it, is down-left, so the figure lies towards the upper right."},
     {"key": "turned-body",
      "title": "A body in a turned frame",
-     "program": "(parallel (plan top/H* (serial_h neutral/H (parallel top/H* (body[1,0.5,0.06] center/V)))))",
+     "program": "(parallel (plan top/H* (serial_h neutral/H (parallel top/H* (body center/V)))))",
      "note": "The template top/H* turns the whole content to face left. Inside that frame, the body sits in "
              "the right strip and a leaf pushes it left. Turned onto the board, the frame's right strip is the "
              "upper half and its left is down, so the body starts at the top and walks down. Its stripe "
@@ -101,9 +121,7 @@ def node_label(n) -> str:
     if isinstance(n, ObjectNode):
         return f"{n.name}/{'V' if n.orientation.value == 1 else 'H'}{'*' if n.is_dynamic else ''}"
     if isinstance(n, BodyNode) and not isinstance(n, PlanNode):
-        y, x = n.position
-        h, w = n.extent
-        return f"body w={w:g} step={n.step_size:g}"
+        return "body" if n.step_size is None else f"body w={n.extent[1]:g} step={n.step_size:g}"
     if isinstance(n, SerialNode):
         return "serial_" + ("V" if n.split_orientation.value == 1 else "H")
     return n.node_type
@@ -188,7 +206,10 @@ def trace(example: dict, ticks: int = 36) -> dict:
         gate_changes = [{"node": n.node_id, "from": round(gates_before[n.node_id], 3), "to": round(n.gate, 3)}
                         for n in g.nodes if n.node_id in shown and abs(n.gate - gates_before[n.node_id]) > 1e-6]
         g._move_bodies_ludo()
+        if embodied_lot.MOTION_KINDS:
+            g._move_mass()                            # mass moves too (motion kinds)
         g._imagery = g._render_imagery()
+        g._tick += 1
         moved = g.view_masks((GRID, GRID))          # where each body is after this tick's move
         frames.append({
             "t": t,

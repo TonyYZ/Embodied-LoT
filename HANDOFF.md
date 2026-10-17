@@ -11,8 +11,6 @@ visualizer.
 
 ```text
 python demos.py [--visualize]
-python mcmc_demos.py
-python dreamcoder_demos.py
 python visualize_demo.py
 python -m unittest test_embodied_lot
 ```
@@ -28,15 +26,12 @@ python -m unittest test_embodied_lot
 | `demos.py` | Main worked examples; public builders include `build_above()` and `build_abc()` |
 | `visualize_lot.py` | Serializes a graph into an editable standalone HTML visualizer |
 | `visualize_demo.py` | Small replay example for the visualizer |
-| `learning_data.py` | `Observation`/`Trajectory` data and scoring shared by both learners |
-| `concept_learning.py` | Metropolis-Hastings learner over graph structure |
-| `mcmc_demos.py` | Example for the MCMC learner |
-| `dreamcoder_lot.py` | Wake/compress learner for reusable scanner fragments |
-| `dreamcoder_demos.py` | Examples for the DreamCoder-style learner |
+| `legacy/learners/` | The first two learners (MCMC over observing graphs, DreamCoder-style), retired 2026-10-17; the GRACE learner is `grace_lot/inference/` |
 | `visualizer/` | Visualizer page (`page.html`, `viewer.css`, `viewer.js`) |
 
-The capabilities of each learner are listed in its module docstring and in
-the README. They are separate approaches; neither replaces the other.
+The learner is the GRACE program learner (`grace_lot/inference/`). The two
+earlier learners are retired to `legacy/learners/` (see the README there); they
+still run, but predate the current language.
 
 `legacy/` and `images/` are historical experiments and assets. They are not
 part of the current runtime path.
@@ -288,5 +283,84 @@ and browser-side evaluation for edited structures.
       - A body copied into several slots has one state, kept in its first
         view's frame.
     - The visualizer's `derived_fields` is not turned.
-17. `python -m grace_lot.analysis.ludo_traces` writes `results/ludo_viz/`: the
+17. A program's meaning comes purely from its tree (`TREE_SIZED_BODIES`;
+    config `lot.tree_sized_bodies`, default true). Every config with saved
+    results pins false, including grace_v3, grace_v3_frozen and
+    grace_v3_parts.
+    - A body is `body(...)`, with no numbers. It fills the region its place in
+      the tree gives it.
+    - In ludo a body moves at its motion leaf's gate (times its groups' gates)
+      times the trigram's motion strength, in cells per tick. `upper` and
+      `lower` have half the strength of `top` and `bottom`.
+    - Earlier `body[...]` programs still parse for pinned runs.
+18. The likelihood can compare frame-to-frame changes (`inference.temporal_weight`
+    w, default 0, so every saved run is unchanged): D = mean (x - y)^2 + w * mean
+    (dx - dy)^2, with dx(t) = x(t) - x(t-1).
+    - It applies to the occupancy interface and to both body-part interfaces.
+      For the body-part ones, the change term is part of the cost the
+      once-per-video output-to-part matching minimises.
+    - Held-out recognition uses the same distance, and it now scores the
+      body-part interfaces too (`heldout._parts_scores`).
+    - `[selection].temporal_weight` adds w as a third grid axis.
+    - With w = 0 all three likelihoods match the previous code exactly
+      (450 evaluations checked).
+19. Motion kinds (`MOTION_KINDS`; config `lot.motion_kinds`, default true; every
+    config with results pins false). Motion moves **mass** as well as bodies.
+    Mass is the cells drawn by imagined leaves outside bodies: particles with
+    accumulated whole-cell offsets, drawn by the tree at their displaced
+    positions, leaving unknown cells behind. Bodies stay whole tokens.
+    - `top` / `bottom`: bulk. Everything in the space moves together: a body
+      by its extent, mass by the space's extent.
+    - `upper` / `lower`: gradient. Layers leave one per tick from the leading
+      edge, so mass spreads and bodies queue.
+    - `center` / `periphery`: the two halves of the space move apart or
+      together, each by half its own size.
+    - `universal`: a random push along the leaf's axis for each cell or body,
+      every tick while on. It is seeded by leaf and tick, so videos are
+      deterministic.
+    - Everything moves at the gate, one cell or layer per tick when fully
+      open.
+    - `configs/grace_v5_parts.toml` is lenient to complex structure: 24
+      nodes, 5 dashed edges, dashed cost 0.5, and a λ grid of {0.25, 0.5, 1}
+      with w in {0, 1}.
+20. Programs are forests, and outputs are leaves (`lot.output_leaves`, default true
+    when `max_outputs` > 0; the parts configs with results pin false).
+    - A program is 1..`max_outputs` trees, written side by side with no node above
+      them: `(parallel center/H out) (parallel top/V out) | .1.0>.0.0`, where
+      dashed-edge paths start with the tree's index. A single tree is just
+      itself. (Internally a forest of 2+ trees is a P("outputs") tuple, which
+      is not counted as a node; earlier runs' `(outputs ...)` programs still
+      parse.) **Each tree is its own space**
+      (`SEPARATE_TREE_SPACES`). Its observers perceive only that space, and its
+      motion leaves move only its own bodies and mass. Things share a space
+      only by being composed under a common node; trees still link through
+      dashed edges.
+    - An output is an `out` leaf (`WindowNode`): no pattern, draws nothing,
+      scans nothing, no dashed edges. There can be any number of them
+      (1..`max_outputs` in all), anywhere.
+    - An output is only the region its window occupies: its own tree's space
+      inside the window, in the window's frame. Its size and position come from
+      its place in the tree, and it moves with a body it sits in.
+    - To produce an output (for the likelihood), the window's cells are
+      stretched to the full grid. So a window carried by a body outputs the
+      same pattern throughout, and an output changes only when something moves
+      relative to its window: content leaving it (then unknown), or a body
+      moving within it.
+    - Channels are matched to body parts by likelihood, as before. The prior
+      requires 1..`max_outputs` windows, and MH is tested exact and
+      irreducible.
+    - With the pin (false), all roots are drawn on one shared board, and each
+      root's channel is its whole board (earlier runs).
+    - `configs/grace_v6_parts.toml` uses all of this.
+21. Input windows are the mirror image of outputs: an `in` leaf (`InWindowNode`).
+    - Its region comes from the tree. It writes an external field into its
+      tree's space there, resized to the window's cells, on the board's
+      scale: 1 figure, 0 known empty, 0.5 unknown. Observers covering it see
+      it.
+    - It scans nothing and takes no dashed edges. Data goes in through
+      `ConceptGraph.set_window_input(k, field)`.
+    - The search grammar doesn't generate it; GRACE needs no inputs.
+    - The old `InputNode` portal is kept, as legacy, for the original demos,
+      learners (now in `legacy/learners/`) and visualizers.
+22. `python -m grace_lot.analysis.ludo_traces` writes `results/ludo_viz/`: the
     engine traces, and `ludo.html`, a step-through explainer of the examples.

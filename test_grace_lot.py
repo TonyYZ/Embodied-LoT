@@ -132,6 +132,90 @@ class InferenceTests(unittest.TestCase):
         tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
         self.assertLess(tv, 0.03)
 
+    def test_output_leaf_programs_are_exact_and_reachable(self):
+        """A forest with output windows as leaves: every legal program is reachable and flat-likelihood MH reproduces the prior."""
+        from grace_lot.inference.diagnostics import enumerate_support
+        from grace_lot.lot_adapter.program import nodes as tree_nodes
+        outs = lambda t: sum(n.kind == "out" for _, n in tree_nodes(t.tree))
+        g = Grammar(["top", "bottom"], ["parallel", "plan"], False, [], [], [],
+                    3, 4, 0.5, 2, max_dashed=1, max_outputs=2, output_leaves=True)
+        prior = SizePrior(g, 1.0)
+        r = reachability(g, prior)
+        self.assertEqual(r["reached"], r["support"])
+        self.assertEqual(r["outside_support"], 0)
+        states = enumerate_support(g, prior)
+        self.assertTrue(all(1 <= outs(t) <= 2 for t in states))
+        Z = sum(math.exp(prior(t)) for t in states)
+        key = lambda t: (len(t.tree.children), outs(t), size(t.tree), len(t.dashed))
+        exact = Counter()
+        for t in states:
+            exact[key(t)] += math.exp(prior(t)) / Z
+        samples = [s for seed in range(3) for s in run_chain(
+            prior, lambda p: 0.0, ProposalMixture(g, MOVES), 150_000, 5_000, 5, random.Random(seed)).samples]
+        emp = Counter(key(t) for t in samples)
+        tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
+        self.assertLess(tv, 0.03)
+
+    def test_output_windows_read_the_board_in_their_region(self):
+        """An output is its window's region, stretched to the grid: content leaving it goes unknown; carried by a body it stays."""
+        import numpy as np
+        from grace_lot.lot_adapter.adapter import rollout
+        from grace_lot.lot_adapter.program import parse_program as pp
+        self.assertEqual(str(pp("(parallel center/H out)")), "(parallel center/H out)")
+        y = rollout(pp("(parallel center/H out)"), 4, 12)                     # (T, 1, H, W)
+        self.assertEqual(y.shape, (4, 1, 12, 12))
+        self.assertTrue(np.allclose(y[0, 0, :, 4:8], 1.0) and np.allclose(y[0, 0, :, :4], 0.0))
+        moved = rollout(pp("(serial_h (parallel center/V bottom/H* out) neutral/H)"), 10, 12)[:, 0]
+        self.assertTrue(np.allclose(moved[0][4:8], 1.0))                     # the stripe fills the (stretched) window
+        self.assertTrue(np.allclose(moved[-1], 0.5))                         # it moved out: all unknown
+        rode = rollout(pp("(serial_h neutral/H (parallel top/H* (body (parallel center/H out))))"), 10, 12)[:, 0]
+        self.assertTrue(np.allclose(rode[0][:, 4:8], 1.0) and np.allclose(rode[0][:, :4], 0.0))  # center/H, stretched
+        self.assertTrue(all(np.array_equal(rode[0], f) for f in rode))       # the body carries it: the same throughout
+        two = rollout(pp("(serial_h (parallel center/H out) (parallel top/V out))"), 2, 12)
+        self.assertEqual(two.shape[1], 2)                                   # two windows, two channels
+
+    def test_separate_trees_are_separate_spaces(self):
+        """Each tree draws in its own space: a window sees only its own tree, and so does an observer."""
+        import numpy as np
+        from grace_lot.lot_adapter.adapter import rollout
+        from grace_lot.lot_adapter.program import compile_program
+        y = rollout(parse_program("(parallel center/H out) (parallel top/V out)"), 2, 12)
+        self.assertTrue(np.allclose(y[0, 0, :, 4:8], 1.0) and np.allclose(y[0, 0, :, :4], 0.0))   # center/H only
+        self.assertTrue(np.allclose(y[0, 1, :4], 1.0) and np.allclose(y[0, 1, 4:], 0.0))         # top/V only
+        # an observer (dashed source) in tree 1 looking for center/H sees nothing there: tree 0 drew it
+        g = compile_program(parse_program("(parallel center/H out) (parallel center/H bottom/H*) | .1.0>.1.1"))
+        g.reset_gates()
+        for _ in range(3):
+            g.step()
+        watcher = next(n for n in g.nodes if getattr(n, "role", "") == "observer")
+        self.assertLessEqual(watcher.activation, 0.5)                 # only unknown in its own space
+
+    def test_input_windows_write_a_field_into_their_region(self):
+        """An `in` leaf shows its field, resized to its window, in its tree's space; observers see it there."""
+        import numpy as np
+        from grace_lot.lot_adapter.program import compile_program
+        p = parse_program("(serial_h in neutral/H)")
+        self.assertEqual(parse_program(str(p)), p)
+        g = compile_program(p)
+        field = np.zeros((12, 12)); field[:, 3:9] = 1.0
+        g.set_window_input(0, field)
+        g.reset_gates()
+        board = g._render_imagery()
+        self.assertTrue(np.allclose(board[:, 2:5], 1.0) and np.allclose(board[:, [0, 1, 5]], 0.0))  # shrunk into the strip
+        self.assertTrue(np.allclose(board[:, 6:], 0.5))                                              # outside: unknown
+
+        def seen(with_input):
+            g = compile_program(parse_program("(parallel (parallel center/H) in bottom/H*) | .0>.2"))
+            if with_input:
+                stripe = np.zeros((12, 12)); stripe[:, 4:8] = 1.0
+                g.set_window_input(0, stripe)
+            g.reset_gates()
+            for _ in range(3):
+                g.step()
+            return next(n for n in g.nodes if getattr(n, "role", "") == "observer").activation
+        self.assertGreater(seen(True), 0.99)          # the observer perceives the input
+        self.assertLessEqual(seen(False), 0.5)        # without it: only unknown
+
     def test_stable_matching_preserves_crossing(self):
         """Crossing vs bouncing parts have identical per-frame silhouettes. A stable mapping tells them apart."""
         import numpy as np
@@ -285,7 +369,7 @@ class InferenceTests(unittest.TestCase):
         from grace_lot.lot_adapter.program import compile_program
         cols = {}
         for template in ("bottom/V*", "top/V*"):                     # upright, then upside down
-            g = compile_program(parse_program(f"(parallel (body[1,0.34,0.06] {template} (parallel center/H bottom/H*)))"))
+            g = compile_program(parse_program(f"(serial_h neutral/H (body {template} (parallel center/H bottom/H*)) neutral/H)"))
             g.reset_gates()
             body = [n for n in g.nodes if n.node_type == "body"][0]
             for _ in range(12):
@@ -301,9 +385,9 @@ class InferenceTests(unittest.TestCase):
                  "top/H*": ((slice(0, 6), slice(4, 8)), (slice(6, 12), slice(4, 8)))}    # facing left
         for template, (start, end) in cases.items():
             g = compile_program(parse_program(f"(parallel (plan {template} (serial_h neutral/H "
-                                              "(parallel top/H* (body[1,0.5,0.06] center/V)))))"))
+                                              "(parallel top/H* (body center/V)))))"))
             g.reset_gates()
-            boards = []
+            boards = [g._render_imagery()]                  # placed, before any tick
             for _ in range(13):
                 g.step()
                 boards.append(g._imagery)
@@ -314,8 +398,8 @@ class InferenceTests(unittest.TestCase):
     def test_motion_in_a_template_orients_and_gives_no_orders(self):
         """In ludo a dynamic template leaf is an orientation, so it does not move its body."""
         from grace_lot.lot_adapter.program import compile_program
-        for src, moves in [("(parallel (body[1,0.34,0.06] top/H* center/H))", False),
-                           ("(parallel (body[1,0.34,0.06] center/H top/H*))", True)]:
+        for src, moves in [("(serial_h (body top/H* center/H) neutral/H)", False),     # top/H* a template
+                           ("(serial_h (body center/H bottom/H*) neutral/H)", True)]:  # bottom/H* content
             g = compile_program(parse_program(src))
             g.reset_gates()
             body = [n for n in g.nodes if n.node_type == "body"][0]
@@ -324,17 +408,112 @@ class InferenceTests(unittest.TestCase):
                 g.step()
             self.assertEqual(body.window(12, 12) != start, moves, src)
 
+    def test_bodies_have_no_parameters_and_fill_their_region(self):
+        """The tree alone sets a body: it fills its region, and moves at its motion leaf's gate x trigram strength."""
+        from grace_lot.config import load_config
+        from grace_lot.lot_adapter.program import compile_program
+        lot = {k: v for k, v in load_config("configs/grace_v3.toml")["lot"].items() if k != "tree_sized_bodies"}
+        self.assertEqual(Grammar.from_config(lot).n_body_params, 0)
+        for src, window in [("(serial_h (body center/H) neutral/H)", (0, 12, 0, 6)),
+                            ("(serial_h neutral/H (body center/H) neutral/H)", (0, 12, 4, 8))]:
+            g = compile_program(parse_program(src))
+            g.reset_gates()
+            self.assertEqual([n for n in g.nodes if n.node_type == "body"][0].window(12, 12), window)
+
+        def columns(leaf):
+            g = compile_program(parse_program(f"(serial_h neutral/H (parallel {leaf} (body center/H)))"))
+            g.reset_gates()
+            body = [n for n in g.nodes if n.node_type == "body"][0]
+            out = []
+            for _ in range(6):
+                g.step()
+                out.append(body.window(12, 12)[2])
+            return out
+        self.assertEqual(columns("top/H*"), [5, 4, 3, 2, 1, 0])     # full strength: one cell per tick
+        self.assertEqual(columns("upper/H*"), [5, 4, 3, 2, 1, 0])   # a gradient with one body: a queue of one
+
+    def test_frame_changes_reward_moving_where_the_video_moves(self):
+        """The change term widens a moving fit's lead on a moving video, and costs a still fit nothing on a still one."""
+        from grace_lot.inference.likelihood import TrajectoryLikelihood, MatchedPartsLikelihood
+        from grace_lot.lot_adapter.adapter import LotRenderer
+        from grace_lot.lot_adapter.distance import euclid
+        R = LotRenderer(16, 12)
+        move = parse_program("(serial_h neutral/H (parallel top/H* (body center/H)))")
+        still = parse_program("(serial_h neutral/H (parallel (body center/H)))")
+        lik = lambda video, w: TrajectoryLikelihood([R(video)], R, euclid, 1.0, w)
+        gap = lambda w: lik(move, w)(move) - lik(move, w)(still)
+        self.assertGreater(gap(0.0), 0.0)
+        self.assertGreater(gap(3.0), gap(0.0))                      # motion now counts for more
+        self.assertEqual(lik(still, 3.0)(still), 0.0)               # a still video matched still: no change cost
+        self.assertLess(lik(still, 3.0)(move), lik(still, 0.0)(move))   # inventing motion costs more
+        # matched body parts: an output that moves like its part costs nothing more; a still one pays
+        import numpy as np
+        T = 8
+        part = np.zeros((T, 1, 4, 8)); out_still = np.zeros((T, 1, 4, 8))
+        for t in range(T):
+            part[t, 0, 1:3, t] = 1.0
+            out_still[t, 0, 1:3, 3] = 1.0
+        fixed = lambda y: type("R", (), {"__call__": lambda self, p: y})()
+        for w in (0.0, 2.0):
+            self.assertAlmostEqual(MatchedPartsLikelihood([part], fixed(part), 1.0, w)(None), 0.0, places=6)
+        self.assertLess(MatchedPartsLikelihood([part], fixed(out_still), 1.0, 2.0)(None),
+                        MatchedPartsLikelihood([part], fixed(out_still), 1.0, 0.0)(None))
+
+    def test_motion_kinds_move_mass(self):
+        """Bulk moves drawn mass together; a gradient peels layers; periphery compresses; universal is fixed."""
+        import numpy as np
+        from grace_lot.lot_adapter.program import compile_program
+
+        def run(src, ticks):
+            g = compile_program(parse_program(src))
+            g.reset_gates()
+            boards = []
+            for _ in range(ticks):
+                g.step()
+                boards.append(g._imagery.copy())
+            return boards
+        lit = lambda board: sorted(set(np.nonzero(board > 0.9)[1].tolist()))   # columns with figure
+        # bulk: the left strip's stripe (rows 4-7) moves right by the strip's width, all together
+        bulk = run("(serial_h (parallel center/V bottom/H*) neutral/H)", 8)
+        self.assertEqual(lit(bulk[0]), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(lit(bulk[-1]), [6, 7, 8, 9, 10, 11])
+        # gradient (lower/H* moves right): the rightmost layer leaves first, then the next, so it spreads
+        grad = run("(serial_h (parallel universal/V lower/H*) neutral/H)", 12)
+        self.assertEqual(lit(grad[2]), [0, 1, 2, 4, 6, 8])           # layers released one tick apart spread out
+        self.assertEqual(lit(grad[-1]), [6, 7, 8, 9, 10, 11])         # all arrive: the whole block moved
+        # periphery: the two halves (rows) move together, emptying the top and bottom quarters
+        per = run("(parallel universal/V periphery/V*)", 6)[-1]
+        self.assertTrue(np.allclose(per[:3], 0.5) and np.allclose(per[9:], 0.5) and np.allclose(per[3:9], 1.0))
+        # universal: random pushes, but the same program always gives the same video
+        a, b = run("(parallel center/H universal/H*)", 10), run("(parallel center/H universal/H*)", 10)
+        self.assertTrue(all(np.array_equal(x, y) for x, y in zip(a, b)))
+        self.assertFalse(np.array_equal(a[0], a[-1]))                 # and it does move
+
+    def test_gradient_bodies_leave_in_a_queue(self):
+        """Two bodies in a gradient's space are released one after the other, leading one first."""
+        from grace_lot.lot_adapter.program import compile_program
+        g = compile_program(parse_program("(serial_h (parallel lower/H* (serial_v (body center/H) (body center/H))) "
+                                          "neutral/H)"))
+        g.reset_gates()
+        bottom, top = [n for n in g.nodes if n.node_type == "body"]
+        starts = []
+        for _ in range(3):
+            g.step()
+            starts.append((bottom.window(12, 12)[2], top.window(12, 12)[2]))
+        self.assertEqual(starts[0][0] + starts[0][1], 1)            # exactly one has left after the first tick
+        self.assertEqual(starts[1], (2, 1) if starts[0][0] else (1, 2))   # the other follows a tick later
+
     def test_undrawn_cells_are_unknown_and_imagined_yin_is_known(self):
         """Nothing drawn reads 0.5; imagined yang bands read 1, imagined yin bands 0, neutral draws nothing."""
         import numpy as np
         from grace_lot.lot_adapter.program import compile_program
-        g = compile_program(parse_program("(parallel (body[1,0.5,0] center/V))"))
+        g = compile_program(parse_program("(serial_h neutral/H (body center/V) neutral/H)"))
         g.reset_gates()
         g.evaluate()
         y = g.render_output((12, 12), place_bodies=True).activation
-        self.assertTrue(np.allclose(y[:, :3], 0.5) and np.allclose(y[:, 9:], 0.5))   # outside the body
-        self.assertTrue(np.allclose(y[4:8, 3:9], 1.0))                               # yang band
-        self.assertTrue(np.allclose(y[:4, 3:9], 0.0) and np.allclose(y[8:, 3:9], 0.0))  # yin bands
+        self.assertTrue(np.allclose(y[:, :4], 0.5) and np.allclose(y[:, 8:], 0.5))   # outside the body
+        self.assertTrue(np.allclose(y[4:8, 4:8], 1.0))                               # yang band
+        self.assertTrue(np.allclose(y[:4, 4:8], 0.0) and np.allclose(y[8:, 4:8], 0.0))  # yin bands
         n = compile_program(parse_program("(parallel neutral/H)"))
         n.reset_gates()
         n.evaluate()
@@ -354,12 +533,10 @@ class InferenceTests(unittest.TestCase):
                 g.step()
                 out.append(body.window(12, 12)[2])
             return out
-        leaf = columns("(serial_h neutral/H (parallel center/H top/H* "
-                       "(body[1,0.5,0.06] center/H))) | .1.0>.1.1")
-        group = columns("(serial_h neutral/H (parallel center/H (parallel top/H*) "
-                        "(body[1,0.5,0.06] center/H))) | .1.0>.1.1")
+        leaf = columns("(serial_h neutral/H (parallel center/H top/H* (body center/H))) | .1.0>.1.1")
+        group = columns("(serial_h neutral/H (parallel center/H (parallel top/H*) (body center/H))) | .1.0>.1.1")
         self.assertEqual(leaf, group)
-        self.assertEqual(leaf[:4], [6, 6, 6, 5])           # perceive at 1, order at 2, first cell at 3
+        self.assertEqual(leaf[:4], [6, 6, 5, 4])           # perceive at 1; order, and a full-gate cell, at 2
 
     def test_ludo_motion_moves_only_bodies_in_its_space(self):
         """A motion leaf orders the bodies whose window overlaps its own region, not every body in the tree."""
@@ -372,17 +549,17 @@ class InferenceTests(unittest.TestCase):
             for _ in range(12):
                 g.step()
             return body.window(12, 12)[2]
-        self.assertEqual(columns("(serial_h top/H* (body[1,0.5,0.06] center/H))"), 6)    # other strip
-        self.assertEqual(columns("(serial_h neutral/H (parallel top/H* (body[1,0.5,0.06] center/H)))"), 0)
+        self.assertEqual(columns("(serial_h top/H* (body center/H))"), 6)    # other strip
+        self.assertEqual(columns("(serial_h neutral/H (parallel top/H* (body center/H)))"), 0)
         # A body walking into a motion leaf's space while that leaf is on gets one order there too.
-        g = compile_program(parse_program("(serial_h top/V* (parallel top/H* (body[0.5,0.5,0.06] center/H)))"))
+        g = compile_program(parse_program("(serial_h top/V* (serial_v neutral/V (parallel top/H* (body center/H))))"))
         g.reset_gates()
         body = [n for n in g.nodes if n.node_type == "body"][0]
         rows = []
         for _ in range(30):
             g.step()
             rows.append(body.window(12, 12)[0])
-        self.assertEqual(rows[0], 3)                        # starts mid-height in the right strip
+        self.assertEqual(rows[0], 0)                        # starts in the upper-right quadrant
         self.assertEqual(body.window(12, 12)[2], 0)         # sent to the left strip
         self.assertEqual(rows[-1], 6)                       # where the lit downward leaf moved it down once
         down = next(n for n in g.nodes if getattr(n, "name", "") == "top" and n.orientation.value == 1)

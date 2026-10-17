@@ -6,7 +6,9 @@ For each held-out video v and each manner m:
 
 v is assigned to the manner with the lowest expected distance. This criterion
 does not depend on beta, so settings with different beta can be compared
-on equal terms. It reports top-1 and top-5 accuracy and the mean
+on equal terms. D is the run's own distance: with ``inference.temporal_weight`` w it
+includes w x the frame-to-frame-change term, and with a body-part interface it is the
+matched part distance (one output-to-part mapping per video). It reports top-1 and top-5 accuracy and the mean
 reciprocal rank (chance: 1/26 and 5/26).
 
 Kinematic baselines on the same split:
@@ -49,6 +51,34 @@ def predictive_fields(cfg: dict, posteriors, n_samples: int = 300, seed: int = 0
     return out
 
 
+def _parts_scores(cfg: dict, posteriors, held_t: dict, w: float, n_samples: int = 300, seed: int = 0):
+    """scores[video][manner] = E_post[matched part distance] for the body-part interfaces."""
+    from grace_lot.grace.parts import part_fields
+    from grace_lot.inference.likelihood import MatchedPartsLikelihood, MatchedScanLikelihood
+    pre, itf = cfg["preprocess"], cfg.get("interface", {})
+    renderer = LotRenderer(pre["frames"], pre["field_size"])
+    stems = list(held_t)
+    if itf.get("representation") == "parts_scan":
+        from grace_lot.grace.scanner import scan_parts
+        obs = [scan_parts(held_t[s], pre, itf["scan_softness"], itf["edge_samples"]) for s in stems]
+        lik = MatchedScanLikelihood(obs, renderer, 1.0, itf["scan_softness"], itf["lot_salience"], w)
+    else:
+        lik = MatchedPartsLikelihood([part_fields(held_t[s], pre) for s in stems], renderer, 1.0, w)
+    rng = random.Random(seed)
+    scores = {s: {} for s in stems}
+    for m, post in posteriors.items():
+        progs, weights = zip(*post)
+        draws = rng.choices(progs, weights, k=n_samples)
+        cache = {}
+        for p in draws:
+            if p not in cache:
+                cache[p] = np.array([d for _, _, d in lik.assignments(p)])
+        mean = np.mean([cache[p] for p in draws], axis=0)            # (videos,)
+        for s, d in zip(stems, mean):
+            scores[s][m] = float(d)
+    return scores
+
+
 def _rank_summary(scores: Dict[str, Dict[str, float]], truth: Dict[str, str]) -> Dict[str, float]:
     """scores[video][manner] (lower is better); truth[video] = its manner."""
     ranks = []
@@ -77,8 +107,14 @@ def evaluate(cfg: dict, post_dir: Path, train: Dict[str, List[Video]], held: Dic
     train_t = {m: [load_trajectory(cfg, v) for v in vs] for m, vs in train.items()}
 
     # E_post[D(v, render(r))]; vectorised over posterior draws when D is the mean squared difference
-    if cfg["inference"]["distance"] == "euclid":
-        lot = {s: {m: float(((preds[m] - t.fields) ** 2).mean()) for m in manners} for s, t in held_t.items()}
+    w = cfg["inference"].get("temporal_weight", 0.0)
+    representation = cfg.get("interface", {}).get("representation", "occupancy")
+    if representation != "occupancy":
+        lot = _parts_scores(cfg, load_posteriors(post_dir, manners), held_t, w)
+    elif cfg["inference"]["distance"] == "euclid":
+        lot = {s: {m: float(((preds[m] - t.fields) ** 2).mean()
+                            + (w * ((np.diff(preds[m], axis=1) - np.diff(t.fields, axis=0)) ** 2).mean() if w else 0.0))
+                   for m in manners} for s, t in held_t.items()}
     else:
         lot = {s: {m: float(np.mean([dist(t.fields, y) for y in preds[m]])) for m in manners}
                for s, t in held_t.items()}
