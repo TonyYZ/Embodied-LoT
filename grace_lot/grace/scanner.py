@@ -31,6 +31,7 @@ salient points depends on the modality.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Dict, List
 
 import numpy as np
@@ -65,15 +66,25 @@ def scan_points(points: np.ndarray, s: float) -> np.ndarray:
     return np.concatenate([rx, ry])
 
 
+@lru_cache(maxsize=32)
+def _axis_responses(n: int, s: float) -> np.ndarray:
+    """(n, 3) detector responses at the centres of n cells along one axis (read-only; shared)."""
+    r = receptive_fields((np.arange(n) + 0.5) / n, s)
+    r.flags.writeable = False
+    return r
+
+
 def scan_field(fields: np.ndarray, s: float, salience: float) -> np.ndarray:
-    """(T, K, H, W) rendered channels -> (T, K, 6): salient cells are those with value >= salience."""
+    """(T, K, H, W) rendered channels -> (T, K, 6): salient cells are those with value >= salience.
+
+    A cell's x detectors depend only on its column and its y detectors only on its row, so each max
+    runs over the columns (rows) that hold any salient cell.
+    """
     T, K, H, W = fields.shape
-    ys, xs = np.mgrid[0:H, 0:W]
-    centres = np.stack([(xs.ravel() + 0.5) / W, (ys.ravel() + 0.5) / H], axis=1)
-    resp = np.concatenate([receptive_fields(centres[:, 0], s), receptive_fields(centres[:, 1], s)], axis=1)  # (HW, 6)
-    mask = fields.reshape(T, K, H * W) >= salience                                                          # (T, K, HW)
-    out = np.where(mask[..., None], resp[None, None], 0.0).max(axis=2)
-    return out
+    mask = fields >= salience                                                           # (T, K, H, W)
+    rx = np.where(mask.any(axis=2)[..., None], _axis_responses(W, s), 0.0).max(axis=2)  # (T, K, 3)
+    ry = np.where(mask.any(axis=3)[..., None], _axis_responses(H, s), 0.0).max(axis=2)
+    return np.concatenate([rx, ry], axis=2)
 
 
 def part_points(traj: Trajectory, pre: dict, edge_samples: int) -> Dict[str, np.ndarray]:

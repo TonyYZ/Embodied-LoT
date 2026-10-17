@@ -77,8 +77,33 @@ A numpy subtlety found on the way: `np.mean` of 3-7 values may add in vectorised
 order depends on memory layout, so a plain Python sum can differ by one rounding unit. `_mean` uses a
 Python sum only for 1-2 values and `np.add.reduce` (what `np.mean` does internally) otherwise.
 
-With rollouts faster, the likelihood (detector scans and per-video output-to-part matching) is now a
-larger share of each step.
+### The likelihood path (profiled after the rollout work)
+On a real jumping chain (300 iterations x 12 replicas, 15 training videos), rollouts are ~94% of the
+wall time; the whole matching likelihood after the rollout is ~1 ms per step before and ~0.3 ms after.
+Per program (240-program corpus, rollouts pre-rendered):
+
+| Stage | Before | After |
+| --- | --- | --- |
+| detector scan (`scan_field`) | 0.223 ms | 0.051 ms |
+| cost matrices, frames | 0.048 ms | unchanged |
+| cost matrices, frame-to-frame changes | 0.046 ms | unchanged |
+| Hungarian, 15 videos | 0.018 ms | unchanged |
+| whole likelihood | 0.36 ms | 0.18 ms |
+
+The one change: a cell's x detectors depend only on its column and its y detectors only on its row,
+so `scan_field` takes each max over the columns (rows) holding any salient cell, with the detector
+responses cached per grid size. The values, matchings and log-likelihoods are bit-identical (3000
+random-field cases plus the 240 programs' log-likelihoods and assignments).
+
+Not changed, and why:
+- The cost einsum could be reordered (matmul, pre-transposed observations), but that changes the
+  floating-point summation order, and it is ~1% of a step.
+- Observed energies and changes are already computed once per likelihood, not per video or call.
+- Reusing per-output scans or cost rows across proposals saves at most the 0.18 ms left. Only ~3% of
+  likelihood calls hit the render cache, so nearly every step is a fresh rollout. The reuse that would
+  pay is in the rollout: a proposal that changes one tree could keep the rollouts of trees not linked
+  to it by dashed edges (their spaces are separate). The kept trees' node ids must not shift, since
+  they seed the random pushes. This is not yet implemented.
 
 ## Constraints on speed-ups
 - The hypothesis space is discrete and heterogeneous (trees of different shapes), so JAX or GPU
