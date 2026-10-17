@@ -1,4 +1,4 @@
-# GRACE x Embodied-LoT under the current LoT semantics (all defaults): ludo dynamics, the unknown
+# GRACE x Embodied-LoT under the current LoT semantics (all defaults): gameboard dynamics, the unknown
 # (0.5) background, tree-placed bodies, motion away from the figure, orienting templates, and
 # dashed edges that may target parent nodes. Otherwise as configs/grace_frozen.toml (occupancy
 # interface), with body extent 0.5 added. lambda and beta are chosen on the validation actors

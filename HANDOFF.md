@@ -162,11 +162,11 @@ and browser-side evaluation for edited structures.
 9. Motion is graded: velocity = trigram direction x activation x step, so a
    weaker activation of a motion node moves the body more slowly.
 10. `step()` has two dynamics (`ConceptGraph.dynamics`, default from
-    `embodied_lot.DEFAULT_DYNAMICS`, now "ludo"; GRACE configs use
+    `embodied_lot.DEFAULT_DYNAMICS`, now "gameboard"; GRACE configs use
     `lot.dynamics`, and the four existing configs pin "legacy"):
     - **"legacy"**: bodies drift along their first dynamic trigram, and
       imagined dashed targets update within the same step.
-    - **"ludo"**: a board-game grid world (`ConceptGraph.grid` cells).
+    - **"gameboard"**: a board-game grid world (`ConceptGraph.grid` cells).
       - Any node that is a dashed source but not a dashed target (or a leaf
         with an input window) is an **observer**.
         - It perceives the previous tick's imagery in its own grid region
@@ -201,7 +201,7 @@ and browser-side evaluation for edited structures.
     composite (`GATE_STRUCTURES`; config `lot.gate_structures`):
     - its own activation;
     - the weight its subtree is drawn with;
-    - in ludo, the effective activation of motion leaves beneath it.
+    - in gameboard, the effective activation of motion leaves beneath it.
     A plan template's gate keeps its separate role as the template
     probability. The GRACE search grammar chooses targets with
     `lot.dashed_targets` ("leaves" | "any"); existing configs use "leaves",
@@ -260,10 +260,10 @@ and browser-side evaluation for edited structures.
     - As for static templates, with p (the template's gate) the content is
       oriented, and with 1 - p it is used unchanged. Field-free, turning
       changes nothing, so an orienting plan evaluates to its content.
-    - Dynamic leaves inside templates issue no ludo orders.
+    - Dynamic leaves inside templates issue no gameboard orders.
     - Turns compose: a dynamic template inside turned content turns again,
       so the angles add. This holds for drawing and observing alike.
-    - Ludo geometry follows the turns through `node_views`. Each node gets
+    - Gameboard geometry follows the turns through `node_views`. Each node gets
       views `(weight, chain, rect)`: one per template slot (p / n) plus the
       unturned 1 - p view, each with its chain of turned frames.
       - Observers perceive through their views (a weighted mean).
@@ -289,7 +289,7 @@ and browser-side evaluation for edited structures.
     grace_v3_parts.
     - A body is `body(...)`, with no numbers. It fills the region its place in
       the tree gives it.
-    - In ludo a body moves at its motion leaf's gate (times its groups' gates)
+    - In gameboard a body moves at its motion leaf's gate (times its groups' gates)
       times the trigram's motion strength, in cells per tick. `upper` and
       `lower` have half the strength of `top` and `bottom`.
     - Earlier `body[...]` programs still parse for pinned runs.
@@ -362,5 +362,5 @@ and browser-side evaluation for edited structures.
     - The search grammar doesn't generate it; GRACE needs no inputs.
     - The old `InputNode` portal is kept, as legacy, for the original demos,
       learners (now in `legacy/learners/`) and visualizers.
-22. `python -m grace_lot.analysis.ludo_traces` writes `results/ludo_viz/`: the
-    engine traces, and `ludo.html`, a step-through explainer of the examples.
+22. `python -m grace_lot.analysis.gameboard_traces` writes `results/gameboard_viz/`: the
+    engine traces, and `gameboard.html`, a step-through explainer of the examples.

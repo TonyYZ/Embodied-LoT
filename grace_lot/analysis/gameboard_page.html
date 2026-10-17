@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>Ludo dynamics</title>
+<title>Gameboard dynamics</title>
 <style>
 :root{
   --bg:#f7f6f2; --panel:#ffffff; --ink:#1d1d1b; --muted:#6b6a64; --line:#d9d6cc;
@@ -54,9 +54,9 @@ svg{display:block;max-width:100%;height:auto}
 </style>
 
 <main>
-<h1>Ludo dynamics</h1>
+<h1>Gameboard dynamics</h1>
 <p class="muted">How a concept graph runs as a board game on a 12×12 grid. Every trace below comes from the real engine
-(<code>embodied_lot.ConceptGraph</code> with <code>dynamics = "ludo"</code>), recorded by <code>grace_lot/analysis/ludo_traces.py</code>.</p>
+(<code>embodied_lot.ConceptGraph</code> with <code>dynamics = "gameboard"</code>), recorded by <code>grace_lot/analysis/gameboard_traces.py</code>.</p>
 
 <div class="rules">
   <div class="rule"><b>The board</b>The imagination is a 12×12 grid of cells. Bodies are tokens that sit on whole cells, and everything the graph imagines is drawn onto the board once per tick. A cell nobody draws is <i>unknown</i> (0.5).</div>

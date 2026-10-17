@@ -1,11 +1,11 @@
-"""Record ludo-dynamics traces from the real engine, for the interactive explainer page.
+"""Record gameboard-dynamics traces from the real engine, for the interactive explainer page.
 
-    python -m grace_lot.analysis.ludo_traces --out results/ludo_viz
+    python -m grace_lot.analysis.gameboard_traces --out results/gameboard_viz
 
-writes ``traces.json`` and ``ludo.html`` (the traces embedded in ``ludo_page.html``).
+writes ``traces.json`` and ``gameboard.html`` (the traces embedded in ``gameboard_page.html``).
 
-Each example program is compiled and stepped with ``dynamics = "ludo"``. Every tick runs
-the same phases as ``ConceptGraph._step_ludo``, so the page can show what each phase did:
+Each example program is compiled and stepped with ``dynamics = "gameboard"``. Every tick runs
+the same phases as ``ConceptGraph._step_gameboard``, so the page can show what each phase did:
 perceive -> issue orders -> propagate (for next tick) -> move -> draw.
 """
 
@@ -170,7 +170,7 @@ def trace(example: dict, ticks: int = 36) -> dict:
     embodied_lot.GATE_STRUCTURES = True
     prog = parse_program(example["program"])
     g = compile_program(prog)
-    g.dynamics, g.grid = "ludo", (GRID, GRID)
+    g.dynamics, g.grid = "gameboard", (GRID, GRID)
     g.reset_gates()
     g.assign_roles()
     root = g["par_O"].children[1]
@@ -205,7 +205,7 @@ def trace(example: dict, ticks: int = 36) -> dict:
         g._propagate_delayed()
         gate_changes = [{"node": n.node_id, "from": round(gates_before[n.node_id], 3), "to": round(n.gate, 3)}
                         for n in g.nodes if n.node_id in shown and abs(n.gate - gates_before[n.node_id]) > 1e-6]
-        g._move_bodies_ludo()
+        g._move_bodies_gameboard()
         if embodied_lot.MOTION_KINDS:
             g._move_mass()                            # mass moves too (motion kinds)
         g._imagery = g._render_imagery()
@@ -233,14 +233,14 @@ def trace(example: dict, ticks: int = 36) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="results/ludo_viz")
+    ap.add_argument("--out", default="results/gameboard_viz")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     data = json.dumps([trace(e) for e in EXAMPLES], separators=(",", ":"))
     (out / "traces.json").write_text(data)
-    page = (Path(__file__).with_name("ludo_page.html")).read_text(encoding="utf-8")
-    (out / "ludo.html").write_text(page.replace("__DATA__", data.replace("</", r"<\/")), encoding="utf-8")
+    page = (Path(__file__).with_name("gameboard_page.html")).read_text(encoding="utf-8")
+    (out / "gameboard.html").write_text(page.replace("__DATA__", data.replace("</", r"<\/")), encoding="utf-8")
     data = json.loads(data)
     for d in data:
         cols = "".join(f"{f['bodies'][0]['window'][2]:x}" for f in d["frames"]) if d["frames"][0]["bodies"] else "(no body)"

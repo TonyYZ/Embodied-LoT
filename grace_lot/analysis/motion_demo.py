@@ -143,7 +143,7 @@ def write(rec: dict, out: Path) -> Path:
               f"<div class='tree'>{tree_svg(prog)}</div></div>",
               f"<p><code>{html.escape(src)}</code></p></div>"]
     h += ["<p>A step-through explainer of the board rules (who observes, when orders are issued, how bodies move) "
-          "is in the separate <i>Ludo dynamics</i> page.</p>",
+          "is in the separate <i>Gameboard dynamics</i> page.</p>",
           "<h2>2. Inference recovers motion from noisy videos</h2>",
           f"<p class='muted'>Each true program below is rendered as {rec['actors']} synthetic actors (noise "
           f"{rec['noise']}, each shifted in time by up to {rec['shift']} frame) and fitted by the same Bayesian "

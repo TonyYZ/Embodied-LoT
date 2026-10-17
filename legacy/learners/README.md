@@ -10,7 +10,7 @@ The first, recognition-oriented learners, retired on 2026-10-17 in favour of the
 | `learning_data.py` | the toy `Observation` / `Trajectory` data and scoring both share |
 | `mcmc_demos.py`, `dreamcoder_demos.py` | their examples |
 
-They predate ludo dynamics, motion kinds, parameter-free bodies and input/output windows, and use the
+They predate gameboard dynamics, motion kinds, parameter-free bodies and input/output windows, and use the
 old `InputNode` portal. Run from the repository root:
 
     python legacy/learners/mcmc_demos.py

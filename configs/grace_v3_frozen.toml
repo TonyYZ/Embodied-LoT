@@ -23,7 +23,7 @@ raster_scale = 8
 
 [lot]
 imagined_evaluation = "full"
-dynamics = "ludo"
+dynamics = "gameboard"
 unknown_background = true
 tree_placed_bodies = true
 motion_away_from_figure = true

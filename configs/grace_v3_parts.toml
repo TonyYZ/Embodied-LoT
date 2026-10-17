@@ -1,5 +1,5 @@
 # Multi-output body-part interface (configs/grace_parts_scan.toml) under the current LoT semantics:
-# ludo dynamics, unknown background, tree-placed bodies, motion away from the figure, orienting templates,
+# gameboard dynamics, unknown background, tree-placed bodies, motion away from the figure, orienting templates,
 # dashed edges to any node. A short diagnostic fit; nothing selected or frozen from it.
 
 # PROTOTYPE: anonymous outputs matched to body parts in a 3-detector-per-axis activation space.

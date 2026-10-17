@@ -42,7 +42,7 @@ def rollout(program: P, frames: int, size: int) -> np.ndarray:
     graph = compile_program(program)
     graph.grid = (size, size)
     graph.reset_gates()
-    if graph.dynamics == "ludo":
+    if graph.dynamics == "gameboard":
         graph.assign_roles()             # observers are perceivers and are not drawn
     windows = graph.windows()
     if windows:                       # output leaves: channel k = the board inside window k's region

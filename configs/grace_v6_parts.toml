@@ -1,5 +1,5 @@
 # Body-part interface with outputs as leaves: one tree, one board, and up to max_outputs `out` windows that
-# read the board in their regions. Otherwise as grace_v5_parts: motion kinds, parameter-free bodies, ludo,
+# read the board in their regions. Otherwise as grace_v5_parts: motion kinds, parameter-free bodies, gameboard,
 # frame-change likelihood term, lenient limits and grid.
 
 # PROTOTYPE: anonymous outputs matched to body parts in a 3-detector-per-axis activation space.

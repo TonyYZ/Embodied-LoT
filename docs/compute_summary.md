@@ -14,7 +14,7 @@ grounded "language of thought" that explains that manner's training videos.
   - Dashed gate edges link nodes; a program may be a forest of up to 6 trees.
   - Limits: up to 24 nodes, depth 5, 5 dashed edges.
   - There are no continuous parameters.
-- **Rendering a program = simulating it.** A custom "ludo" engine runs the program for 16 ticks on a
+- **Rendering a program = simulating it.** A custom "gameboard" engine runs the program for 16 ticks on a
   12x12 board. Each tick it does the following:
   - observers re-evaluate their subtrees against last tick's board;
   - gates propagate;
@@ -51,7 +51,7 @@ inflated about 3x by cProfile's per-call overhead.
 | Language version | Time per MH step | What it means |
 | --- | --- | --- |
 | v2 (legacy semantics) | ~0.4 ms | a full 3x3 selection took ~8 h |
-| v3 (ludo engine, occupancy) | ~1.7 ms | a full 3x3 selection (936 chains) took ~10 h on 24 workers |
+| v3 (gameboard engine, occupancy) | ~1.7 ms | a full 3x3 selection (936 chains) took ~10 h on 24 workers |
 | v6 (current), before optimisation | 27.1 ms | measured on a jumping chain, 600 iterations x 12 replicas |
 | v6 (current), after the three optimisations below | **11.2 ms** | the same chain: 2.4x faster end to end |
 

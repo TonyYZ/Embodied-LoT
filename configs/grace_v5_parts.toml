@@ -1,5 +1,5 @@
 # Multi-output body-part interface under all current semantics: motion kinds (mass moves; bulk, gradient,
-# centrifugal, centripetal, random), parameter-free bodies, ludo, frame-change likelihood term. Lenient
+# centrifugal, centripetal, random), parameter-free bodies, gameboard, frame-change likelihood term. Lenient
 # toward complex structure: more nodes and dashed edges, cheaper dashed edges, weaker prior on the grid.
 
 # PROTOTYPE: anonymous outputs matched to body parts in a 3-detector-per-axis activation space.

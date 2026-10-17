@@ -100,7 +100,7 @@ EVALUATE_IMAGINED_SUBTREES = True
 # Temporal dynamics used by ``ConceptGraph.step()``:
 #   "legacy"  the original step: bodies drift along their first dynamic trigram, and
 #             imagined dashed targets update within the same step.
-#   "ludo"    a board-game grid world (see ``ConceptGraph._step_ludo``):
+#   "gameboard"    a board-game grid world (see ``ConceptGraph._step_gameboard``):
 #             * observers perceive the previous tick's imagery in their own grid region and are
 #               not drawn. An observer is any node that is a dashed-edge source but not a dashed
 #               target (or a leaf with an input window). A parent observer perceives the pattern
@@ -115,11 +115,12 @@ EVALUATE_IMAGINED_SUBTREES = True
 #               one order too; a body that stays inside gets no more. An order is one body extent in whole cells,
 #               in its trigram direction, carried out at step_size x activation cells per tick.
 #               Orders add up; bodies move one cell at a time and stay on the grid.
-DEFAULT_DYNAMICS = "ludo"
+DEFAULT_DYNAMICS = "gameboard"
+DYNAMICS_ALIASES = {"ludo": "gameboard"}      # the gameboard's earlier name, as saved with older runs
 ONSET_THRESHOLD = 0.5
 
 # A structure node's gate scales its whole composite: its own activation, the weight its
-# subtree is drawn with, and (ludo) the effective activation of motion leaves beneath it.
+# subtree is drawn with, and (gameboard) the effective activation of motion leaves beneath it.
 # A plan template's gate keeps its separate role as the template probability p. With False,
 # structure gates are ignored as before (they only mattered as plan templates).
 GATE_STRUCTURES = True
@@ -149,19 +150,19 @@ MOTION_AWAY_FROM_FIGURE = True
 # parallel, plan, body) gives one slot over its region, facing the sum of its dynamic leaves'
 # directions. Diagonals become stair-stepped cell bands. As for static templates, the content
 # is oriented with probability p (the template's gate) and used unchanged with 1 - p. Dynamic
-# leaves inside templates give orientation only: in ludo they issue no movement orders.
+# leaves inside templates give orientation only: in gameboard they issue no movement orders.
 # With False, a dynamic template selects the half of the field in its motion direction.
 ORIENTING_TEMPLATES = True
 
 # A program's meaning comes purely from its tree: no numbers inside it. A body fills the region
 # its place in the tree gives it (its serial strip, its parent body's window, the whole field,
 # or its turned frame), set by ``place_bodies``; any extent or step passed to ``BodyNode`` is
-# overwritten. In ludo a body moves at the motion leaf's gate (times its groups' gates) times
+# overwritten. In gameboard a body moves at the motion leaf's gate (times its groups' gates) times
 # its trigram's motion strength, in cells per tick. With False, bodies keep their extent and
 # step parameters (earlier runs).
 TREE_SIZED_BODIES = True
 
-# Each motion trigram has its own kind of motion (ludo), and motion moves mass as well as bodies.
+# Each motion trigram has its own kind of motion (gameboard), and motion moves mass as well as bodies.
 # Mass: cells drawn by imagined leaves outside any body are particles with an accumulated
 # whole-cell offset; the tree keeps drawing its pattern at the displaced positions, and vacated
 # cells read as unknown. Bodies stay whole tokens. Kinds:
@@ -178,7 +179,7 @@ TREE_SIZED_BODIES = True
 # every motion trigram moves bodies in bulk at its motion strength, and mass does not move.
 MOTION_KINDS = True
 
-# Separate trees are separate spaces (ludo). Each root draws in its own space; its observers
+# Separate trees are separate spaces (gameboard). Each root draws in its own space; its observers
 # perceive only that space, and its motion leaves move only its own bodies and mass. Things share
 # a space only by being composed under a common node, which makes them one tree. Trees can still
 # be linked by dashed edges. With False, all roots are drawn on one shared board (earlier runs).
@@ -843,8 +844,8 @@ class BodyNode(StructureNode):
         self.velocity = list(velocity)
         self.step_size = None if step_size is None else float(step_size)
         self.subfield_shape = subfield_shape   # used by PlanNode only
-        self.orders: List[list] = []             # ludo: [axis, direction, cells left, rate, credit, leaf id, delay]
-        self.jitter = [0.0, 0.0]                 # ludo: accumulated random pushes (universal), per axis
+        self.orders: List[list] = []             # gameboard: [axis, direction, cells left, rate, credit, leaf id, delay]
+        self.jitter = [0.0, 0.0]                 # gameboard: accumulated random pushes (universal), per axis
         self._grid: Optional[np.ndarray] = None
 
     # -- window --------------------------------------------------------
@@ -1028,18 +1029,26 @@ class ConceptGraph:
         step():     scan -> propagate dashed -> move bodies   (stateful)
     """
 
+    @property
+    def dynamics(self) -> str:
+        return self._dynamics
+
+    @dynamics.setter
+    def dynamics(self, value: str) -> None:
+        self._dynamics = DYNAMICS_ALIASES.get(value, value)
+
     def __init__(self, name: str = "") -> None:
         self.name = name
         self._nodes: Dict[str, Node] = {}
         self._solid: List[SolidEdge] = []
         self._dashed: List[DashedEdge] = []
         self.root: Optional[Node] = None   # primary root; the default target of add_field_slot()
-        self.dynamics = DEFAULT_DYNAMICS   # "legacy" or "ludo" (see the module constant)
-        self.grid: Tuple[int, int] = (12, 12)   # ludo: the board, in cells
+        self.dynamics = DEFAULT_DYNAMICS   # "legacy" or "gameboard" (see the module constant)
+        self.grid: Tuple[int, int] = (12, 12)   # gameboard: the board, in cells
         self._imagery: Optional[np.ndarray] = None
         self._prev_act: Dict[str, float] = {}
-        self._inside: Dict[str, set] = {}        # ludo: bodies inside each switched-on motion leaf's region
-        self._mass: Dict[str, dict] = {}         # ludo: each root's mass particles (MOTION_KINDS)
+        self._inside: Dict[str, set] = {}        # gameboard: bodies inside each switched-on motion leaf's region
+        self._mass: Dict[str, dict] = {}         # gameboard: each root's mass particles (MOTION_KINDS)
         self._tick = 0
         self._version = 0                        # bumped by every structural change (metadata cache key)
         self._meta_key = None
@@ -1180,7 +1189,7 @@ class ConceptGraph:
         """Set every gate back to 1. ``evaluate()`` calls this itself and ``step()`` does not.
 
         With ``TREE_PLACED_BODIES``, every body is first centred in its tree region (``place_bodies``).
-        In ludo dynamics, dashed targets start unknown (gate ``unknown_value()``, 0.5: not yet
+        In gameboard dynamics, dashed targets start unknown (gate ``unknown_value()``, 0.5: not yet
         conditioned), and pending
         movement orders, onset memory and imagery are cleared.
         """
@@ -1190,7 +1199,7 @@ class ConceptGraph:
                 node.activation = 1.0
         if TREE_PLACED_BODIES:
             self.place_bodies()
-        if self.dynamics == "ludo":
+        if self.dynamics == "gameboard":
             for edge in self._dashed:
                 edge.target.gate = unknown_value()
                 if not isinstance(edge.target, PORTALS):
@@ -1281,8 +1290,8 @@ class ConceptGraph:
             node = self._find_input_node(modality, at_node_id=at_node_id)
             restore = (node, node.field)
             node.field = field
-        if self.dynamics == "ludo":
-            result = self._step_ludo()
+        if self.dynamics == "gameboard":
+            result = self._step_gameboard()
         else:
             result = self._scan()
             self._propagate_dashed()
@@ -1291,10 +1300,10 @@ class ConceptGraph:
             restore[0].field = restore[1]
         return result
 
-    # -- ludo dynamics: a board-game grid world ------------------------
+    # -- gameboard dynamics: a board-game grid world ------------------------
 
     def assign_roles(self) -> None:
-        """Ludo: mark every node as observing (perceives, not drawn) or imagined (drawn).
+        """Gameboard: mark every node as observing (perceives, not drawn) or imagined (drawn).
 
         Observer roots are dashed sources that are not dashed targets (any node type), and leaves
         with an input window. Every node in an observer root's subtree belongs to its perceptual
@@ -1484,9 +1493,9 @@ class ConceptGraph:
         return self._meta("tree_index", build)
 
     def _paint_root(self, shape: Tuple[int, int], root_id: Optional[str], place_bodies: bool):
-        """One root's paint, with its mass drawn at the displaced positions (ludo, MOTION_KINDS)."""
+        """One root's paint, with its mass drawn at the displaced positions (gameboard, MOTION_KINDS)."""
         rid = root_id if root_id is not None else self.roots[-1].node_id
-        st = self._mass.get(rid) if MOTION_KINDS and self.dynamics == "ludo" else None
+        st = self._mass.get(rid) if MOTION_KINDS and self.dynamics == "gameboard" else None
         if st is None or not place_bodies or tuple(shape) != tuple(self.grid) or not st["off"].any():
             return self._paint(shape, root_id, place_bodies)
         fy, fn = self._paint(shape, rid, True, layer="free")
@@ -1751,7 +1760,7 @@ class ConceptGraph:
                          for n in self._nodes.values())
         return out, jit, (self._tick if random_now else 0)
 
-    def _move_bodies_ludo(self, views=None) -> None:
+    def _move_bodies_gameboard(self, views=None) -> None:
         """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
 
         A body moves on its own frame's cells (the board, or the turned frame it lives in).
@@ -1788,7 +1797,7 @@ class ConceptGraph:
                 body.position[axis] = cell / n
             body.velocity = [net[0] / H, net[1] / W]
 
-    def _step_ludo(self) -> float:
+    def _step_gameboard(self) -> float:
         """One tick: scan, perceive last tick's imagery, issue orders, propagate (for next tick), move, draw.
 
         Orders are issued before propagation, so they see the gates set last tick, both on motion
@@ -1800,7 +1809,7 @@ class ConceptGraph:
         self._perceive(views)
         self._issue_orders(views)
         self._propagate_delayed()
-        self._move_bodies_ludo(views)
+        self._move_bodies_gameboard(views)
         if MOTION_KINDS:
             self._move_mass()
         self._spaces, self._imagery = self._render_all()

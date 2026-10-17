@@ -58,7 +58,7 @@ def apply_semantics(lot_cfg: dict) -> None:
 
     "full" (default): every imagined node is evaluated on every step.
     "legacy": the earlier shortcut, used by runs made before this was fixed.
-    Also sets ``lot.dynamics`` ("ludo" by default | "legacy" for earlier runs), ``lot.onset_threshold`` and
+    Also sets ``lot.dynamics`` ("gameboard" by default | "legacy" for earlier runs), ``lot.onset_threshold`` and
     ``lot.gate_structures`` (a structure's gate scales its composite; default true) and
     ``lot.unknown_background`` (undrawn cells render as unknown, 0.5; default true) and
     ``lot.tree_placed_bodies`` (bodies start centred in their tree region; default true),
@@ -72,8 +72,8 @@ def apply_semantics(lot_cfg: dict) -> None:
     if mode not in ("full", "legacy"):
         raise ValueError(f"unknown imagined_evaluation {mode!r}")
     embodied_lot.EVALUATE_IMAGINED_SUBTREES = mode == "full"
-    dynamics = lot_cfg.get("dynamics", "ludo")
-    if dynamics not in ("legacy", "ludo"):
+    dynamics = embodied_lot.DYNAMICS_ALIASES.get(lot_cfg.get("dynamics", "gameboard"), lot_cfg.get("dynamics", "gameboard"))
+    if dynamics not in ("legacy", "gameboard"):
         raise ValueError(f"unknown dynamics {dynamics!r}")
     embodied_lot.DEFAULT_DYNAMICS = dynamics
     embodied_lot.ONSET_THRESHOLD = float(lot_cfg.get("onset_threshold", 0.5))
@@ -89,7 +89,7 @@ def apply_semantics(lot_cfg: dict) -> None:
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
 # before the key existed, i.e. under the legacy behaviour.
-SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("ludo", "legacy"),
+SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameboard", "legacy"),
                   "unknown_background": (True, False), "tree_placed_bodies": (True, False),
                   "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
                   "tree_sized_bodies": (True, False), "motion_kinds": (True, False),

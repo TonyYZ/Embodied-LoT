@@ -92,9 +92,9 @@ while it stays the same body, and bodies nested under plans or serial nodes
 move. (`embodied_lot.EVALUATE_IMAGINED_SUBTREES`; `False` reproduces an
 earlier shortcut.)
 
-### Ludo dynamics (grid world)
+### Gameboard dynamics (grid world)
 
-By default (`graph.dynamics = "ludo"`; "legacy" keeps the original step),
+By default (`graph.dynamics = "gameboard"`; "legacy" keeps the original step),
 `step()` runs a board-game grid world:
 - observers (dashed sources, including parents) perceive the imagined scene
   drawn on the previous tick, within their own grid region;
@@ -112,8 +112,8 @@ By default (`graph.dynamics = "ludo"`; "legacy" keeps the original step),
   the tree gives it, and moves at its motion leaf's gate times the
   trigram's motion strength.
 
-`python -m grace_lot.analysis.ludo_traces` builds an interactive explainer
-(`results/ludo_viz/ludo.html`).
+`python -m grace_lot.analysis.gameboard_traces` builds an interactive explainer
+(`results/gameboard_viz/gameboard.html`).
 
 Bodies can therefore be driven back and forth by observers that watch them.
 See HANDOFF.md (item 10).

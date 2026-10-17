@@ -251,7 +251,7 @@ class InferenceTests(unittest.TestCase):
     def test_dashed_loop_inside_a_body_ticks(self):
         """Imagined subtrees are evaluated every step: a loop inside a body changes the body's content over time.
 
-        Legacy dynamics (same-step dashed updates). In ludo the parallel node observes itself, so it is not drawn.
+        Legacy dynamics (same-step dashed updates). In gameboard the parallel node observes itself, so it is not drawn.
         """
         from unittest import mock
         import numpy as np
@@ -263,14 +263,14 @@ class InferenceTests(unittest.TestCase):
         self.assertFalse(np.allclose(y[1], y[2]))           # alternates
         self.assertTrue(np.allclose(y[2], y[4]))            # with period 2
 
-    def test_ludo_self_observing_oscillator(self):
-        """Ludo dynamics: two observers watching an imagined body drive it back and forth on the grid."""
+    def test_gameboard_self_observing_oscillator(self):
+        """Gameboard dynamics: two observers watching an imagined body drive it back and forth on the grid."""
         import embodied_lot
         from grace_lot.lot_adapter.program import compile_program
         p = parse_program("(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H "
                           "(body[1,0.5,0.06] center/H))) | .0.1>.0.0 .1.1>.1.0")
         g = compile_program(p)
-        g.dynamics, g.grid = "ludo", (12, 12)
+        g.dynamics, g.grid = "gameboard", (12, 12)
         g.reset_gates()
         body = [n for n in g.nodes if n.node_type == "body"][0]
         cols = []
@@ -281,7 +281,7 @@ class InferenceTests(unittest.TestCase):
                 self.assertAlmostEqual(v * 12, round(v * 12))
         self.assertLessEqual(min(cols), 1)                # reaches the left
         self.assertGreaterEqual(max(cols[15:]), 5)        # and comes back to the right
-        self.assertEqual(embodied_lot.DEFAULT_DYNAMICS, "ludo")     # ludo is the default
+        self.assertEqual(embodied_lot.DEFAULT_DYNAMICS, "gameboard")     # gameboard is the default
 
     def test_bodies_start_centred_in_their_tree_region(self):
         """Nobody specifies body positions: a body starts at the centre of the region its tree position gives it."""
@@ -365,7 +365,7 @@ class InferenceTests(unittest.TestCase):
         self.assertTrue(mask[:6].all() and not mask[6:].any())
 
     def test_motion_inside_turned_content_is_turned(self):
-        """In ludo, a rightward leaf inside upside-down content pushes its body left."""
+        """In gameboard, a rightward leaf inside upside-down content pushes its body left."""
         from grace_lot.lot_adapter.program import compile_program
         cols = {}
         for template in ("bottom/V*", "top/V*"):                     # upright, then upside down
@@ -396,7 +396,7 @@ class InferenceTests(unittest.TestCase):
                 self.assertEqual(int((board == 1.0).sum()), 24, template)       # and nothing else lit
 
     def test_motion_in_a_template_orients_and_gives_no_orders(self):
-        """In ludo a dynamic template leaf is an orientation, so it does not move its body."""
+        """In gameboard a dynamic template leaf is an orientation, so it does not move its body."""
         from grace_lot.lot_adapter.program import compile_program
         for src, moves in [("(serial_h (body top/H* center/H) neutral/H)", False),     # top/H* a template
                            ("(serial_h (body center/H bottom/H*) neutral/H)", True)]:  # bottom/H* content
@@ -519,7 +519,7 @@ class InferenceTests(unittest.TestCase):
         n.evaluate()
         self.assertTrue(np.allclose(n.render_output((12, 12)).activation, 0.5))
 
-    def test_ludo_leaf_and_group_targets_act_on_the_same_tick(self):
+    def test_gameboard_leaf_and_group_targets_act_on_the_same_tick(self):
         """Gating a motion leaf or the group around it delays its order by the same one tick."""
         from grace_lot.lot_adapter.program import compile_program
 
@@ -538,7 +538,7 @@ class InferenceTests(unittest.TestCase):
         self.assertEqual(leaf, group)
         self.assertEqual(leaf[:4], [6, 6, 5, 4])           # perceive at 1; order, and a full-gate cell, at 2
 
-    def test_ludo_motion_moves_only_bodies_in_its_space(self):
+    def test_gameboard_motion_moves_only_bodies_in_its_space(self):
         """A motion leaf orders the bodies whose window overlaps its own region, not every body in the tree."""
         from grace_lot.lot_adapter.program import compile_program
 
@@ -565,7 +565,7 @@ class InferenceTests(unittest.TestCase):
         down = next(n for n in g.nodes if getattr(n, "name", "") == "top" and n.orientation.value == 1)
         self.assertEqual(g._inside[down.node_id + "#0"], {body.node_id})   # inside: no second order while it stays
 
-    def test_ludo_a_body_reentering_a_lit_leaf_is_sent_off_again(self):
+    def test_gameboard_a_body_reentering_a_lit_leaf_is_sent_off_again(self):
         """Only presence is remembered: leaving a lit leaf's space and coming back earns a new order."""
         from grace_lot.lot_adapter.program import compile_program
         g = compile_program(parse_program("(serial_h top/V* (body[0.25,0.5,0.06] center/H))"))
@@ -586,13 +586,13 @@ class InferenceTests(unittest.TestCase):
         tick(0.25)              # comes back: one more
         self.assertEqual(issued, [0, 1, 0, 0, 1])
 
-    def test_ludo_parent_observers_perceive_their_composed_pattern(self):
+    def test_gameboard_parent_observers_perceive_their_composed_pattern(self):
         """A parent that is a dashed source observes with its whole subtree; here it matches the leaf version."""
         from grace_lot.lot_adapter.program import compile_program
 
         def columns(src):
             g = compile_program(parse_program(src))
-            g.dynamics, g.grid = "ludo", (12, 12)
+            g.dynamics, g.grid = "gameboard", (12, 12)
             g.reset_gates()
             body = [n for n in g.nodes if n.node_type == "body"][0]
             out = []

@@ -1,5 +1,5 @@
 # Multi-output body-part interface under the current semantics: everything from the tree (no body
-# parameters), ludo dynamics, and a likelihood that also compares frame-to-frame changes. Diagnostic.
+# parameters), gameboard dynamics, and a likelihood that also compares frame-to-frame changes. Diagnostic.
 
 # PROTOTYPE: anonymous outputs matched to body parts in a 3-detector-per-axis activation space.
 # Derived from configs/grace_parts.toml. Scanner: sigmoid receptive fields, boundaries 1/3 and 2/3,
