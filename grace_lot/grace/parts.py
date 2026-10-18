@@ -58,3 +58,33 @@ def part_fields(traj: Trajectory, pre: dict) -> np.ndarray:
         chans.append(rasterise(traj.joints, conns[p], pre["field_size"], pre["window_x"], pre["window_y"],
                                pre["thickness"], pre["raster_scale"], torso_idx if p == "torso" else None))
     return np.stack(chans, axis=1)
+
+
+def occupancy_background(cfg: dict) -> np.ndarray:
+    """(H, W) base rate of body-part occupancy per cell: what a part window usually looks like.
+
+    The mean of ``part_fields`` over every training video of every manner (all frames and parts), so it
+    is shared by all programs and carries no manner-specific information. Used as the prediction for cells
+    a program makes no claim about (docs/probabilistic_semantics.md). Cached in the processed directory.
+    """
+    import hashlib
+    import json
+    from pathlib import Path
+    from grace_lot.grace.preprocess import load_trajectory
+    from grace_lot.inference.run import videos_for
+    pre = cfg["preprocess"]
+    key = hashlib.sha1(json.dumps([pre, cfg.get("split", {})], sort_keys=True, default=str).encode()).hexdigest()[:12]
+    path = Path(cfg["data"]["processed_dir"]) / f"background_occupancy_{key}.npy"
+    if path.exists():
+        return np.load(path)
+    bym, _ = videos_for(cfg, "train")
+    total, count = np.zeros((pre["field_size"], pre["field_size"])), 0
+    for m in sorted(bym):
+        for v in bym[m]:
+            f = part_fields(load_trajectory(cfg, v), pre)                # (T, P, H, W)
+            total += f.sum(axis=(0, 1))
+            count += f.shape[0] * f.shape[1]
+    out = total / max(count, 1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(path, out)
+    return out

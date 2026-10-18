@@ -897,20 +897,46 @@ class GroupingTests(unittest.TestCase):
         old = MatchedScanLikelihood(obs, LotRenderer(16, 12), 250.0, 0.05, 0.75, 1.0)
         new = ProbabilisticScanLikelihood(obs, 16, 12, 250.0, 0.05, 0.75, 1.0)
         self.assertAlmostEqual(old(certain), new(certain), places=3)
+        with_bg = ProbabilisticScanLikelihood(obs, 16, 12, 250.0, 0.05, 0.75, 1.0, background=0.03)
+        self.assertAlmostEqual(old(certain), with_bg(certain), places=3)                 # claims are unaffected
+
+    def test_moving_mass_leaves_known_emptiness(self):
+        """Under probabilistic motion, cells moving mass leaves behind read as known empty, not unknown."""
+        import numpy as np
+        import embodied_lot
+        from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+        prog = parse_program("(parallel center/V universal/V* out)")
+        key = next(iter(motion_combinations(prog, 12)[0][0]))
+        embodied_lot.PROBABILISTIC_MOTION = True
+        v = rollout(prog, 8, 12, {key: "b"})[:, 0]                       # the band rises
+        self.assertTrue(np.all(v[4, 8:] == 0.0))                         # the rows it left are known empty
+        embodied_lot.PROBABILISTIC_MOTION = False
+        legacy = rollout(parse_program("(parallel center/V top/V* out)"), 8, 12)[:, 0]
+        self.assertTrue(np.any((legacy > 0) & (legacy < 1)))             # earlier runs: vacated cells unknown
+        embodied_lot.PROBABILISTIC_MOTION = True
+
+    def test_half_means_no_claim(self):
+        import numpy as np
+        from grace_lot.inference.likelihood import cell_probability
+        v = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+        self.assertTrue(np.allclose(cell_probability(v, 0.1), [0.0, 0.05, 0.1, 0.55, 1.0]))
+        self.assertTrue(np.allclose(cell_probability(v, None), v))
 
     def test_probabilistic_likelihood_prices_unknown_motion_at_log2(self):
         """Videos drawn from a program's own distribution: void* wins on still ones, universal* on ones moving
-        either way, neutral* on a mix; hedging between still and moving costs log 2 per video."""
+        either way, neutral* on a mix; hedging between still and moving costs at most log 2 per video."""
         import numpy as np
         import embodied_lot
         from grace_lot.grace.scanner import scan_field
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         from grace_lot.lot_adapter.adapter import motion_combinations, rollout
         embodied_lot.PROBABILISTIC_MOTION = True
+        from grace_lot.inference.likelihood import cell_probability
+        bg = 0.03
         def sample(src, states, seed):                                    # one binary realization of the program
             v = rollout(parse_program(src), 16, 12, states)
             u = np.random.Generator(np.random.PCG64(seed)).random(v.shape[1:])
-            return scan_field((u[None] < v).astype(float), 0.05, 0.75)
+            return scan_field((u[None] < cell_probability(v, bg)).astype(float), 0.05, 0.75)
         moving_src = "(parallel center/V universal/V* out)"
         key = next(iter(motion_combinations(parse_program(moving_src), 12)[0][0]))
         still = sample("(parallel center/V void/V* out)", {}, 0)
@@ -919,11 +945,12 @@ class GroupingTests(unittest.TestCase):
         truths = {"still": [still] * 6, "moving": ups + downs, "mixed": [still] * 2 + ups[:2] + downs[:2]}
         best = {}
         for name, vids in truths.items():
-            lik = ProbabilisticScanLikelihood(vids, 16, 12, 250.0, 0.05, 0.75, 1.0)
+            lik = ProbabilisticScanLikelihood(vids, 16, 12, 250.0, 0.05, 0.75, 1.0, background=bg)
             sc = {m: lik(parse_program(f"(parallel center/V {m}/V* out)")) for m in ("void", "neutral", "universal")}
             best[name] = max(sc, key=sc.get)
+            # hedging costs at most log 2 per video (less when the other state explains part of the video)
             if name == "still":
-                self.assertAlmostEqual(sc["void"] - sc["neutral"], 6 * math.log(2), places=2)
+                self.assertTrue(0 < sc["void"] - sc["neutral"] <= 6 * math.log(2) + 1e-6)
             if name == "moving":
-                self.assertAlmostEqual(sc["universal"] - sc["neutral"], 6 * math.log(2), places=2)
+                self.assertTrue(0 < sc["universal"] - sc["neutral"] <= 6 * math.log(2) + 1e-6)
         self.assertEqual(best, {"still": "void", "moving": "universal", "mixed": "neutral"})

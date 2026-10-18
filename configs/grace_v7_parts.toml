@@ -50,6 +50,7 @@ content_windows = true                 # `out` / `in` are never templates (diag4
 [inference]
 likelihood = "probabilistic"           # docs/probabilistic_semantics.md: cell values are p(yang), unknown motion mixed
 cell_draws = 8                         # binary boards drawn per state combination (fixed seeds)
+background = "occupancy"               # 0.5 = no claim: unclaimed cells follow the training base rate of part occupancy
 prior = "description_length"
 lambda_size = 0.5                      # lenient default; validation chooses from [selection]
 body_param_cost = 0.5

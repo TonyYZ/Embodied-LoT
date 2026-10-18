@@ -184,3 +184,37 @@ uncertainty. Whether vacated cells should instead stay known empty, or return to
 is a semantics decision still to make.
 
 **Not yet switched over:** the held-out evaluation and the inspection pages still use the matched likelihood.
+
+## 9. 0.5 means "no claim", with a shared background (decided 2026-10-18)
+**The decision.** A cell at 0.5 is where the concept makes no claim. It is predicted by a **background base
+rate shared by all programs**, not by a coin flip.
+- The background is `parts.occupancy_background`: the per-cell mean part occupancy over every training video
+  of every manner. It looks like an average body silhouette (mean 0.026, peak 0.31 in the central columns).
+- In general p(figure) = |2v − 1| · [v > ½] + (1 − |2v − 1|) · b, which is `likelihood.cell_probability`.
+  Claims (0 or 1) are unaffected, and partial values interpolate.
+- Config: `inference.background = "occupancy"` (v7).
+
+**What it implies.** Concepts are **deviations from the average body**. A program that claims nothing scores
+like the background, and that is a strong baseline. On swinging and crisscrossing, an all-abstaining
+6-output program scores about −423 and −489, against −1280 to −1460 for single-band programs. So a claim
+has to beat the average body to pay off.
+
+**Vacated cells are known empty.** With abstention this attractive, letting moving mass leave "unknown"
+behind turned motion into a way of withdrawing claims. `universal*` then beat `void*` by about +79 nats on
+every manner, with a difference-in-differences of about 0, so the gain wasn't temporal.
+
+Under `probabilistic_motion`, cells that moving mass leaves behind therefore read as **known empty** (yin).
+Only contradictions, such as figure piled onto empty at an edge, stay at 0.5.
+
+Real-data triples afterwards (training actors, current sampling, 3 shuffles):
+
+| Manner | `universal*` wins | Gap over `void*`: `neutral*` / `universal*` | Difference-in-differences: `neutral*` / `universal*` |
+| --- | --- | --- | --- |
+| bowing | 0.62 | +11.8 / +4.9 | +0.69 / +1.06 |
+| crisscrossing | 0.66 | +13.3 / +7.1 | +0.40 / +0.56 |
+| jumping | 0.62 | +13.7 / +7.3 | +1.12 / +1.61 |
+| swinging | 0.62 | +11.6 / +4.0 | +0.77 / +1.20 |
+
+The motion bonus is now small, and the difference-in-differences is positive everywhere: some of it reflects
+temporal order. With the flags off, v6, v3 and the legacy fuzz are bit-identical, and the explainer is exact
+with its v6 flags.

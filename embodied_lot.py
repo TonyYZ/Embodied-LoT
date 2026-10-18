@@ -202,7 +202,9 @@ GROUPING_NODES = True
 # unit's state in ``ConceptGraph.motion_states``: "a" or "b" (a bulk push one way or the other along the
 # leaf's axis, as top* / bottom*) or "still" (no orders). The likelihood mixes the states: universal a / b
 # with 1/2 each, neutral still 1/2, a 1/4, b 1/4. Unset units default to "a" (universal) and "still"
-# (neutral). With False, universal* gives random pushes and neutral* nothing (earlier runs).
+# (neutral). Cells that moving mass leaves behind read as known empty (yin), so motion cannot be used to
+# withdraw a claim. With False, universal* gives random pushes, neutral* nothing, and vacated cells read
+# as unknown (earlier runs).
 PROBABILISTIC_MOTION = True
 _MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
@@ -1658,7 +1660,11 @@ class ConceptGraph:
             return self._paint(shape, root_id, place_bodies)
         fy, fn = self._paint(shape, rid, True, layer="free")
         by, bn = self._paint(shape, rid, True, layer="bodies")
-        return _scatter(fy, st["off"]) * by, _scatter(fn, st["off"]) * bn
+        sy, sn = _scatter(fy, st["off"]), _scatter(fn, st["off"])
+        if PROBABILISTIC_MOTION:                  # what moved away leaves known emptiness, not "no claim"
+            vacated = ((fy < 1) | (fn < 1)) & ~((sy < 1) | (sn < 1))
+            sn = np.where(vacated, 0.0, sn)
+        return sy * by, sn * bn
 
     def _perceive(self, views=None) -> None:
         """Each top-most observer evaluates its subtree against last tick's imagery, through its views.

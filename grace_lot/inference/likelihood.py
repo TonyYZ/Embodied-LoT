@@ -172,6 +172,19 @@ class MatchedScanLikelihood(MatchedPartsLikelihood):
         return self._padded(self.scan(p))                                # scan: (T, K, 6)
 
 
+def cell_probability(v: np.ndarray, background) -> np.ndarray:
+    """p(figure) per cell from a rendered value v, reading 0.5 as "no claim".
+
+    The claim strength is |2v - 1|: with that probability the cell is claimed (figure if v > 0.5, empty if
+    v < 0.5); otherwise it is unclaimed and follows the background base rate. So v = 1 gives 1, v = 0 gives
+    0, v = 0.5 gives the background. With ``background=None``, v itself is p(figure).
+    """
+    if background is None:
+        return v
+    b = np.asarray(background, dtype=np.float64)
+    return np.where(v >= 0.5, (2 * v - 1) + (2 - 2 * v) * b, 2 * v * b)
+
+
 class ProbabilisticScanLikelihood:
     """The matched scan likelihood under the probabilistic reading (docs/probabilistic_semantics.md).
 
@@ -189,10 +202,13 @@ class ProbabilisticScanLikelihood:
 
     so a certain program (every cell 0 or 1, no unknown motion) scores as ``MatchedScanLikelihood``. Per
     video, combinations mix by their prior weights: log sum_c w_c exp(log p(v | c)).
+
+    ``background`` (an (H, W) base rate or a number) makes 0.5 mean "no claim": unclaimed cells are drawn
+    from the background, the same for every program, instead of as coin flips (``cell_probability``).
     """
 
     def __init__(self, observations, frames: int, size: int, beta: float, softness: float, salience: float,
-                 temporal_weight: float = 0.0, draws: int = 8, cache_size: int = 5000) -> None:
+                 temporal_weight: float = 0.0, draws: int = 8, cache_size: int = 5000, background=None) -> None:
         from collections import OrderedDict
         self.O = np.stack(observations).astype(np.float64)              # (N, T, P, 6)
         N, T, P, F = self.O.shape
@@ -203,6 +219,7 @@ class ProbabilisticScanLikelihood:
         self.e = (self.O ** 2).mean(axis=(1, 3))
         self.de = (self.dO ** 2).mean(axis=(1, 3))
         self.frames, self.size, self.softness, self.salience, self.draws = frames, size, softness, salience, draws
+        self.background = background
         self._cache, self._cache_size = OrderedDict(), cache_size
 
     def moments(self, p) -> list:
@@ -214,10 +231,11 @@ class ProbabilisticScanLikelihood:
             v = rollout(p, self.frames, self.size, states)
             v = v if v.ndim == 4 else v[:, None]
             certain = bool(np.all((v == 0) | (v == 1)))
+            p_fig = cell_probability(v, self.background)
             feats = []
             for d in range(1 if certain else self.draws):
                 u = np.random.Generator(np.random.PCG64(10_000 + d)).random(v.shape[1:])
-                feats.append(scan_field((u[None] < v).astype(np.float64), self.softness, self.salience))
+                feats.append(scan_field((u[None] < p_fig).astype(np.float64), self.softness, self.salience))
             Fs = np.stack(feats)
             dF = np.diff(Fs, axis=1)
             out.append(dict(weight=weight, mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0)))

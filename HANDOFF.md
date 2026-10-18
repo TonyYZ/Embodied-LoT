@@ -417,5 +417,8 @@ and browser-side evaluation for edited structures.
         weight.
     - Certain programs score exactly as with the matched likelihood.
     - v7 uses both, and `neutral` is a primitive. Older configs pin both off; their rollouts are bit-identical.
-    - Open: cells vacated by moving mass become unknown, which makes moving programs very uncertain.
+    - A 0.5 cell is "no claim". It is predicted by a shared background, the training base rate of part
+      occupancy (`parts.occupancy_background`, `inference.background = "occupancy"`), so concepts are
+      deviations from the average body.
+    - Cells vacated by moving mass read as known empty, so motion can't withdraw a claim.
 

@@ -82,9 +82,13 @@ def build(cfg: dict, observations):
     if representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         itf = cfg["interface"]
+        background = inf.get("background")
+        if background == "occupancy":
+            from grace_lot.grace.parts import occupancy_background
+            background = occupancy_background(cfg)
         lik = ProbabilisticScanLikelihood(observations, pre["frames"], pre["field_size"], inf["beta"],
                                           itf["scan_softness"], itf["lot_salience"], inf.get("temporal_weight", 0.0),
-                                          inf.get("cell_draws", 8))
+                                          inf.get("cell_draws", 8), background=background)
     elif representation(cfg) == "parts_scan":
         from grace_lot.inference.likelihood import MatchedScanLikelihood
         itf = cfg["interface"]
