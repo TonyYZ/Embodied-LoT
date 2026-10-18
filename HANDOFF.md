@@ -456,3 +456,17 @@ and browser-side evaluation for edited structures.
     - The Gaussian likelihood makes its Monte Carlo fills and uniforms once per draw
       index, not once per program (`_draws`). The same numbers give the same scores
       (153 programs bit-identical), 26 → 14 ms per program.
+26. Measure trees (`lot.measure_trees`, v7 only; every older config pins it off).
+    - The case: a tree whose top node is a dashed source would be all observer. Nothing
+      in it is drawn, so it would scan an empty space and read a constant.
+    - The rule: such a tree is drawn instead, and its activation is the mean figure
+      claim of its own space as drawn last tick: mean of max(0, 2v - 1) over the
+      board, 0.5 before the first drawing.
+    - The effect: a dashed edge from it sets its target's gate to that amount, an alpha
+      defined by the tree. A one-third-figure tree fades its target to 1/3, and a
+      source whose figure changes modulates its target over time.
+    - Unchanged: trees with an input window keep perceiving, and observers inside a
+      drawn tree are as before.
+    - `MeasureTreeTests` cover the fade, the time-varying alpha and the observer
+      control.
+    - The gameboard explainer now pins all of the v6 semantics, not just grouping.

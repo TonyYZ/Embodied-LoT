@@ -71,12 +71,12 @@ class InferenceTests(unittest.TestCase):
 
     def setUp(self):
         import embodied_lot
-        self._flags = embodied_lot.GROUPING_NODES, embodied_lot.PROBABILISTIC_MOTION
-        embodied_lot.GROUPING_NODES = embodied_lot.PROBABILISTIC_MOTION = False
+        self._flags = embodied_lot.GROUPING_NODES, embodied_lot.PROBABILISTIC_MOTION, embodied_lot.MEASURE_TREES
+        embodied_lot.GROUPING_NODES = embodied_lot.PROBABILISTIC_MOTION = embodied_lot.MEASURE_TREES = False
 
     def tearDown(self):
         import embodied_lot
-        embodied_lot.GROUPING_NODES, embodied_lot.PROBABILISTIC_MOTION = self._flags
+        embodied_lot.GROUPING_NODES, embodied_lot.PROBABILISTIC_MOTION, embodied_lot.MEASURE_TREES = self._flags
 
     def test_generator_log_prob_matches_frequency(self):
         rng = random.Random(0)
@@ -1093,3 +1093,59 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(b - a, 51)
         self.assertEqual(sample_window(np.random.default_rng(0).normal(size=(60, 1, 2)), "cycle2"), (0, 60))
         self.assertEqual(sample_window(joints, "segment"), (0, 200))
+
+
+class MeasureTreeTests(unittest.TestCase):
+    """v7: a tree whose top node sends a dashed edge measures its own figure (lot.measure_trees)."""
+
+    def setUp(self):
+        import embodied_lot
+        from grace_lot.config import load_config
+        from grace_lot.lot_adapter.program import apply_semantics
+        self._saved = {k: getattr(embodied_lot, k) for k in dir(embodied_lot)
+                       if k.isupper() and isinstance(getattr(embodied_lot, k), (bool, str, float))}
+        apply_semantics(load_config("configs/grace_v7_parts.toml")["lot"])
+
+    def tearDown(self):
+        import embodied_lot
+        for k, v in self._saved.items():
+            setattr(embodied_lot, k, v)
+
+    @staticmethod
+    def trace(src, ticks):
+        import numpy as np
+        from grace_lot.lot_adapter.program import compile_program
+        g = compile_program(parse_program(src))
+        g.grid = (12, 12)
+        g.reset_gates()
+        g.assign_roles()
+        edge, out = g.dashed_edges[0], []
+        for _ in range(ticks):
+            g.step()
+            target_space = g._spaces[g.tree_index()[edge.target.node_id]]
+            out.append((edge.source.activation, edge.target.gate,
+                        sorted(set(np.round(target_space[target_space > 0.5], 3).tolist()))))
+        return g, out
+
+    def test_a_one_third_figure_tree_fades_its_target_to_one_third(self):
+        g, tr = self.trace("(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0", 4)
+        self.assertEqual([n.node_id for n in g._measures], [g.dashed_edges[0].source.node_id])
+        self.assertAlmostEqual(tr[0][0], 0.5)                          # before the first drawing: unknown
+        for act, gate, values in tr[1:]:
+            self.assertAlmostEqual(act, 1 / 3)
+            self.assertAlmostEqual(gate, 1 / 3)
+            self.assertEqual(values, [round(0.5 + 0.5 / 3, 3)])        # the target drawn at strength 1/3
+
+    def test_a_moving_source_modulates_its_target_over_time(self):
+        _, tr = self.trace("(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0", 10)
+        gates = [round(gate, 3) for _, gate, _ in tr[1:]]
+        self.assertEqual(gates[0], round(1 / 3, 3))
+        self.assertEqual(gates[-1], 0.0)                               # the band piles at the edge and fades
+        self.assertTrue(all(a >= b for a, b in zip(gates, gates[1:])))
+        self.assertGreater(len(set(gates)), 3)                         # graded, not a switch
+
+    def test_an_observer_inside_a_drawn_tree_still_perceives(self):
+        g, tr = self.trace("(parallel center/H (parallel center/H bottom/V* out)) | .0>.1.1", 3)
+        self.assertEqual(g._measures, [])
+        self.assertEqual(getattr(g.dashed_edges[0].source, "role", None), "observer")
+        self.assertAlmostEqual(tr[1][0], 1.0)                          # it sees the drawn band

@@ -31,6 +31,7 @@ raster_scale = 8
 
 [lot]
 grouping_nodes = true                  # template / field / body as separate operators
+measure_trees = true                   # a tree whose top node sends a dashed edge measures its own figure
 probabilistic_motion = true            # universal* / neutral* are latent directions, mixed in the likelihood
 max_motion_units = 2                   # at most 2 unknown-motion units per program (<= 9 state combinations)
 primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void", "neutral"]   # neutral: draws nothing; neutral* = unknown whether there is motion

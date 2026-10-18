@@ -24,6 +24,7 @@ thickness = 0.08
 raster_scale = 8
 
 [lot]
+measure_trees = false                  # pinned: a tree-top dashed source observes its (empty) space
 probabilistic_motion = false           # pinned: universal* random pushes, neutral* inert
 grouping_nodes = false                 # pinned: these results use plan / body (templates inside the moving unit)
 primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void"]

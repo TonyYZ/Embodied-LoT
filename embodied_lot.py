@@ -206,6 +206,15 @@ GROUPING_NODES = True
 # cannot be used to withdraw a claim. With False, universal* gives random pushes, neutral* nothing, and vacated cells read
 # as unknown (earlier runs).
 PROBABILISTIC_MOTION = True
+
+# A tree whose top node is a dashed source would be all observer: nothing in it is drawn, so its own space is
+# empty and it would read a constant. Instead it is a *measure*: it is drawn like any imagined tree, and its
+# activation is the mean figure claim of its own space as drawn last tick, mean over the board of
+# max(0, 2v - 1) (unknown and yin add nothing; 0.5 before the first drawing). A dashed edge from it sets its
+# target's gate to that amount, an alpha the tree itself defines (a tree that is one third figure fades its
+# target to 1/3). Trees with an input window keep perceiving. Every other dashed source stays an observer.
+# With False, such a tree is an observer of its empty space (earlier runs).
+MEASURE_TREES = True
 _MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
 
@@ -1431,6 +1440,12 @@ class ConceptGraph:
         roots = [n for n in self._nodes.values() if not isinstance(n, PORTALS) and (
             (n.node_id in sources and n.node_id not in targets)
             or (isinstance(n, ObjectNode) and self._has_input_context(n, parents)))]
+        self._measures = []
+        if MEASURE_TREES:                                 # a whole tree with nothing to perceive measures itself
+            tops = {c.node_id for g in self.roots for c in content_children(g)}
+            self._measures = [r for r in roots if r.node_id in tops
+                              and not any(isinstance(n, InWindowNode) for n in walk(r))]
+            roots = [r for r in roots if r not in self._measures]
         observing = set()
         for r in roots:
             observing.update(n.node_id for n in walk(r))
@@ -1693,6 +1708,9 @@ class ConceptGraph:
                 continue
             scores = [w * node.evaluate(_view_field(board, chain, rect)) for w, chain, rect in vs]
             node.activation = float(sum(scores) / sum(w for w, _, _ in vs))
+        for node in getattr(self, "_measures", []):       # measure trees: their own figure, as drawn last tick
+            own = spaces.get(self.tree_index().get(node.node_id))
+            node.activation = unknown_value() if own is None else float(np.maximum(0.0, 2.0 * own - 1.0).mean())
 
     def _propagate_delayed(self) -> None:
         """Every dashed target takes the mean of its sources' current activations; it acts next tick."""

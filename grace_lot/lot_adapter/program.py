@@ -98,6 +98,7 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.SEPARATE_TREE_SPACES = bool(lot_cfg.get("output_leaves", True))
     embodied_lot.GROUPING_NODES = bool(lot_cfg.get("grouping_nodes", True))
     embodied_lot.PROBABILISTIC_MOTION = bool(lot_cfg.get("probabilistic_motion", True))
+    embodied_lot.MEASURE_TREES = bool(lot_cfg.get("measure_trees", True))
 
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
@@ -107,7 +108,7 @@ SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameb
                   "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
                   "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
                   "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False),
-                  "probabilistic_motion": (True, False)}
+                  "probabilistic_motion": (True, False), "measure_trees": (True, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:

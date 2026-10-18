@@ -232,8 +232,9 @@ def trace(example: dict, ticks: int = 36) -> dict:
 
 
 def main() -> None:
-    embodied_lot.GROUPING_NODES = False      # the explainer documents the v6 semantics (plan / body with templates,
-    embodied_lot.PROBABILISTIC_MOTION = False   # random universal* pushes)
+    from grace_lot.config import load_config      # the explainer documents the v6 semantics: pin all of them
+    from grace_lot.lot_adapter.program import apply_semantics
+    apply_semantics(load_config("configs/grace_v6_parts.toml")["lot"])
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="results/gameboard_viz")
     args = ap.parse_args()
