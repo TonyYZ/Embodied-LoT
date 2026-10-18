@@ -30,7 +30,27 @@ def _state_signature(graph) -> tuple:
             graph.motion_state() if hasattr(graph, "motion_state") else ())
 
 
-def rollout(program: P, frames: int, size: int) -> np.ndarray:
+def motion_combinations(program: P, size: int) -> list:
+    """Every joint state of the program's unknown-motion units, with its prior weight.
+
+    universal*: "a" / "b" (one way or the other), 1/2 each; neutral*: "still" 1/2, "a" 1/4, "b" 1/4.
+    A program without unknown motion has one combination, ``({}, 1.0)``.
+    """
+    import itertools
+    graph = compile_program(program)
+    graph.grid = (size, size)
+    graph.reset_gates()
+    if graph.dynamics == "gameboard":
+        graph.assign_roles()
+    units = sorted(graph.unknown_motion_units().items())
+    opts = {"universal": [("a", 0.5), ("b", 0.5)], "neutral": [("still", 0.5), ("a", 0.25), ("b", 0.25)]}
+    out = []
+    for choice in itertools.product(*[opts[kind] for _, (kind, _, _) in units]):
+        out.append(({key: c[0] for (key, _), c in zip(units, choice)}, float(np.prod([c[1] for c in choice]))))
+    return out
+
+
+def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> np.ndarray:
     """Rendered output fields: (T, H, W) for one output, or (T, K, H, W) for a K-channel program.
 
     The rollout is deterministic. If the state (body positions, gates,
@@ -44,6 +64,8 @@ def rollout(program: P, frames: int, size: int) -> np.ndarray:
     graph.reset_gates()
     if graph.dynamics == "gameboard":
         graph.assign_roles()             # observers are perceivers and are not drawn
+    if motion_states:
+        graph.motion_states = dict(motion_states)   # this realization of the unknown motion
     windows = graph.windows()
     if windows:                       # output leaves: channel k = the board inside window k's region
         return _window_rollout(graph, [w.node_id for w in windows], frames, size)

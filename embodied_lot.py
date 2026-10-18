@@ -194,6 +194,16 @@ SEPARATE_TREE_SPACES = True
 # independent instances, each with its own place and motion. With False, ``body`` is the earlier movable
 # plan (templates first, material last) and ``plan`` the fixed one.
 GROUPING_NODES = True
+
+# Unknown motion is a latent, not a random path (docs/probabilistic_semantics.md). ``universal*`` says
+# "there is motion here, I don't know which way", ``neutral*`` "I don't know whether there is motion here",
+# ``void*`` "I know there is none". Each ``universal*`` / ``neutral*`` leaf belongs to a unit (its innermost
+# field or body node, shared by the node's template copies; else the leaf itself), and a rollout fixes every
+# unit's state in ``ConceptGraph.motion_states``: "a" or "b" (a bulk push one way or the other along the
+# leaf's axis, as top* / bottom*) or "still" (no orders). The likelihood mixes the states: universal a / b
+# with 1/2 each, neutral still 1/2, a 1/4, b 1/4. Unset units default to "a" (universal) and "still"
+# (neutral). With False, universal* gives random pushes and neutral* nothing (earlier runs).
+PROBABILISTIC_MOTION = True
 _MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
 
@@ -209,6 +219,8 @@ def _compose(yang_complement: np.ndarray, yin_complement: np.ndarray) -> np.ndar
         return np.clip(0.5 + 0.5 * (yin_complement - yang_complement), 0.0, 1.0)
     return np.clip(1.0 - yang_complement, 0.0, 1.0)
 
+
+_UNKNOWN_MOTION = {TRIGRAM_PATTERNS["universal"]: "universal", TRIGRAM_PATTERNS["neutral"]: "neutral"}   # PROBABILISTIC_MOTION
 
 def unknown_value() -> float:
     """What "not known yet" reads as: 0.5, or 0 with the earlier renderer."""
@@ -1029,6 +1041,16 @@ class TemplateNode(PlanNode):
     node_type = "template"
 
 
+class _AsMotion:
+    """A leaf seen with another pattern: how an unknown-motion leaf acts in its chosen state."""
+
+    def __init__(self, node: "ObjectNode", pattern: Tuple[float, ...]) -> None:
+        self._node, self.pattern = node, pattern
+
+    def __getattr__(self, name):
+        return getattr(self._node, name)
+
+
 class GroupToken:
     """One instance of a field or body: a rigid unit with its own place, orders and drive."""
 
@@ -1743,8 +1765,13 @@ class ConceptGraph:
                     del self._inside[key]
                 continue
             near = by_tree[tree.get(node.node_id)] if SEPARATE_TREE_SPACES else bodies_at
+            acting = self._resolve_motion(node) if PROBABILISTIC_MOTION else node
+            if acting is None:                            # unknown motion, still in this realization
+                for key in [k for k in self._inside if k.split("#")[0] == node.node_id]:
+                    del self._inside[key]
+                continue
             if MOTION_KINDS:
-                self._issue_kinds(node, a, list(zip(keys, views.get(node.node_id, []))), near, parents)
+                self._issue_kinds(acting, a, list(zip(keys, views.get(node.node_id, []))), near, parents)
                 continue
             motion = BodyNode._template_motion(node)
             meta = self.view_meta(node.node_id)
@@ -1988,7 +2015,10 @@ class ConceptGraph:
                 a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
             if not a > ONSET_THRESHOLD:
                 continue
-            kind = _MOTION_KIND.get(PATTERN_TO_NAME.get(node.pattern))
+            acting = self._resolve_motion(node) if PROBABILISTIC_MOTION else node
+            if acting is None:
+                continue
+            kind = _MOTION_KIND.get(PATTERN_TO_NAME.get(acting.pattern))
             for k, (_, chain, _) in enumerate(views.get(node.node_id, [])):
                 groups = self.view_meta(node.node_id)[k][1]
                 tok = units.get(groups[-1]) if groups else None
@@ -1999,11 +2029,48 @@ class ConceptGraph:
                     push = (float(rng.uniform(-1, 1)), float(rng.uniform(-1, 1)))
                     push = (push[0], 0.0) if node.orientation == Orientation.VERTICAL else (0.0, push[1])
                 elif kind in ("bulk", "gradient"):
-                    push = _view_turn(chain, BodyNode._template_motion(node))
+                    push = _view_turn(chain, BodyNode._template_motion(acting))
                 else:
                     continue
                 for ax, m in enumerate(_view_unturn(homes[tok.node_id][0], push)):
                     tok.drive[ax] += a * m
+
+    # -- unknown motion (PROBABILISTIC_MOTION) ---------------------------------------------------------
+
+    def unknown_motion_units(self) -> Dict[str, Tuple[str, List[str], "Orientation"]]:
+        """Unit key -> (kind, leaf ids, orientation) for every imagined universal* / neutral* leaf.
+
+        A unit is the leaf's innermost field or body node (its template copies share it), else the leaf;
+        universal and neutral leaves of one unit are separate units. Keys look like ``"n4:universal"``.
+        """
+        views = self.node_views(self.grid)
+        out: Dict[str, Tuple[str, List[str], Orientation]] = {}
+        for node in self._nodes.values():
+            kind = _UNKNOWN_MOTION.get(node.pattern) if isinstance(node, ObjectNode) else None
+            if kind is None or not node.is_dynamic or getattr(node, "role", None) != "imagined":
+                continue
+            meta = self.view_meta(node.node_id) if views.get(node.node_id) else []
+            groups = meta[0][1] if meta else ()
+            unit = groups[-1].split("@")[0] if groups else node.node_id
+            key = f"{unit}:{kind}"
+            out.setdefault(key, (kind, [], node.orientation))[1].append(node.node_id)
+        return out
+
+    def _resolve_motion(self, node: "ObjectNode"):
+        """The leaf as it acts in this realization: itself, a directed stand-in, or None (still)."""
+        kind = _UNKNOWN_MOTION.get(node.pattern)
+        if kind is None:
+            return node
+        unit = self._motion_unit(node.node_id)
+        state = getattr(self, "motion_states", {}).get(f"{unit}:{kind}", "a" if kind == "universal" else "still")
+        if state == "still":
+            return None
+        return _AsMotion(node, TRIGRAM_PATTERNS["top" if state == "a" else "bottom"])
+
+    def _motion_unit(self, nid: str) -> str:
+        meta = self.view_meta(nid)
+        groups = meta[0][1] if meta else ()
+        return groups[-1].split("@")[0] if groups else nid
 
     def _step_gameboard(self) -> float:
         """One tick: scan, perceive last tick's imagery, issue orders, propagate (for next tick), move, draw.

@@ -232,7 +232,8 @@ def trace(example: dict, ticks: int = 36) -> dict:
 
 
 def main() -> None:
-    embodied_lot.GROUPING_NODES = False      # the explainer documents the v6 semantics (plan / body with templates)
+    embodied_lot.GROUPING_NODES = False      # the explainer documents the v6 semantics (plan / body with templates,
+    embodied_lot.PROBABILISTIC_MOTION = False   # random universal* pushes)
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="results/gameboard_viz")
     args = ap.parse_args()

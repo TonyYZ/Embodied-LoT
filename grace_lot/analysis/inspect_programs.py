@@ -65,9 +65,13 @@ def tree_svg(prog) -> str:
     """The program drawn as a tree: solid composition edges, dashed gate edges as arrows.
 
     Motion (dynamic) leaves are orange, static leaves blue. Nodes in a template (any child but
-    the last of a plan or body) have a dashed outline: they place or turn the content rather
-    than draw.
+    the last of a template, or of a plan / earlier body) have a dashed outline: they place or turn
+    the content rather than draw. A forest is drawn as its trees side by side, with no root above them.
     """
+    import embodied_lot
+    from grace_lot.lot_adapter.program import OUTPUTS
+    forest = prog.tree.kind == OUTPUTS
+    templating = ("plan", "template") if embodied_lot.GROUPING_NODES else ("plan", "body", "template")
     pos, nxt = {}, [0]
 
     def place(p, path, d):
@@ -87,20 +91,21 @@ def tree_svg(prog) -> str:
         if in_template:
             templated.add(path)
         for i, c in enumerate(p.children):
-            is_template = p.kind in ("plan", "body") and i < len(p.children) - 1
+            is_template = p.kind in templating and i < len(p.children) - 1
             collect(c, path + (i,), in_template or is_template)
     collect(prog.tree, (), False)
 
     DX, DY, PX, PY = 92, 64, 50, 46
-    xy = {k: (PX + x * DX, PY + 14 + d * DY) for k, (x, d) in pos.items()}
+    lift = 1 if forest else 0                      # a forest has no drawn root: trees start one level up
+    xy = {k: (PX + x * DX, PY + 14 + (d - lift) * DY) for k, (x, d) in pos.items()}
     W = max(x for x, _ in pos.values()) * DX + 2 * PX
-    H = max(d for _, d in pos.values()) * DY + 2 * PY + 24
+    H = (max(d for _, d in pos.values()) - lift) * DY + 2 * PY + 24
     out = [f"<svg viewBox='0 0 {W:.0f} {H:.0f}' width='{W:.0f}' style='max-width:100%;height:auto' "
            f"xmlns='http://www.w3.org/2000/svg' font-family='system-ui,sans-serif'>",
            "<defs><marker id='a' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' "
            "orient='auto'><path d='M0,0 L10,5 L0,10 z' fill='#b8336a'/></marker></defs>"]
     for path in nodes:
-        if path:
+        if path and not (forest and len(path) == 1):
             (x1, y1), (x2, y2) = xy[path[:-1]], xy[path]
             out.append(f"<line x1='{x1:.0f}' y1='{y1:.0f}' x2='{x2:.0f}' y2='{y2:.0f}' stroke='#c9c6bd' stroke-width='2'/>")
     for a, b in prog.dashed:
@@ -110,6 +115,8 @@ def tree_svg(prog) -> str:
         out.append(f"<path d='M{x1:.0f},{y1 - 18:.0f} C{x1:.0f},{my:.0f} {x2:.0f},{my:.0f} {x2:.0f},{y2 - 20:.0f}' "
                    f"fill='none' stroke='#b8336a' stroke-width='2' stroke-dasharray='6 4' marker-end='url(#a)'/>")
     for path, p in nodes.items():
+        if forest and not path:
+            continue
         x, y = xy[path]
         dash = " stroke-dasharray='4 3'" if path in templated else ""
         if p.kind == LEAF:

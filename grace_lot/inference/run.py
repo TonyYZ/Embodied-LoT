@@ -79,7 +79,13 @@ def build(cfg: dict, observations):
     grammar = Grammar.from_config(cfg["lot"])
     renderer = LotRenderer(pre["frames"], pre["field_size"])
     prior = SizePrior.from_config(grammar, inf)
-    if representation(cfg) == "parts_scan":
+    if representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
+        from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
+        itf = cfg["interface"]
+        lik = ProbabilisticScanLikelihood(observations, pre["frames"], pre["field_size"], inf["beta"],
+                                          itf["scan_softness"], itf["lot_salience"], inf.get("temporal_weight", 0.0),
+                                          inf.get("cell_draws", 8))
+    elif representation(cfg) == "parts_scan":
         from grace_lot.inference.likelihood import MatchedScanLikelihood
         itf = cfg["interface"]
         lik = MatchedScanLikelihood(observations, renderer, inf["beta"], itf["scan_softness"], itf["lot_salience"],

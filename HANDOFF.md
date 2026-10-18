@@ -403,3 +403,19 @@ and browser-side evaluation for edited structures.
       `GroupingTests` cover instances, rigid fields, loose copies, agency, outward-only
       leaves, the grammar and MH exactness.
     - The gameboard explainer pins the v6 semantics.
+25. The probabilistic reading (`docs/probabilistic_semantics.md`): a cell value is p(yang), gates are mixture
+    weights, and unknown motion is a latent.
+    - `lot.probabilistic_motion`: `universal*` means motion of unknown direction, so a unit (its innermost
+      field or body, else the leaf) is pushed one way or the other, ½ each. `neutral*` means unknown
+      whether there is motion: still ½, either way ¼. `void*` means no motion.
+    - `lot.max_motion_units` caps the units, at 2 in v7.
+    - `inference.likelihood = "probabilistic"` (`ProbabilisticScanLikelihood`):
+      - enumerates the motion states;
+      - samples binary boards from the cell probabilities (one uniform per cell, held across frames; fixed
+        seeds);
+      - scores detector means and variances with a Gaussian cost on top of the β baseline, mixed by prior
+        weight.
+    - Certain programs score exactly as with the matched likelihood.
+    - v7 uses both, and `neutral` is a primitive. Older configs pin both off; their rollouts are bit-identical.
+    - Open: cells vacated by moving mass become unknown, which makes moving programs very uncertain.
+

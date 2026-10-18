@@ -97,6 +97,7 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.MOTION_KINDS = bool(lot_cfg.get("motion_kinds", True))
     embodied_lot.SEPARATE_TREE_SPACES = bool(lot_cfg.get("output_leaves", True))
     embodied_lot.GROUPING_NODES = bool(lot_cfg.get("grouping_nodes", True))
+    embodied_lot.PROBABILISTIC_MOTION = bool(lot_cfg.get("probabilistic_motion", True))
 
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
@@ -105,7 +106,8 @@ SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameb
                   "unknown_background": (True, False), "tree_placed_bodies": (True, False),
                   "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
                   "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
-                  "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False)}
+                  "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False),
+                  "probabilistic_motion": (True, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:
@@ -249,6 +251,33 @@ def leaves(p: P) -> List[P]:
 
 def is_valid(p: P) -> bool:
     return all(n.kind == LEAF or len(n.children) >= MIN_CHILDREN[n.kind] for _, n in nodes(p))
+
+
+def motion_units(prog, grouping: bool = True) -> int:
+    """How many unknown-motion units a program has (as ``ConceptGraph.unknown_motion_units``).
+
+    A dynamic universal / neutral leaf outside observer subtrees belongs to its innermost field or body
+    (with grouping) or else is its own unit; universal and neutral leaves of one unit count separately.
+    """
+    prog = as_program(prog)
+    srcs, tgts = {a for a, _ in prog.dashed}, {b for _, b in prog.dashed}
+    observer_roots = srcs - tgts
+    units = set()
+
+    def walk(q, path, group):
+        if any(path[:len(r)] == r for r in observer_roots):
+            return
+        if q.kind == LEAF:
+            name, _, dyn = q.params
+            if dyn and name in ("universal", "neutral"):
+                units.add((group if group is not None else path, name))
+            return
+        if grouping and q.kind in GROUPS:
+            group = path
+        for i, c in enumerate(q.children):
+            walk(c, path + (i,), group)
+    walk(prog.tree, (), None)
+    return len(units)
 
 
 def windows_as_content(p: P, grouping: bool = False) -> bool:

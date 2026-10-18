@@ -30,7 +30,9 @@ raster_scale = 8
 
 [lot]
 grouping_nodes = true                  # template / field / body as separate operators
-primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void"]
+probabilistic_motion = true            # universal* / neutral* are latent directions, mixed in the likelihood
+max_motion_units = 2                   # at most 2 unknown-motion units per program (<= 9 state combinations)
+primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void", "neutral"]   # neutral: draws nothing; neutral* = unknown whether there is motion
 compositions = ["parallel", "serial_h", "serial_v", "template", "field", "body"]
 allow_dynamic = true
 body_positions = [0.25, 0.5, 0.75]
@@ -46,6 +48,8 @@ max_outputs = 6
 content_windows = true                 # `out` / `in` are never templates (diag4 ran without this rule)
 
 [inference]
+likelihood = "probabilistic"           # docs/probabilistic_semantics.md: cell values are p(yang), unknown motion mixed
+cell_draws = 8                         # binary boards drawn per state combination (fixed seeds)
 prior = "description_length"
 lambda_size = 0.5                      # lenient default; validation chooses from [selection]
 body_param_cost = 0.5

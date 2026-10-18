@@ -170,3 +170,101 @@ class MatchedScanLikelihood(MatchedPartsLikelihood):
 
     def costs(self, p) -> np.ndarray:
         return self._padded(self.scan(p))                                # scan: (T, K, 6)
+
+
+class ProbabilisticScanLikelihood:
+    """The matched scan likelihood under the probabilistic reading (docs/probabilistic_semantics.md).
+
+    A program and a realization define a distribution over binary boards. A cell value v is p(yang); the
+    unknown-motion units (universal* / neutral*) take discrete states with prior weights
+    (``adapter.motion_combinations``). For each state combination, ``draws`` binary boards are sampled with
+    one uniform per cell held across frames (a cell flips only where its probability changes; fixed seeds,
+    so a program's score is fixed). Their detector activations give a mean and variance per frame, channel
+    and detector, and likewise for frame-to-frame changes.
+
+    Matching is as in ``MatchedScanLikelihood``: one optimal assignment per video. Each cost uses the
+    prediction's variance on top of the baseline noise implied by beta (s0 = P T F / (2 beta)):
+
+        C[k, p] = mean_tf[(mu - o)^2 s0 / (s0 + var) + s0 log(1 + var / s0)]  (+ w * the same for changes)
+
+    so a certain program (every cell 0 or 1, no unknown motion) scores as ``MatchedScanLikelihood``. Per
+    video, combinations mix by their prior weights: log sum_c w_c exp(log p(v | c)).
+    """
+
+    def __init__(self, observations, frames: int, size: int, beta: float, softness: float, salience: float,
+                 temporal_weight: float = 0.0, draws: int = 8, cache_size: int = 5000) -> None:
+        from collections import OrderedDict
+        self.O = np.stack(observations).astype(np.float64)              # (N, T, P, 6)
+        N, T, P, F = self.O.shape
+        self.P, self.beta, self.w = P, beta, float(temporal_weight)
+        self.s0 = P * T * F / (2 * beta)
+        self.s0d = P * (T - 1) * F / (2 * beta * self.w) if self.w else None
+        self.dO = np.diff(self.O, axis=1)
+        self.e = (self.O ** 2).mean(axis=(1, 3))
+        self.de = (self.dO ** 2).mean(axis=(1, 3))
+        self.frames, self.size, self.softness, self.salience, self.draws = frames, size, softness, salience, draws
+        self._cache, self._cache_size = OrderedDict(), cache_size
+
+    def moments(self, p) -> list:
+        """Per state combination: its weight and the mean / variance of detector activations and changes."""
+        from grace_lot.grace.scanner import scan_field
+        from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+        out = []
+        for states, weight in motion_combinations(p, self.size):
+            v = rollout(p, self.frames, self.size, states)
+            v = v if v.ndim == 4 else v[:, None]
+            certain = bool(np.all((v == 0) | (v == 1)))
+            feats = []
+            for d in range(1 if certain else self.draws):
+                u = np.random.Generator(np.random.PCG64(10_000 + d)).random(v.shape[1:])
+                feats.append(scan_field((u[None] < v).astype(np.float64), self.softness, self.salience))
+            Fs = np.stack(feats)
+            dF = np.diff(Fs, axis=1)
+            out.append(dict(weight=weight, mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0)))
+        return out
+
+    @staticmethod
+    def _cost(mu, var, O, s0):
+        a = s0 / (s0 + var)
+        b = s0 * np.log1p(var / s0)
+        T, F = mu.shape[0], mu.shape[2]
+        own = (a * mu ** 2 + b).mean(axis=(0, 2))                        # (K,): against an empty part
+        cross = np.einsum("tkf,tkf,ntpf->nkp", a, mu, O) / (T * F)
+        oo = np.einsum("tkf,ntpf->nkp", a, O ** 2) / (T * F)
+        return own[None, :, None] - 2 * cross + oo, own
+
+    def per_video(self, m) -> np.ndarray:
+        """(N,) log-likelihoods for one state combination."""
+        from scipy.optimize import linear_sum_assignment
+        C, own = self._cost(m["mu"], m["var"], self.O, self.s0)
+        e = self.e
+        if self.w:
+            Cd, ownd = self._cost(m["dmu"], m["dvar"], self.dO, self.s0d)
+            C, own, e = C + self.w * Cd, own + self.w * ownd, e + self.w * self.de
+        N, K, P = C.shape
+        M = max(K, P)
+        out = np.empty(N)
+        for n in range(N):
+            pad = np.zeros((M, M))
+            pad[:K, :P] = C[n]
+            pad[K:, :P] = e[n][None, :]                                  # a part with no output
+            pad[:K, P:] = own[:, None]                                   # an output with no part
+            r, c = linear_sum_assignment(pad)
+            out[n] = -self.beta * pad[r, c].sum() / P
+        return out
+
+    def per_video_scores(self, p) -> np.ndarray:
+        from scipy.special import logsumexp
+        ms = self.moments(p)
+        L = np.stack([self.per_video(m) for m in ms])
+        return logsumexp(L + np.log([m["weight"] for m in ms])[:, None], axis=0)
+
+    def __call__(self, p) -> float:
+        if p in self._cache:
+            self._cache.move_to_end(p)
+            return self._cache[p]
+        value = float(self.per_video_scores(p).sum())
+        self._cache[p] = value
+        if len(self._cache) > self._cache_size:
+            self._cache.popitem(last=False)
+        return value

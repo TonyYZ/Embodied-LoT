@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Optional, Sequence
 
 from grace_lot.lot_adapter.program import GROUPS, LEAF, MIN_CHILDREN, OUT, OUTPUTS, P
 
@@ -46,6 +46,7 @@ class Grammar:
     output_leaves: bool = False      # outputs are ``out`` leaves (1..max_outputs, anywhere in the forest's trees)
     content_windows: bool = False    # with output_leaves: windows are never templates (enforced by the prior)
     grouping: bool = False           # grouping_nodes: field / body are unary units; template copies
+    max_motion_units: Optional[int] = None   # probabilistic_motion: at most this many unknown-motion units
 
     @classmethod
     def from_config(cls, lot: dict) -> "Grammar":
@@ -57,7 +58,8 @@ class Grammar:
                    lot.get("max_dashed", 0), lot.get("max_outputs", 0), lot.get("dashed_targets", "leaves"),
                    bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True),
                    bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True) and lot.get("content_windows", True),
-                   bool(lot.get("grouping_nodes", True)))
+                   bool(lot.get("grouping_nodes", True)),
+                   lot.get("max_motion_units") if lot.get("probabilistic_motion", True) else None)
 
     # -- attribute domains (also used by the symmetric moves) ---------
 

@@ -71,12 +71,12 @@ class InferenceTests(unittest.TestCase):
 
     def setUp(self):
         import embodied_lot
-        self._grouping = embodied_lot.GROUPING_NODES
-        embodied_lot.GROUPING_NODES = False
+        self._flags = embodied_lot.GROUPING_NODES, embodied_lot.PROBABILISTIC_MOTION
+        embodied_lot.GROUPING_NODES = embodied_lot.PROBABILISTIC_MOTION = False
 
     def tearDown(self):
         import embodied_lot
-        embodied_lot.GROUPING_NODES = self._grouping
+        embodied_lot.GROUPING_NODES, embodied_lot.PROBABILISTIC_MOTION = self._flags
 
     def test_generator_log_prob_matches_frequency(self):
         rng = random.Random(0)
@@ -828,3 +828,102 @@ class GroupingTests(unittest.TestCase):
         offsets = {(t[field][0][0] - t[body][0][0], t[field][0][2] - t[body][0][2]) for t in trace}
         self.assertEqual(len(offsets), 1)
         self.assertTrue(all(t[field][1] == 0 for t in trace))
+
+    def test_unknown_motion_takes_its_states(self):
+        """universal*: state a / b push one way / the other; neutral* is still by default; still means no motion."""
+        import numpy as np
+        import embodied_lot
+        from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+        embodied_lot.PROBABILISTIC_MOTION = True
+        row = lambda y: float(np.nonzero(y[-1, 0] >= .75)[0].mean())
+        u = parse_program("(parallel center/H universal/V* out)")
+        key = next(iter(motion_combinations(u, 12)[0][0]))
+        a, b = rollout(u, 10, 12, {key: "a"}), rollout(u, 10, 12, {key: "b"})
+        self.assertGreater(row(a), 5.5)
+        self.assertLess(row(b), 5.5)
+        self.assertEqual(row(rollout(u, 10, 12, {key: "still"})), 5.5)
+        n = parse_program("(parallel center/H neutral/V* out)")
+        self.assertEqual(row(rollout(n, 10, 12)), 5.5)                                   # neutral defaults to still
+        self.assertEqual(sorted(w for _, w in motion_combinations(n, 12)), [0.25, 0.25, 0.5])
+        self.assertEqual(sorted(w for _, w in motion_combinations(u, 12)), [0.5, 0.5])
+
+    def test_motion_units_are_counted_and_capped(self):
+        from grace_lot.lot_adapter.program import motion_units
+        self.assertEqual(motion_units(parse_program("(parallel universal/V* neutral/H* out)")), 2)
+        self.assertEqual(motion_units(parse_program("(body (parallel universal/V* universal/H*))")), 1)   # one body
+        self.assertEqual(motion_units(parse_program("(parallel universal/V* out universal/H) | .0>.2")), 0)   # an observer
+        g = Grammar(["top", "universal", "neutral"], ["parallel", "field"], True, [], [], [],
+                    3, 4, 0.5, 3, max_outputs=1, output_leaves=True, content_windows=True, grouping=True, max_motion_units=1)
+        prior = SizePrior(g, 1.0)
+        self.assertEqual(prior(parse_program("(parallel universal/V* neutral/H* out)")), -math.inf)
+        self.assertGreater(prior(parse_program("(parallel universal/V* top/H out)")), -math.inf)
+
+    def test_dynamic_neutral_and_the_motion_cap_keep_the_search_exact(self):
+        from grace_lot.inference.diagnostics import enumerate_support
+        from grace_lot.lot_adapter.program import motion_units
+        g = Grammar(["top", "neutral"], ["parallel", "field"], True, [], [], [],
+                    3, 4, 0.5, 2, max_dashed=1, max_outputs=1, output_leaves=True, content_windows=True, grouping=True,
+                    max_motion_units=1)
+        prior = SizePrior(g, 1.0)
+        r = reachability(g, prior)
+        self.assertEqual(r["reached"], r["support"])
+        self.assertEqual(r["outside_support"], 0)
+        states = enumerate_support(g, prior)
+        self.assertTrue(any("neutral/H*" in str(t) or "neutral/V*" in str(t) for t in states))
+        self.assertTrue(all(motion_units(t) <= 1 for t in states))
+        Z = sum(math.exp(prior(t)) for t in states)
+        key = lambda t: (size(t.tree), motion_units(t), len(t.dashed))
+        exact = Counter()
+        for t in states:
+            exact[key(t)] += math.exp(prior(t)) / Z
+        samples = [s for seed in range(3) for s in run_chain(
+            prior, lambda p: 0.0, ProposalMixture(g, MOVES), 150_000, 5_000, 5, random.Random(seed)).samples]
+        emp = Counter(key(t) for t in samples)
+        tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
+        self.assertLess(tv, 0.03)
+
+    def test_probabilistic_likelihood_matches_the_matched_one_for_certain_programs(self):
+        import numpy as np
+        import embodied_lot
+        from grace_lot.grace.scanner import scan_field
+        from grace_lot.inference.likelihood import MatchedScanLikelihood, ProbabilisticScanLikelihood
+        from grace_lot.lot_adapter.adapter import LotRenderer, rollout
+        embodied_lot.PROBABILISTIC_MOTION = True
+        rng = np.random.default_rng(0)
+        obs = [rng.uniform(0, 1, (16, 2, 6)) for _ in range(4)]
+        certain = parse_program("(parallel (serial_h top/V void/V) out)")                   # every cell 0 or 1
+        y = rollout(certain, 16, 12)
+        self.assertTrue(np.all((y == 0) | (y == 1)))
+        old = MatchedScanLikelihood(obs, LotRenderer(16, 12), 250.0, 0.05, 0.75, 1.0)
+        new = ProbabilisticScanLikelihood(obs, 16, 12, 250.0, 0.05, 0.75, 1.0)
+        self.assertAlmostEqual(old(certain), new(certain), places=3)
+
+    def test_probabilistic_likelihood_prices_unknown_motion_at_log2(self):
+        """Videos drawn from a program's own distribution: void* wins on still ones, universal* on ones moving
+        either way, neutral* on a mix; hedging between still and moving costs log 2 per video."""
+        import numpy as np
+        import embodied_lot
+        from grace_lot.grace.scanner import scan_field
+        from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
+        from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+        embodied_lot.PROBABILISTIC_MOTION = True
+        def sample(src, states, seed):                                    # one binary realization of the program
+            v = rollout(parse_program(src), 16, 12, states)
+            u = np.random.Generator(np.random.PCG64(seed)).random(v.shape[1:])
+            return scan_field((u[None] < v).astype(float), 0.05, 0.75)
+        moving_src = "(parallel center/V universal/V* out)"
+        key = next(iter(motion_combinations(parse_program(moving_src), 12)[0][0]))
+        still = sample("(parallel center/V void/V* out)", {}, 0)
+        ups = [sample(moving_src, {key: "b"}, 900 + i) for i in range(3)]
+        downs = [sample(moving_src, {key: "a"}, 950 + i) for i in range(3)]
+        truths = {"still": [still] * 6, "moving": ups + downs, "mixed": [still] * 2 + ups[:2] + downs[:2]}
+        best = {}
+        for name, vids in truths.items():
+            lik = ProbabilisticScanLikelihood(vids, 16, 12, 250.0, 0.05, 0.75, 1.0)
+            sc = {m: lik(parse_program(f"(parallel center/V {m}/V* out)")) for m in ("void", "neutral", "universal")}
+            best[name] = max(sc, key=sc.get)
+            if name == "still":
+                self.assertAlmostEqual(sc["void"] - sc["neutral"], 6 * math.log(2), places=2)
+            if name == "moving":
+                self.assertAlmostEqual(sc["universal"] - sc["neutral"], 6 * math.log(2), places=2)
+        self.assertEqual(best, {"still": "void", "moving": "universal", "mixed": "neutral"})

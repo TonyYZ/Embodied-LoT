@@ -27,7 +27,7 @@ import math
 
 from grace_lot.inference.grammar import Grammar
 from grace_lot.lot_adapter.program import (LEAF, as_program, candidate_edges, depth, edges_valid, is_valid,
-                                           nodes, size, windows_as_content)
+                                           motion_units, nodes, size, windows_as_content)
 
 
 def n_edge_slots(tree, targets: str = "leaves") -> int:
@@ -73,4 +73,6 @@ class SizePrior:
             return -math.inf                                # 1..max_outputs output windows
         if g.content_windows and not windows_as_content(t, g.grouping):
             return -math.inf                                # windows are content, never templates
+        if g.max_motion_units is not None and motion_units(prog, g.grouping) > g.max_motion_units:
+            return -math.inf                                # unknown motion: a bounded number of latent units
         return -self.lambda_size * self.length(prog)
