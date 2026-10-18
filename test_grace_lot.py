@@ -790,3 +790,41 @@ class GroupingTests(unittest.TestCase):
         emp = Counter(key(t) for t in samples)
         tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
         self.assertLess(tv, 0.03)
+
+    def unit_rects(self, src, ticks):
+        """Per tick: each group instance's board rectangle (from the views), and its pending orders."""
+        from grace_lot.lot_adapter.program import compile_program
+        g = compile_program(parse_program(src))
+        g.grid = (12, 12)
+        g.reset_gates()
+        g.assign_roles()
+        out = []
+        for _ in range(ticks):
+            views = g.node_views(g.grid)
+            rects = {}
+            for n in g.nodes:
+                for (_, _, rect), (key, _) in zip(views.get(n.node_id, []), g.view_meta(n.node_id)):
+                    if hasattr(n, "instances") and key in n.instances:
+                        rects[n.instances[key].node_id] = (rect, len(n.instances[key].orders), n.node_type)
+            out.append(rects)
+            g.step()
+        return out
+
+    def test_a_nested_field_rides_with_its_pushed_body(self):
+        """An outside leaf pushes the body; the field inside follows it rigidly and gets no order of its own."""
+        trace = self.unit_rects("(parallel (serial_v (body (parallel center/H (field center/V))) out) (serial_h bottom/V* out out))", 6)
+        body = next(i for i, v in trace[0].items() if v[2] == "body")
+        field = next(i for i, v in trace[0].items() if v[2] == "field")
+        self.assertNotEqual(trace[-1][body][0], trace[0][body][0])                     # the body moved
+        offsets = {(t[field][0][0] - t[body][0][0], t[field][0][2] - t[body][0][2]) for t in trace}
+        self.assertEqual(len(offsets), 1)                                              # the field kept its place in it
+        self.assertTrue(all(t[field][1] == 0 for t in trace))                         # never ordered by itself
+
+    def test_a_bodys_own_leaf_does_not_push_its_parts(self):
+        trace = self.unit_rects("(parallel (serial_v (body (parallel bottom/V* (field center/V))) out) out)", 6)
+        body = next(i for i, v in trace[0].items() if v[2] == "body")
+        field = next(i for i, v in trace[0].items() if v[2] == "field")
+        self.assertNotEqual(trace[-1][body][0], trace[0][body][0])                     # agency moved the body
+        offsets = {(t[field][0][0] - t[body][0][0], t[field][0][2] - t[body][0][2]) for t in trace}
+        self.assertEqual(len(offsets), 1)
+        self.assertTrue(all(t[field][1] == 0 for t in trace))

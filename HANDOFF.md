@@ -386,6 +386,11 @@ and browser-side evaluation for edited structures.
     - A dynamic leaf inside a field or body still moves every other substance
       overlapping its region (other units and loose mass in the same tree's space),
       never its own groups.
+    - Nested groups follow their parent: an instance's window is carried along with the
+      region it receives (`GroupToken.rect`, anchored where it was placed). Outside pushes
+      reach only top-level units, so a nested group moves only with its parent, or relative
+      to it by its own agency (each leaf belongs to its innermost group). A leaf never pushes
+      anything inside its own units.
     - Template copies of a group are independent instances, each with its own place,
       orders and drive (`GroupToken`). An instance is keyed by its path of template
       slots, which the views and the painter share.

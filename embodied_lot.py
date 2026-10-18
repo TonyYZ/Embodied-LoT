@@ -1043,6 +1043,15 @@ class GroupToken:
         self.orders: List[list] = []
         self.jitter = [0.0, 0.0]
         self.drive = [0.0, 0.0]                  # agency: accumulated self-propulsion, per axis
+        self.anchor: Optional[Tuple[int, int]] = None   # where its region started when placed (frame cells)
+
+    def rect(self, region: Region, fh: int, fw: int) -> Region:
+        """Its window, carried along with the region it receives: a nested instance follows its parent."""
+        r0, r1, c0, c1 = self.window(fh, fw)
+        if self.anchor is not None:
+            dr, dc = region[0] - self.anchor[0], region[2] - self.anchor[1]
+            r0, r1, c0, c1 = r0 + dr, r1 + dr, c0 + dc, c1 + dc
+        return max(0, r0), min(fh, r1), max(0, c0), min(fw, c1)
 
 
 class GroupNode(BodyNode):
@@ -1491,9 +1500,10 @@ class ConceptGraph:
                     r0, r1, c0, c1 = rect
                     tok.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
                     tok.extent = [(r1 - r0) / fh, (c1 - c0) / fw]
+                    tok.anchor = (r0, c0)
                     placed.add(tok.node_id)
                 if tok.position is not None:
-                    rect = tok.window(fh, fw)
+                    rect = tok.rect(rect, fh, fw)
                 if weight >= 1e-9:
                     views[node.node_id].append((weight, chain, rect))
                     meta[node.node_id].append((ikey, groups))
@@ -1678,8 +1688,13 @@ class ConceptGraph:
                 mask = np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs])                     if cells else None
                 out[b.node_id] = (vs[0][1], _frame_shape(vs[0][1], self.grid), mask)
             elif isinstance(b, GroupNode) and vs:                # each instance moves on its own view
-                for (_, chain, rect), (ikey, _) in zip(vs, self.view_meta(b.node_id)):
+                for (_, chain, rect), (ikey, enclosing) in zip(vs, self.view_meta(b.node_id)):
                     tok = b.instances.get(ikey)
+                    tok_groups = getattr(self, "_unit_groups", None)
+                    if tok_groups is None:
+                        tok_groups = self._unit_groups = {}
+                    if tok is not None:
+                        tok_groups[tok.node_id] = enclosing
                     if tok is not None and tok.position is not None and tok.extent is not None:
                         out[tok.node_id] = (chain, _frame_shape(chain, self.grid),
                                             _view_mask(self.grid, chain, rect) if cells else None)
@@ -1736,7 +1751,8 @@ class ConceptGraph:
             for k, (key, (_, chain, rect)) in enumerate(zip(keys, views.get(node.node_id, []))):
                 space = _view_mask(self.grid, chain, rect)
                 own = meta[k][1] if k < len(meta) else ()
-                bodies = [self._units[b] for b, (_, _, cells) in near.items() if b not in own and (space & cells).any()]
+                bodies = [self._units[b] for b, (_, _, cells) in near.items()
+                          if self._pushable(b, own) and (space & cells).any()]
                 was_inside = self._inside.get(key, set())
                 self._inside[key] = {b.node_id for b in bodies}
                 push = _view_turn(chain, motion)              # on the board
@@ -1790,7 +1806,8 @@ class ConceptGraph:
             k = int(key.split("#")[1])
             own = meta[k][1] if k < len(meta) else ()                     # a leaf never moves its own groups
             units = getattr(self, "_units", None) or self._tokens()
-            bodies = [units[b] for b, (_, _, cells) in bodies_at.items() if b not in own and (space & cells).any()]
+            bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
+                      if self._pushable(b, own) and (space & cells).any()]
             was = self._inside.get(key, set())
             self._inside[key] = {b.node_id for b in bodies}
             fresh = [b for b in bodies if b.node_id not in was]
@@ -1943,6 +1960,13 @@ class ConceptGraph:
                 cell = min(max(cell, size // 2), n - size + size // 2)
                 body.position[axis] = cell / n
             body.velocity = [net[0] / H, net[1] / W]
+
+    def _pushable(self, unit_id: str, own: tuple) -> bool:
+        """Can a leaf inside the groups ``own`` push this unit? Not one of its own groups, and not a nested
+        group: a nested group is rigidly part of its parent and moves only with it (or by its own agency)."""
+        if unit_id in own:
+            return False
+        return not getattr(self, "_unit_groups", {}).get(unit_id, ())
 
     def _drive_bodies(self, views) -> None:
         """Agency: each body instance is pushed by its own switched-on dynamic leaves, every tick.
@@ -2191,7 +2215,7 @@ class ConceptGraph:
             elif isinstance(node, GroupNode):                    # an instance, drawn where it is
                 tok = node.instances.get(ikey)
                 if cv[2] and tok is not None and tok.position is not None:
-                    region = tok.window(*cv[3])
+                    region = tok.rect(region, *cv[3])
                 was_inside = cv[4]
                 cv[4] = True
                 for child in content_children(node):
