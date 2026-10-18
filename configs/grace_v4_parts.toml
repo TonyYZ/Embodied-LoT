@@ -26,6 +26,7 @@ thickness = 0.08
 raster_scale = 8
 
 [lot]
+grouping_nodes = false                 # pinned: these results use plan / body (templates inside the moving unit)
 primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void"]
 compositions = ["parallel", "serial_h", "serial_v", "plan", "body"]
 allow_dynamic = true

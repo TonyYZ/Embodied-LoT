@@ -71,6 +71,6 @@ class SizePrior:
             return -math.inf
         if g.output_leaves and not 1 <= sum(n.kind == "out" for _, n in nodes(t)) <= g.max_outputs:
             return -math.inf                                # 1..max_outputs output windows
-        if g.content_windows and not windows_as_content(t):
+        if g.content_windows and not windows_as_content(t, g.grouping):
             return -math.inf                                # windows are content, never templates
         return -self.lambda_size * self.length(prog)

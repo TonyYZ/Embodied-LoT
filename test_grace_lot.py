@@ -67,6 +67,17 @@ def _leaves(p):
 
 
 class InferenceTests(unittest.TestCase):
+    """v6-era semantics (plan / body with templates): grouping_nodes off; see GroupingTests for v7."""
+
+    def setUp(self):
+        import embodied_lot
+        self._grouping = embodied_lot.GROUPING_NODES
+        embodied_lot.GROUPING_NODES = False
+
+    def tearDown(self):
+        import embodied_lot
+        embodied_lot.GROUPING_NODES = self._grouping
+
     def test_generator_log_prob_matches_frequency(self):
         rng = random.Random(0)
         counts = Counter(TINY.sample(rng) for _ in range(100_000))
@@ -682,3 +693,100 @@ class InferenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GroupingTests(unittest.TestCase):
+    """v7: template copies, field groups, body groups with agency (lot.grouping_nodes)."""
+
+    def setUp(self):
+        import embodied_lot
+        self._grouping = embodied_lot.GROUPING_NODES
+        embodied_lot.GROUPING_NODES = True
+
+    def tearDown(self):
+        import embodied_lot
+        embodied_lot.GROUPING_NODES = self._grouping
+
+    @staticmethod
+    def run_graph(src, ticks):
+        from grace_lot.lot_adapter.program import compile_program
+        g = compile_program(parse_program(src))
+        g.grid = (12, 12)
+        g.reset_gates()
+        g.assign_roles()
+        trace = []
+        for _ in range(ticks):
+            trace.append({t.node_id: tuple(t.position) for t in g._group_tokens()})
+            g.step()
+        return g, trace
+
+    def test_template_copies_of_a_field_are_independent_instances(self):
+        """Two field copies (left / right); a motion leaf over the left third moves only the left copy."""
+        g, trace = self.run_graph("(parallel (serial_v (template periphery/H (field center/V)) out) (serial_h bottom/V* out out))", 6)
+        ids = sorted(trace[0])
+        self.assertEqual(len(ids), 2)
+        left, right = sorted(ids, key=lambda i: trace[0][i][1])
+        self.assertNotEqual(trace[-1][left], trace[0][left])          # driven
+        self.assertEqual(trace[-1][right], trace[0][right])           # untouched
+
+    def test_a_field_over_a_template_moves_as_one_unit(self):
+        """field(template(...)) is one unit: a leaf touching part of it moves the whole field."""
+        g, trace = self.run_graph("(parallel (serial_v (field (template periphery/H center/V)) out) (serial_h bottom/V* out out))", 6)
+        (only,) = trace[0]
+        self.assertNotEqual(trace[-1][only], trace[0][only])
+
+    def test_loose_template_copies_move_cell_by_cell(self):
+        """Without a group the copies are mass: only cells under the leaf's region are displaced."""
+        g, _ = self.run_graph("(parallel (serial_v (template periphery/H center/V) out) (serial_h bottom/V* out out))", 6)
+        off = next(iter(g._mass.values()))["off"]
+        moved = (off != 0).any(axis=2)
+        self.assertTrue(moved[:, :4].any())
+        self.assertFalse(moved[:, 4:].any())
+
+    def test_a_body_propels_itself_and_a_field_does_not(self):
+        body = self.run_graph("(parallel (serial_v (body (parallel center/V bottom/V*)) out) out)", 6)[1]
+        field = self.run_graph("(parallel (serial_v (field (parallel center/V bottom/V*)) out) out)", 6)[1]
+        (b,), (f,) = body[0], field[0]
+        rows = [round(s[b][0] * 12 - 3) for s in body]
+        self.assertTrue(all(0 <= rows[i] - rows[i + 1] <= 1 for i in range(len(rows) - 1)))   # at most a cell a tick
+        self.assertLess(rows[-1], rows[0])                                                      # steadily driven
+        self.assertEqual(field[-1][f], field[0][f])
+
+    def test_a_leaf_in_a_field_moves_outside_substance_not_its_field(self):
+        g, trace = self.run_graph("(parallel (serial_v (field (parallel top/H bottom/V*)) out) center/V out)", 6)
+        (f,) = trace[0]
+        self.assertEqual(trace[-1][f], trace[0][f])                    # its own field stays
+        self.assertTrue(any((st["off"] != 0).any() for st in g._mass.values()))   # the loose band moved
+
+    def test_grammar_groups_are_unary_and_plan_reads_as_template(self):
+        import embodied_lot
+        from grace_lot.lot_adapter.program import compile_program, windows_as_content
+        g = Grammar(["top", "bottom"], ["parallel", "template", "field", "body"], True, [], [], [],
+                    3, 4, 0.5, 2, max_dashed=1, max_outputs=2, output_leaves=True, content_windows=True, grouping=True)
+        self.assertEqual(list(g.child_counts("field")), [1])
+        self.assertEqual(list(g.child_counts("template")), [2])
+        kinds = {type(n).__name__ for n in compile_program(parse_program("(plan top/V (body out))")).nodes}
+        self.assertIn("TemplateNode", kinds)
+        self.assertIn("AgentBodyNode", kinds)
+        self.assertTrue(windows_as_content(parse_program("(body out)").tree, grouping=True))
+        self.assertFalse(windows_as_content(parse_program("(template out top/V)").tree, grouping=True))
+
+    def test_grouping_grammar_is_exact_and_reachable(self):
+        from grace_lot.inference.diagnostics import enumerate_support
+        g = Grammar(["top", "bottom"], ["parallel", "template", "field"], False, [], [], [],
+                    3, 4, 0.5, 2, max_dashed=1, max_outputs=2, output_leaves=True, content_windows=True, grouping=True)
+        prior = SizePrior(g, 1.0)
+        r = reachability(g, prior)
+        self.assertEqual(r["reached"], r["support"])
+        self.assertEqual(r["outside_support"], 0)
+        states = enumerate_support(g, prior)
+        Z = sum(math.exp(prior(t)) for t in states)
+        key = lambda t: (len(t.tree.children), size(t.tree), len(t.dashed))
+        exact = Counter()
+        for t in states:
+            exact[key(t)] += math.exp(prior(t)) / Z
+        samples = [s for seed in range(3) for s in run_chain(
+            prior, lambda p: 0.0, ProposalMixture(g, MOVES), 150_000, 5_000, 5, random.Random(seed)).samples]
+        emp = Counter(key(t) for t in samples)
+        tv = 0.5 * sum(abs(emp[k] / len(samples) - v) for k, v in exact.items())
+        self.assertLess(tv, 0.03)

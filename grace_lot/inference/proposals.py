@@ -92,11 +92,12 @@ def change_leaf(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
 
 
 def change_composition(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
-    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind not in (LEAF, "body", OUTPUTS, "out", "in")]
+    fixed = () if g.grouping and not g.n_body_params else ("body",)   # earlier bodies keep their kind
+    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind not in (LEAF, OUTPUTS, "out", "in") + fixed]
     if not sites:
         return None
     path, n = rng.choice(sites)
-    kinds = [k for k in g.compositions if k != "body" and len(n.children) >= MIN_CHILDREN[k]]
+    kinds = [k for k in g.compositions if k not in fixed and len(n.children) in g.child_counts(k)]
     kind = _alternative(rng, kinds, n.kind)
     if kind is None:
         return None

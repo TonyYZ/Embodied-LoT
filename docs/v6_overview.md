@@ -173,7 +173,17 @@ A per-tick trace of every motion leaf found three structural reasons:
    a timer.
 4. **No perception:** the observer's targets are treated as ungated.
 
-## 9. Standing constraints
+## 9. Next language version (v7, implemented, not yet run)
+Copying, grouping and agency become separate operators (`lot.grouping_nodes`; `configs/grace_v7_parts.toml`):
+- `template`: copies material into a template's slots, with no grouping. It is the earlier `plan`.
+- `field`: a rigid unit, moved as a whole by outside motion.
+- `body`: a field that its own dynamic leaves propel every tick.
+- Template copies of a group are independent instances.
+- Dynamic leaves inside a group still move outside substance overlapping them, but never their own group.
+
+See HANDOFF item 24.
+
+## 10. Standing constraints
 - The test split stays sealed.
 - During diagnostics, don't alter the model, grammar, likelihood, prior or search settings based on
   what the results show.

@@ -373,3 +373,28 @@ and browser-side evaluation for edited structures.
       programs keep their prior and MH stays exact (tested).
     - The diag4 run predates it: 81-98% of its posterior mass used a window as a
       pass-through template, mostly to stack several outputs in one body.
+24. Copying, grouping and agency are separate operators (`lot.grouping_nodes`, default
+    true; every existing config pins it false; `configs/grace_v7_parts.toml` uses it).
+    - `template T… M` copies its material M into its template's slots (and orients it
+      when T is dynamic). It groups nothing. It is the earlier `plan`, and `plan` still
+      parses as `template`.
+    - `field c` makes its one child a rigid unit. Outside motion overlapping any part of
+      it moves the whole unit. It has no agency.
+    - `body c` is a field with agency. Its own switched-on dynamic leaves propel it
+      every tick: gate cells per tick along the leaf's turned direction. Universal
+      pushes it at random; centre and periphery give no net direction.
+    - A dynamic leaf inside a field or body still moves every other substance
+      overlapping its region (other units and loose mass in the same tree's space),
+      never its own groups.
+    - Template copies of a group are independent instances, each with its own place,
+      orders and drive (`GroupToken`). An instance is keyed by its path of template
+      slots, which the views and the painter share.
+    - `field` and `body` are unary, so there is one encoding per concept. v7 keeps v6's
+      limits (`max_depth` 5), so it differs from v6 only in these semantics; only templated
+      bodies (`body (template …)`) cost one level more than v6's `(body T C)`.
+    - The window rule (`content_windows`) applies to `template` only.
+    - Verified: with the flag off, all v6/v3/explainer and legacy-fuzz rollouts are
+      bit-identical (1,003 programs), and the 44 earlier tests pass. New
+      `GroupingTests` cover instances, rigid fields, loose copies, agency, outward-only
+      leaves, the grammar and MH exactness.
+    - The gameboard explainer pins the v6 semantics.

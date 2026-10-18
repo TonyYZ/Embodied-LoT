@@ -22,7 +22,7 @@ import random
 from dataclasses import dataclass
 from typing import Sequence
 
-from grace_lot.lot_adapter.program import LEAF, MIN_CHILDREN, OUT, OUTPUTS, P
+from grace_lot.lot_adapter.program import GROUPS, LEAF, MIN_CHILDREN, OUT, OUTPUTS, P
 
 P_DYNAMIC = 0.25
 P_OUT = 0.15                  # with output_leaves: the chance that a generated leaf is an output window
@@ -45,6 +45,7 @@ class Grammar:
     dashed_targets: str = "leaves"   # "leaves" or "any": which nodes dashed edges may target
     output_leaves: bool = False      # outputs are ``out`` leaves (1..max_outputs, anywhere in the forest's trees)
     content_windows: bool = False    # with output_leaves: windows are never templates (enforced by the prior)
+    grouping: bool = False           # grouping_nodes: field / body are unary units; template copies
 
     @classmethod
     def from_config(cls, lot: dict) -> "Grammar":
@@ -55,7 +56,8 @@ class Grammar:
                    lot["max_depth"], lot["max_nodes"], lot["p_leaf"], lot["max_children"],
                    lot.get("max_dashed", 0), lot.get("max_outputs", 0), lot.get("dashed_targets", "leaves"),
                    bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True),
-                   bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True) and lot.get("content_windows", True))
+                   bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True) and lot.get("content_windows", True),
+                   bool(lot.get("grouping_nodes", True)))
 
     # -- attribute domains (also used by the symmetric moves) ---------
 
@@ -84,6 +86,8 @@ class Grammar:
     def child_counts(self, kind: str) -> range:
         if kind == OUTPUTS:                         # with output_leaves a forest has 2+ trees; one tree is plain
             return range(2 if self.output_leaves else 1, max(1, self.max_outputs) + 1)
+        if self.grouping and kind in GROUPS:          # grouping is unary: one unit over one child
+            return range(1, 2)
         return range(MIN_CHILDREN[kind], max(MIN_CHILDREN[kind], self.max_children) + 1)
 
     def multi_output(self, depth: int) -> bool:

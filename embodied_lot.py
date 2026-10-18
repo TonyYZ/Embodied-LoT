@@ -184,6 +184,16 @@ MOTION_KINDS = True
 # a space only by being composed under a common node, which makes them one tree. Trees can still
 # be linked by dashed edges. With False, all roots are drawn on one shared board (earlier runs).
 SEPARATE_TREE_SPACES = True
+
+# Copying, grouping and agency are separate operators (gameboard). ``template`` copies its material (last
+# child) into its template's slots and groups nothing; it is the earlier ``plan``. ``field`` makes its one
+# child a rigid unit that outside motion moves as a whole. ``body`` is a field with agency: its own dynamic
+# leaves propel it every tick (gate cells per tick along the leaf's turned direction; universal pushes it at
+# random; centre/periphery have no net direction). A dynamic leaf inside a field or body still moves every
+# other substance overlapping its region, never its own groups. Copies of a group made by a template are
+# independent instances, each with its own place and motion. With False, ``body`` is the earlier movable
+# plan (templates first, material last) and ``plan`` the fixed one.
+GROUPING_NODES = True
 _MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
 
@@ -1013,6 +1023,72 @@ class PlanNode(BodyNode):
         pass
 
 
+class TemplateNode(PlanNode):
+    """Copies its material (last child) into the slots of its templates; groups nothing (GROUPING_NODES)."""
+
+    node_type = "template"
+
+
+class GroupToken:
+    """One instance of a field or body: a rigid unit with its own place, orders and drive."""
+
+    window = BodyNode.window
+
+    def __init__(self, node: "GroupNode", key: tuple) -> None:
+        self.node, self.key = node, key
+        self.node_id = node.node_id if not key else f"{node.node_id}@{'.'.join(map(str, key))}"
+        self.position: Optional[List[float]] = None
+        self.extent: Optional[List[float]] = None
+        self.velocity, self.step_size = [0.0, 0.0], None
+        self.orders: List[list] = []
+        self.jitter = [0.0, 0.0]
+        self.drive = [0.0, 0.0]                  # agency: accumulated self-propulsion, per axis
+
+
+class GroupNode(BodyNode):
+    """A rigid unit over its child (GROUPING_NODES). Each copy a template makes of it is a separate instance."""
+
+    agency = False
+
+    def __init__(self, node_id: str, **_ignored) -> None:
+        super().__init__(node_id)
+        self.instances: Dict[tuple, GroupToken] = {}
+
+    def token(self, key: tuple) -> GroupToken:
+        t = self.instances.get(key)
+        if t is None:
+            t = self.instances[key] = GroupToken(self, key)
+        return t
+
+    def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
+        kids = [c for c in content_children(self) if not isinstance(c, _WINDOW_LEAVES)]
+        if not kids:
+            result = 0.0
+        elif field is None:
+            acts = [a for a in (k.evaluate(None) for k in kids) if a > 0]
+            result = _mean(acts) if acts else 0.0
+        else:
+            result = _clamp(_mean([k.evaluate(field) for k in kids]))
+        self.activation = result * _sg(self)
+        return self.activation
+
+    def update_motion(self) -> None:
+        pass
+
+
+class FieldNode(GroupNode):
+    """A rigid unit without agency: only outside motion moves it."""
+
+    node_type = "field"
+
+
+class AgentBodyNode(GroupNode):
+    """A rigid unit with agency: its own dynamic leaves propel it."""
+
+    node_type = "body"
+    agency = True
+
+
 # ============================================================
 # 6. Concept graph
 # ============================================================
@@ -1197,6 +1273,8 @@ class ConceptGraph:
             node.gate = 1.0
             if isinstance(node, PORTALS):
                 node.activation = 1.0
+            if isinstance(node, GroupNode):
+                node.instances = {}
         if TREE_PLACED_BODIES:
             self.place_bodies()
         if self.dynamics == "gameboard":
@@ -1207,6 +1285,8 @@ class ConceptGraph:
             for node in self._nodes.values():
                 if isinstance(node, BodyNode):
                     node.orders, node.jitter = [], [0.0, 0.0]
+            for tok in self._group_tokens():
+                tok.orders, tok.jitter, tok.drive = [], [0.0, 0.0], [0.0, 0.0]
             self._mass, self._tick, self._spaces = {}, 0, {}
             self._prev_act = {}
             self._inside = {}
@@ -1343,9 +1423,30 @@ class ConceptGraph:
                          for t in content_children(n)[:-1]]
             return bodies, templates
         bodies, templates = self._meta("view_inputs", build)
+        tokens = tuple((t.node_id, None if t.position is None else tuple(t.position)) for t in self._group_tokens())
         return (tuple((None if b.position is None else tuple(b.position), None if b.extent is None else tuple(b.extent))
                       for b in bodies),
-                tuple(t.gate for t in templates), ORIENTING_TEMPLATES, TREE_SIZED_BODIES, MOTION_AWAY_FROM_FIGURE)
+                tuple(t.gate for t in templates), ORIENTING_TEMPLATES, TREE_SIZED_BODIES, MOTION_AWAY_FROM_FIGURE, tokens)
+
+    def _group_tokens(self) -> List["GroupToken"]:
+        """Every instance of every field and body (GROUPING_NODES)."""
+        return [t for n in self._meta("group_nodes", lambda: [n for n in self._nodes.values() if isinstance(n, GroupNode)])
+                for t in n.instances.values()]
+
+    def _tokens(self) -> Dict[str, object]:
+        """Every moving unit by id: earlier bodies (the node itself) and group instances."""
+        out = {}
+        for n in self._nodes.values():
+            if isinstance(n, GroupNode):
+                for t in n.instances.values():
+                    out[t.node_id] = t
+            elif isinstance(n, BodyNode) and not isinstance(n, PlanNode):
+                out[n.node_id] = n
+        return out
+
+    def view_meta(self, nid: str) -> List[tuple]:
+        """Per view of a node (aligned with ``node_views``): its instance key and the groups enclosing it."""
+        return getattr(self, "_view_meta", {}).get(nid, [])
 
     def node_views(self, shape: Tuple[int, int], place: bool = False) -> Dict[str, List[tuple]]:
         """Memoised ``_node_views``: recomputed only when structure, body placement or template gates change."""
@@ -1354,7 +1455,9 @@ class ConceptGraph:
         key = (self._meta("structure", lambda: object()), tuple(shape), self._view_inputs())
         memo = getattr(self, "_views_memo", None)
         if memo is None or memo[0] != key:
-            self._views_memo = (key, self._node_views(shape))
+            views = self._node_views(shape)
+            self._views_memo = (key, views, self._view_meta)
+        self._view_meta = self._views_memo[2]
         return self._views_memo[1]
 
     def _node_views(self, shape: Tuple[int, int], place: bool = False) -> Dict[str, List[tuple]]:
@@ -1373,10 +1476,29 @@ class ConceptGraph:
         """
         H, W = shape
         views: Dict[str, List[tuple]] = defaultdict(list)
+        meta: Dict[str, List[tuple]] = defaultdict(list)
         placed = set()
 
-        def visit(node: Node, weight: float, chain: tuple, rect: Region) -> None:
+        def visit(node: Node, weight: float, chain: tuple, rect: Region, ikey: tuple = (), groups: tuple = ()) -> None:
             if (weight < 1e-9 and not place) or is_empty(rect):    # placing reaches unweighted bodies too
+                return
+            if isinstance(node, GroupNode):                      # an instance: its own place in its frame
+                if weight < 1e-9:
+                    return                                       # a copy that is not there has no instance
+                tok = node.token(ikey)
+                fh, fw = _frame_shape(chain, (H, W))
+                if (place or tok.position is None) and tok.node_id not in placed:   # new instances start in place
+                    r0, r1, c0, c1 = rect
+                    tok.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
+                    tok.extent = [(r1 - r0) / fh, (c1 - c0) / fw]
+                    placed.add(tok.node_id)
+                if tok.position is not None:
+                    rect = tok.window(fh, fw)
+                if weight >= 1e-9:
+                    views[node.node_id].append((weight, chain, rect))
+                    meta[node.node_id].append((ikey, groups))
+                for child in content_children(node):
+                    visit(child, weight, chain, rect, ikey, groups + (tok.node_id,))
                 return
             if isinstance(node, BodyNode) and not isinstance(node, PlanNode):
                 fh, fw = _frame_shape(chain, (H, W))
@@ -1390,33 +1512,35 @@ class ConceptGraph:
                     rect = node.window(fh, fw)
             if weight >= 1e-9:
                 views[node.node_id].append((weight, chain, rect))
+                meta[node.node_id].append((ikey, groups))
             kids = content_children(node)
             if isinstance(node, BodyNode) and len(kids) > 1:
-                plan(kids, weight, chain, rect)
+                plan(kids, weight, chain, rect, ikey, groups)
                 return
             for i, child in enumerate(kids):
                 visit(child, weight, chain, band_region(rect, i, len(kids), node.split_orientation)
-                      if isinstance(node, SerialNode) else rect)
+                      if isinstance(node, SerialNode) else rect, ikey, groups)
 
-        def plan(children: List[Node], weight: float, chain: tuple, rect: Region) -> None:
+        def plan(children: List[Node], weight: float, chain: tuple, rect: Region, ikey: tuple, groups: tuple) -> None:
             if len(children) == 1:
-                visit(children[0], weight, chain, rect)
+                visit(children[0], weight, chain, rect, ikey, groups)
                 return
             template, rest = children[0], children[1:]
-            visit(template, weight, chain, rect)
+            visit(template, weight, chain, rect, ikey, groups)
             p = _clamp(template.gate)
-            slots = [s for s in orient_slots(template, rect) if not is_empty(s[0])] if ORIENTING_TEMPLATES \
-                else [(rect, None)]
-            for slot, v in slots:
+            slots = [(i, s, v) for i, (s, v) in enumerate(orient_slots(template, rect)) if not is_empty(s)] \
+                if ORIENTING_TEMPLATES else [(0, rect, None)]
+            for i, slot, v in slots:                       # each copy is an instance: its slot extends the key
                 if v is None:
-                    plan(rest, weight * p / len(slots), chain, slot)
+                    plan(rest, weight * p / len(slots), chain, slot, ikey + (i,), groups)
                 else:
                     Hc, Wc, *_ = _orientation_map(slot, v)
-                    plan(rest, weight * p / len(slots), chain + ((slot, v),), (0, Hc, 0, Wc))
-            plan(rest, weight * (1.0 - p), chain, rect)
+                    plan(rest, weight * p / len(slots), chain + ((slot, v),), (0, Hc, 0, Wc), ikey + (i,), groups)
+            plan(rest, weight * (1.0 - p), chain, rect, ikey + ("w",), groups)
 
         for r in self.roots:
             visit(r, 1.0, (), (0, H, 0, W))
+        self._view_meta = meta
         return views
 
     def windows(self) -> List["WindowNode"]:
@@ -1472,6 +1596,8 @@ class ConceptGraph:
                                   [n for n in ns if isinstance(n, InWindowNode)])
             return per
         nodes, bodies, inputs = self._meta("draw_nodes", build)[root_id]
+        groups = tuple((t.node_id, None if t.position is None else tuple(t.position))
+                       for n in nodes if isinstance(n, GroupNode) for t in n.instances.values())
         st = self._mass.get(root_id)
         return (self._meta("structure", lambda: object()), tuple(self.grid),
                 tuple(n.gate for n in nodes),
@@ -1480,7 +1606,7 @@ class ConceptGraph:
                 None if st is None else st["off"].tobytes(),
                 tuple(id(n.field) for n in inputs),
                 UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
-                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics)
+                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES)
 
     def tree_index(self) -> Dict[str, str]:
         """Which root (tree) each node belongs to."""
@@ -1551,6 +1677,12 @@ class ConceptGraph:
                     and b.extent is not None and vs:
                 mask = np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs])                     if cells else None
                 out[b.node_id] = (vs[0][1], _frame_shape(vs[0][1], self.grid), mask)
+            elif isinstance(b, GroupNode) and vs:                # each instance moves on its own view
+                for (_, chain, rect), (ikey, _) in zip(vs, self.view_meta(b.node_id)):
+                    tok = b.instances.get(ikey)
+                    if tok is not None and tok.position is not None and tok.extent is not None:
+                        out[tok.node_id] = (chain, _frame_shape(chain, self.grid),
+                                            _view_mask(self.grid, chain, rect) if cells else None)
         return out
 
     def _issue_orders(self, views=None) -> None:
@@ -1566,15 +1698,16 @@ class ConceptGraph:
         parents = self._parents()
         views = self.node_views(self.grid) if views is None else views
         bodies_at = self._moving_bodies(views)
+        self._units = self._tokens()
         if SEPARATE_TREE_SPACES:                              # a motion leaf moves only bodies of its own tree
             tree = self.tree_index()
             by_tree = defaultdict(dict)
             for b, v in bodies_at.items():
-                by_tree[tree.get(b)][b] = v
+                by_tree[tree.get(getattr(self._units[b], "node", self._units[b]).node_id)][b] = v
         def build_templates():                   # dynamic leaves in templates give orientation, not orders
             out = set()
             for b in self._nodes.values():
-                if isinstance(b, BodyNode):
+                if isinstance(b, BodyNode) and not isinstance(b, GroupNode):
                     for t in content_children(b)[:-1]:
                         out.update(n.node_id for n in walk(t))
             return out
@@ -1599,9 +1732,11 @@ class ConceptGraph:
                 self._issue_kinds(node, a, list(zip(keys, views.get(node.node_id, []))), near, parents)
                 continue
             motion = BodyNode._template_motion(node)
-            for key, (_, chain, rect) in zip(keys, views.get(node.node_id, [])):
+            meta = self.view_meta(node.node_id)
+            for k, (key, (_, chain, rect)) in enumerate(zip(keys, views.get(node.node_id, []))):
                 space = _view_mask(self.grid, chain, rect)
-                bodies = [self._nodes[b] for b, (_, _, cells) in near.items() if (space & cells).any()]
+                own = meta[k][1] if k < len(meta) else ()
+                bodies = [self._units[b] for b, (_, _, cells) in near.items() if b not in own and (space & cells).any()]
                 was_inside = self._inside.get(key, set())
                 self._inside[key] = {b.node_id for b in bodies}
                 push = _view_turn(chain, motion)              # on the board
@@ -1646,12 +1781,16 @@ class ConceptGraph:
         where = (R + st["off"][..., 0], C + st["off"][..., 1])          # where each source cell's mass is now
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
+        meta = self.view_meta(node.node_id)
         for key, (_, chain, rect) in keyed_views:
             space = _view_mask(self.grid, chain, rect)
             rows, cols = np.nonzero(space)
             if not rows.size:
                 continue
-            bodies = [self._nodes[b] for b, (_, _, cells) in bodies_at.items() if (space & cells).any()]
+            k = int(key.split("#")[1])
+            own = meta[k][1] if k < len(meta) else ()                     # a leaf never moves its own groups
+            units = getattr(self, "_units", None) or self._tokens()
+            bodies = [units[b] for b, (_, _, cells) in bodies_at.items() if b not in own and (space & cells).any()]
             was = self._inside.get(key, set())
             self._inside[key] = {b.node_id for b in bodies}
             fresh = [b for b in bodies if b.node_id not in was]
@@ -1758,7 +1897,10 @@ class ConceptGraph:
                     if isinstance(n, BodyNode))
         random_now = any(isinstance(n, ObjectNode) and n.is_dynamic and PATTERN_TO_NAME.get(n.pattern) == "universal"
                          for n in self._nodes.values())
-        return out, jit, (self._tick if random_now else 0)
+        groups = tuple((t.node_id, None if t.position is None else tuple(round(v, 9) for v in t.position),
+                        tuple(tuple(o) for o in t.orders), tuple(round(v, 6) for v in t.jitter + t.drive))
+                       for t in self._group_tokens())
+        return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ())
 
     def _move_bodies_gameboard(self, views=None) -> None:
         """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
@@ -1766,8 +1908,8 @@ class ConceptGraph:
         A body moves on its own frame's cells (the board, or the turned frame it lives in).
         """
         homes = self._moving_bodies(self.node_views(self.grid) if views is None else views, cells=False)
-        for body in self._nodes.values():
-            if not isinstance(body, BodyNode) or isinstance(body, PlanNode) or body.position is None:
+        for body in self._tokens().values():
+            if body.position is None:
                 continue
             H, W = homes[body.node_id][1] if body.node_id in homes else self.grid
             net = [0, 0]
@@ -1785,6 +1927,11 @@ class ConceptGraph:
                 step = max(-1, min(1, math.trunc(body.jitter[ax])))
                 net[ax] += step
                 body.jitter[ax] -= step
+            drive = getattr(body, "drive", None)
+            for ax in ((0, 1) if drive is not None else ()):     # agency: a body's own leaves, whole cells
+                step = max(-1, min(1, math.trunc(drive[ax])))
+                net[ax] += step
+                drive[ax] -= step
             for axis, n in ((0, H), (1, W)):
                 size = max(1, round(body.extent[axis] * n))
                 if TREE_SIZED_BODIES:                    # move the window's start cell; keep it on the board
@@ -1797,6 +1944,43 @@ class ConceptGraph:
                 body.position[axis] = cell / n
             body.velocity = [net[0] / H, net[1] / W]
 
+    def _drive_bodies(self, views) -> None:
+        """Agency: each body instance is pushed by its own switched-on dynamic leaves, every tick.
+
+        A leaf belongs to the innermost group enclosing it; only a body (not a field) is driven. The push is
+        the leaf's motion turned into the board by the leaf's frames, then into the body's own frame, at the
+        leaf's gate (as orders are). Universal pushes at random; centre and periphery have no net direction.
+        """
+        import zlib
+        parents = self._parents()
+        homes = self._moving_bodies(views, cells=False)
+        units = self._tokens()
+        for node in self._nodes.values():
+            if not (isinstance(node, ObjectNode) and node.is_dynamic and getattr(node, "role", None) == "imagined"):
+                continue
+            a, anc = node.gate, node
+            while parents.get(anc.node_id):
+                anc = parents[anc.node_id][0]
+                a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
+            if not a > ONSET_THRESHOLD:
+                continue
+            kind = _MOTION_KIND.get(PATTERN_TO_NAME.get(node.pattern))
+            for k, (_, chain, _) in enumerate(views.get(node.node_id, [])):
+                groups = self.view_meta(node.node_id)[k][1]
+                tok = units.get(groups[-1]) if groups else None
+                if tok is None or not getattr(tok.node, "agency", False) or tok.node_id not in homes:
+                    continue
+                if kind == "random":
+                    rng = np.random.default_rng(zlib.crc32(f"{node.node_id}|{tok.node_id}|{self._tick}".encode()))
+                    push = (float(rng.uniform(-1, 1)), float(rng.uniform(-1, 1)))
+                    push = (push[0], 0.0) if node.orientation == Orientation.VERTICAL else (0.0, push[1])
+                elif kind in ("bulk", "gradient"):
+                    push = _view_turn(chain, BodyNode._template_motion(node))
+                else:
+                    continue
+                for ax, m in enumerate(_view_unturn(homes[tok.node_id][0], push)):
+                    tok.drive[ax] += a * m
+
     def _step_gameboard(self) -> float:
         """One tick: scan, perceive last tick's imagery, issue orders, propagate (for next tick), move, draw.
 
@@ -1808,6 +1992,8 @@ class ConceptGraph:
         views = self.node_views(self.grid)      # unchanged until the bodies move
         self._perceive(views)
         self._issue_orders(views)
+        if GROUPING_NODES:
+            self._drive_bodies(views)
         self._propagate_delayed()
         self._move_bodies_gameboard(views)
         if MOTION_KINDS:
@@ -1940,38 +2126,38 @@ class ConceptGraph:
                 return regions
             return [region]
 
-        def render_plan(children: List[Node], region: Region, weight: float) -> None:
+        def render_plan(children: List[Node], region: Region, weight: float, ikey: tuple = ()) -> None:
             if not children or weight < 1e-9 or is_empty(region):
                 return
             if len(children) == 1:
-                render_node(children[0], region, weight)
+                render_node(children[0], region, weight, ikey)
                 return
             template, rest = children[0], children[1:]
             p = _clamp(template.gate)
             if p > 1e-9:
                 slots = orient_slots(template, region) if ORIENTING_TEMPLATES else \
                     [(sub, None) for sub in yang_regions(template, region)]
-                for sub, v in slots:
+                for i, (sub, v) in enumerate(slots):
                     if v is None:
-                        render_plan(rest, sub, weight * p)
+                        render_plan(rest, sub, weight * p, ikey + (i,))
                     elif not is_empty(sub):
-                        render_oriented(rest, sub, v, weight * p)
+                        render_oriented(rest, sub, v, weight * p, ikey + (i,))
             if 1.0 - p > 1e-9:
-                render_plan(rest, region, weight * (1.0 - p))
+                render_plan(rest, region, weight * (1.0 - p), ikey + ("w",))
 
-        def render_oriented(children: List[Node], slot: Region, v, weight: float) -> None:
+        def render_oriented(children: List[Node], slot: Region, v, weight: float, ikey: tuple = ()) -> None:
             """Draw ``children`` upright in their own frame, then show it in ``slot`` facing ``v``."""
             Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
             saved = cv[:]
             cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4]]   # bodies live in the frame
-            render_plan(children, (0, Hc, 0, Wc), weight)
+            render_plan(children, (0, Hc, 0, Wc), weight, ikey)
             frame_yang, frame_yin = cv[0], cv[1]
             cv[:] = saved
             r0, r1, c0, c1 = slot
             cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
             cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
 
-        def render_node(node: Node, region: Region, weight: float) -> None:
+        def render_node(node: Node, region: Region, weight: float, ikey: tuple = ()) -> None:
             if weight < 1e-9 or is_empty(region):
                 return
             if getattr(node, "role", None) == "observer":
@@ -2002,21 +2188,30 @@ class ConceptGraph:
                         cv[1][r0:r1, c0:c1] *= 1.0 - w * _clamp(1 - 2 * bit)
                     else:
                         cv[0][r0:r1, c0:c1] *= 1.0 - _clamp(w * (1.0 if bit > 0 else 0.5))
+            elif isinstance(node, GroupNode):                    # an instance, drawn where it is
+                tok = node.instances.get(ikey)
+                if cv[2] and tok is not None and tok.position is not None:
+                    region = tok.window(*cv[3])
+                was_inside = cv[4]
+                cv[4] = True
+                for child in content_children(node):
+                    render_node(child, region, weight * _sg(node), ikey)
+                cv[4] = was_inside
             elif isinstance(node, BodyNode):
                 if cv[2] and not isinstance(node, PlanNode) and node.position is not None:
                     region = node.window(*cv[3])
                 was_inside = cv[4]
                 cv[4] = was_inside or not isinstance(node, PlanNode)
-                render_plan(content_children(node), region, weight * _sg(node))
+                render_plan(content_children(node), region, weight * _sg(node), ikey)
                 cv[4] = was_inside
             elif isinstance(node, SerialNode):
                 kids = content_children(node)
                 for i, child in enumerate(kids):
                     render_node(child, band_region(region, i, len(kids), node.split_orientation),
-                                weight * _sg(node))
+                                weight * _sg(node), ikey)
             elif isinstance(node, ParallelNode):
                 for child in content_children(node):
-                    render_node(child, region, weight * _sg(node))
+                    render_node(child, region, weight * _sg(node), ikey)
 
         render_node(out_root, (0, H, 0, W), 1.0)
         return cv[0], cv[1]
@@ -2150,6 +2345,8 @@ _STRUCTURE_MAP = {
     "parallel": ParallelNode,
     "body":     BodyNode,
     "plan":     PlanNode,
+    "template": TemplateNode,
+    "field":    FieldNode,
 }
 
 

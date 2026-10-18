@@ -12,6 +12,15 @@ edges. A program is an immutable ``P`` node:
     P("body",     (h, w, speed), children)              BodyNode(extent, step_size): earlier runs only
     P("body",     (y, x, h, w, speed), children)        BodyNode(position, ...): earlier runs only
 
+With ``lot.grouping_nodes`` (the default), copying, grouping and agency are separate operators:
+
+    P("template", (), children)                         TemplateNode(templates..., material): copies, no grouping
+    P("field",    (), (child,))                         FieldNode: a rigid unit moved only from outside
+    P("body",     (), (child,))                         AgentBodyNode: a rigid unit its own leaves propel
+
+``plan`` is read as ``template``. Fields and bodies take one child; copies of a group made by a template
+are independent instances.
+
 A full program is ``Program(tree, dashed)``. ``dashed`` holds dashed gate
 edges ``(source_path, target_path)``, where a path is the tuple of child
 indices from the root. Targets are leaves (ObjectNodes); sources can be any
@@ -30,13 +39,15 @@ from __future__ import annotations
 from typing import Iterator, List, NamedTuple, Tuple
 
 from embodied_lot import (
-    TRIGRAM_PATTERNS, BodyNode, ConceptGraph, Node, ObjectNode, Orientation,
-    OutputNode, ParallelNode, WindowNode, InWindowNode, PlanNode, SerialNode,
+    TRIGRAM_PATTERNS, AgentBodyNode, BodyNode, ConceptGraph, FieldNode, Node, ObjectNode, Orientation,
+    OutputNode, ParallelNode, WindowNode, InWindowNode, PlanNode, SerialNode, TemplateNode,
 )
 
 LEAF = "obj"
 COMPOSITIONS = ("parallel", "serial_h", "serial_v", "plan", "body")
-MIN_CHILDREN = {"parallel": 1, "serial_h": 1, "serial_v": 1, "plan": 2, "body": 1, "outputs": 1, "out": 0, "in": 0}
+MIN_CHILDREN = {"parallel": 1, "serial_h": 1, "serial_v": 1, "plan": 2, "body": 1, "outputs": 1, "out": 0, "in": 0,
+                "template": 2, "field": 1}
+GROUPS = ("field", "body")                 # unary rigid units under grouping_nodes
 # An output window leaf, written ``out``: it reads the board inside the region its place in the tree
 # gives it (``embodied_lot.WindowNode``). A program's output channels are its ``out`` leaves.
 OUT = "out"
@@ -85,6 +96,7 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.TREE_SIZED_BODIES = bool(lot_cfg.get("tree_sized_bodies", True))
     embodied_lot.MOTION_KINDS = bool(lot_cfg.get("motion_kinds", True))
     embodied_lot.SEPARATE_TREE_SPACES = bool(lot_cfg.get("output_leaves", True))
+    embodied_lot.GROUPING_NODES = bool(lot_cfg.get("grouping_nodes", True))
 
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
@@ -93,7 +105,7 @@ SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameb
                   "unknown_background": (True, False), "tree_placed_bodies": (True, False),
                   "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
                   "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
-                  "output_leaves": (True, False), "content_windows": (True, False)}
+                  "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:
@@ -239,9 +251,11 @@ def is_valid(p: P) -> bool:
     return all(n.kind == LEAF or len(n.children) >= MIN_CHILDREN[n.kind] for _, n in nodes(p))
 
 
-def windows_as_content(p: P) -> bool:
-    """No ``out``/``in`` window is a template: in a body or plan, a window may only be the last child (the content)."""
-    return all(c.kind not in (OUT, IN) for _, n in nodes(p) if n.kind in ("body", "plan") for c in n.children[:-1])
+def windows_as_content(p: P, grouping: bool = False) -> bool:
+    """No ``out``/``in`` window is a template: in a template (or an earlier body / plan), a window may only be
+    the last child (the material)."""
+    kinds = ("template", "plan") if grouping else ("body", "plan", "template")
+    return all(c.kind not in (OUT, IN) for _, n in nodes(p) if n.kind in kinds for c in n.children[:-1])
 
 
 # ---- compilation ----------------------------------------------------------
@@ -310,8 +324,18 @@ def _make(q: P, nid: str) -> Node:
         return ParallelNode(nid)
     if q.kind in ("serial_h", "serial_v"):
         return SerialNode(nid, Orientation.HORIZONTAL if q.kind == "serial_h" else Orientation.VERTICAL)
-    if q.kind == "plan":
+    import embodied_lot
+    if embodied_lot.GROUPING_NODES:
+        if q.kind in ("plan", "template"):
+            return TemplateNode(nid)
+        if q.kind == "field":
+            return FieldNode(nid)
+        if q.kind == "body" and not q.params:
+            return AgentBodyNode(nid)
+    if q.kind in ("plan", "template"):
         return PlanNode(nid)
+    if q.kind == "field":
+        raise ValueError("'field' needs lot.grouping_nodes")
     if not q.params:
         return BodyNode(nid)                                          # sized and placed by the tree
     if len(q.params) == 3:
