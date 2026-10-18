@@ -314,9 +314,10 @@ class GaussianScanLikelihood:
 
     def __init__(self, observations, frames: int, size: int, softness: float, salience: float, background: dict,
                  temperature: float = None, temporal_weight: float = 0.0, draws: int = 256, noise_floor: float = 0.1,
-                 noise: dict = None, cache_size: int = 5000) -> None:
+                 noise: dict = None, cache_size: int = 5000, features: str = "max6") -> None:
         from collections import OrderedDict
-        self.O = np.stack(observations).astype(np.float64)              # (N, T, P, 6)
+        self.features = features                                          # interface.features (scanner.field_features)
+        self.O = np.stack(observations).astype(np.float64)              # (N, T, P, F)
         N, T, P, F = self.O.shape
         self.dO = np.diff(self.O, axis=1)
         self.P, self.w = P, float(temporal_weight)
@@ -331,28 +332,41 @@ class GaussianScanLikelihood:
 
     def moments(self, p) -> list:
         """Per state combination: its weight and the mean / variance of detector activations and changes."""
-        from grace_lot.grace.scanner import scan_field
+        from grace_lot.grace.scanner import field_features
         from grace_lot.lot_adapter.adapter import motion_combinations, rollout
-        real = self.bg["boards"]
         out = []
         for states, weight in motion_combinations(p, self.size):
             v = rollout(p, self.frames, self.size, states)
             v = v if v.ndim == 4 else v[:, None]
             T, K, H, W = v.shape
             if np.all((v == 0) | (v == 1)):
-                Fs = scan_field(v, self.softness, self.salience)[None]
+                Fs = field_features(v, self.softness, self.salience, self.features)[None]
             else:
+                fills, uniforms = self._draws(T, H, W)                                         # (T, D, H, W), (D, H, W)
                 claim, fig = np.abs(2 * v - 1), v > 0.5
-                boards = np.empty((T, self.draws, K, H, W))
-                for d in range(self.draws):
-                    rng = np.random.Generator(np.random.PCG64(20_000 + d))
-                    fill = real[rng.integers(len(real))][:, None]                               # (T, 1, H, W)
-                    boards[:, d] = np.where(rng.random((H, W))[None, None] < claim, fig, fill)
-                Fs = scan_field(boards.reshape(T, -1, H, W), self.softness, self.salience)
-                Fs = Fs.reshape(T, self.draws, K, -1).transpose(1, 0, 2, 3)                # (D, T, K, 6)
+                boards = np.where(uniforms[None, :, None] < claim[:, None], fig[:, None], fills[:, :, None])
+                Fs = field_features(boards, self.softness, self.salience, self.features)    # (T, D, K, F)
+                Fs = Fs.transpose(1, 0, 2, 3)                                                # (D, T, K, F)
             dF = np.diff(Fs, axis=1)
             out.append(dict(weight=weight, mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0)))
         return out
+
+    def _draws(self, T: int, H: int, W: int):
+        """The draws' fills and uniforms: they depend only on the draw index (fixed seeds), so they are made once.
+
+        Draw d's generator gives the real board it fills from, then one uniform per cell, exactly as drawing
+        them per program did (the same numbers in the same order)."""
+        key = (T, H, W)
+        cached = getattr(self, "_draw_cache", None)
+        if cached is None or cached[0] != key:
+            real = self.bg["boards"]
+            idx, uni = np.empty(self.draws, dtype=int), np.empty((self.draws, H, W))
+            for d in range(self.draws):
+                rng = np.random.Generator(np.random.PCG64(20_000 + d))
+                idx[d] = rng.integers(len(real))
+                uni[d] = rng.random((H, W))
+            self._draw_cache = (key, real[idx].transpose(1, 0, 2, 3), uni)                    # fills: (T, D, H, W)
+        return self._draw_cache[1], self._draw_cache[2]
 
     @staticmethod
     def _nll(O, mu, var, s2):

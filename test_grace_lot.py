@@ -1048,3 +1048,31 @@ class GroupingTests(unittest.TestCase):
             if name == "moving":
                 self.assertTrue(0 < sc["universal"] - sc["neutral"] <= 6 * math.log(2) + 1e-6)
         self.assertEqual(best, {"still": "void", "moving": "universal", "mixed": "neutral"})
+
+
+class InterfaceTests(unittest.TestCase):
+    """v7 observation interface: cycle sampling (grace.temporal) and orient8 features (scanner.field_features)."""
+
+    def test_orient8_tells_the_diagonals_apart_and_max6_does_not(self):
+        import numpy as np
+        from grace_lot.grace.scanner import field_features
+        a, b = np.zeros((1, 1, 12, 12)), np.zeros((1, 1, 12, 12))
+        for i in range(12):
+            a[0, 0, i, i] = b[0, 0, i, 11 - i] = 1
+        self.assertTrue(np.array_equal(field_features(a, .05, .75, "max6"), field_features(b, .05, .75, "max6")))
+        fa, fb = field_features(a, .05, .75, "orient8")[0, 0], field_features(b, .05, .75, "orient8")[0, 0]
+        self.assertAlmostEqual(fa[7], 1.0)
+        self.assertAlmostEqual(fb[7], -1.0)
+        self.assertTrue(np.array_equal(fa[:6], fb[:6]))
+        self.assertFalse(field_features(np.zeros((1, 1, 12, 12)), .05, .75, "orient8").any())   # empty: all zeros
+
+    def test_cycle_sampling_finds_the_period_and_falls_back(self):
+        import numpy as np
+        from grace_lot.grace.temporal import detect_period, sample_window
+        t = np.arange(200)
+        joints = np.stack([np.sin(2 * np.pi * t / 25), np.cos(2 * np.pi * t / 25)], -1)[:, None, :]
+        self.assertEqual(detect_period(joints), 25)
+        a, b = sample_window(joints, "cycle2")
+        self.assertEqual(b - a, 51)
+        self.assertEqual(sample_window(np.random.default_rng(0).normal(size=(60, 1, 2)), "cycle2"), (0, 60))
+        self.assertEqual(sample_window(joints, "segment"), (0, 200))

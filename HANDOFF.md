@@ -438,3 +438,20 @@ and browser-side evaluation for edited structures.
       are unchanged.
     - Not yet handled: `analysis/heldout.py` still scores with the matched likelihood on point features;
       with this likelihood it must take the noise from the training videos, never the held-out ones.
+25. v7 observation interface (sections 8 and 15 of docs/dynamic_reachability_audit.md).
+    - `preprocess.sampling = "cycle2"` (`grace/temporal.py`): each video's 16 frames
+      cover two motion cycles, resampled from the full-rate joints.
+      - The period is the first autocorrelation peak reaching 80% of the highest,
+        found the same way for every manner.
+      - Without a period, or when two cycles don't fit, a video falls back to its
+        whole segment (2 bowing videos and 1 swinging among the diagnostic manners).
+      - Applied in `load_trajectory`, so every consumer of v7 gets the same frames.
+      - "segment" (the default) is every earlier run's behaviour.
+    - `interface.features = "orient8"` (`scanner.field_features`): 8 features per part.
+      They are the 3 + 3 detectors averaged over the salient cells, plus the
+      elongation-weighted principal-axis orientation, which tells / from \.
+      - Used on both sides (cell-quantised parts and LoT boards) and in the background.
+      - "max6" (the default) is the earlier scanner, bit-identical.
+    - The Gaussian likelihood makes its Monte Carlo fills and uniforms once per draw
+      index, not once per program (`_draws`). The same numbers give the same scores
+      (153 programs bit-identical), 26 → 14 ms per program.

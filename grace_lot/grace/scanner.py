@@ -107,6 +107,44 @@ def scan_parts(traj: Trajectory, pre: dict, s: float, edge_samples: int) -> np.n
     return np.stack([[scan_points(pts[p][t], s) for p in PART_NAMES] for t in range(T)])
 
 
+FEATURES = {"max6": 6, "orient8": 8}
+
+
+def field_features(fields: np.ndarray, s: float, salience: float, kind: str = "max6") -> np.ndarray:
+    """(..., K, H, W) fields -> (..., K, F) features of their salient cells (value >= salience).
+
+    max6     the current scanner (``scan_field``): 3 detectors per axis, max over the salient cells
+    orient8  the same detectors averaged over the salient cells, plus the elongation-weighted orientation of
+             their principal axis, (e cos 2t, e sin 2t) with e = 1 - l2 / l1, which tells the two diagonals
+             apart. An empty channel is all zeros.
+    """
+    if kind == "max6":
+        lead = fields.shape[:-3]
+        out = scan_field(fields.reshape((-1,) + fields.shape[-3:]), s, salience)
+        return out.reshape(lead + out.shape[-2:])
+    if kind != "orient8":
+        raise ValueError(f"unknown features {kind!r}")
+    H, W = fields.shape[-2:]
+    m = (fields >= salience).astype(np.float64)                                  # (..., K, H, W)
+    n = m.sum(axis=(-2, -1))
+    safe = np.maximum(n, 1.0)
+    x, y = (np.arange(W) + 0.5) / W, (np.arange(H) + 0.5) / H
+    cols, rows = m.sum(axis=-2), m.sum(axis=-1)                                  # (..., K, W), (..., K, H)
+    fx = cols @ _axis_responses(W, s) / safe[..., None]                         # means over the salient cells
+    fy = rows @ _axis_responses(H, s) / safe[..., None]
+    mx, my = cols @ x / safe, rows @ y / safe
+    cxx = cols @ (x * x) / safe - mx * mx
+    cyy = rows @ (y * y) / safe - my * my
+    cxy = np.einsum("...hw,h,w->...", m, y, x) / safe - mx * my
+    half = np.sqrt(((cxx - cyy) / 2) ** 2 + cxy ** 2)
+    l1, l2 = (cxx + cyy) / 2 + half, (cxx + cyy) / 2 - half
+    ok = (n >= 2) & (l1 > 1e-12) & (half > 1e-12)
+    e = np.where(ok, 1 - l2 / np.where(ok, l1, 1.0), 0.0)
+    c2 = np.where(ok, (cxx - cyy) / np.where(ok, 2 * half, 1.0), 0.0)            # cos 2t and sin 2t of the major axis
+    s2 = np.where(ok, cxy / np.where(ok, half, 1.0), 0.0)
+    return np.concatenate([fx, fy, (e * c2)[..., None], (e * s2)[..., None]], axis=-1) * (n > 0)[..., None]
+
+
 def part_boards(traj: Trajectory, pre: dict, edge_samples: int) -> np.ndarray:
     """(T, P, H, W) binary boards: a cell is 1 if any of the part's skeleton points falls in it.
 
@@ -124,13 +162,15 @@ def part_boards(traj: Trajectory, pre: dict, edge_samples: int) -> np.ndarray:
     return out
 
 
-def scan_part_cells(traj: Trajectory, pre: dict, s: float, salience: float, edge_samples: int) -> np.ndarray:
-    """(T, P, 6) detector activations of the observed parts, read from their cell boards."""
-    return scan_field(part_boards(traj, pre, edge_samples), s, salience)
+def scan_part_cells(traj: Trajectory, pre: dict, s: float, salience: float, edge_samples: int,
+                    features: str = "max6") -> np.ndarray:
+    """(T, P, F) features of the observed parts, read from their cell boards (``field_features``)."""
+    return field_features(part_boards(traj, pre, edge_samples), s, salience, features)
 
 
 def feature_background(cfg: dict) -> dict:
-    """What "no claim" predicts: real part features and boards pooled over every training video and manner.
+    """What "no claim" predicts: real part features and boards pooled over every training video and manner
+    (features as ``interface.features``).
 
     Returns per-detector mean and variance of the features (``mu``, ``var``) and of their frame-to-frame
     changes (``dmu``, ``dvar``), and the real part boards (``boards``, (M, T, H, W)) that unclaimed cells
@@ -147,7 +187,8 @@ def feature_background(cfg: dict) -> dict:
     if not path.exists():
         bym, _ = videos_for(cfg, "train")
         boards = [part_boards(load_trajectory(cfg, v), pre, itf["edge_samples"]) for m in sorted(bym) for v in bym[m]]
-        feats = np.concatenate([scan_field(b, itf["scan_softness"], itf["lot_salience"]).transpose(1, 0, 2) for b in boards])
+        feats = np.concatenate([field_features(b, itf["scan_softness"], itf["lot_salience"], itf.get("features", "max6"))
+                                .transpose(1, 0, 2) for b in boards])
         d = np.diff(feats, axis=1)                                                     # feats: (M, T, 6)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(path, mu=feats.mean(axis=(0, 1)), var=feats.var(axis=(0, 1)), dmu=d.mean(axis=(0, 1)),

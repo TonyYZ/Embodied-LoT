@@ -65,7 +65,7 @@ def observations_for(cfg: dict, videos) -> list:
         from grace_lot.grace.scanner import scan_part_cells     # parts quantised to cells first, like LoT outputs
         itf = cfg["interface"]
         return [scan_part_cells(load_trajectory(cfg, v), cfg["preprocess"], itf["scan_softness"], itf["lot_salience"],
-                                itf["edge_samples"]) for v in videos]
+                                itf["edge_samples"], itf.get("features", "max6")) for v in videos]
     if representation(cfg) == "parts_scan":
         from grace_lot.grace.scanner import scan_parts
         itf = cfg["interface"]
@@ -93,7 +93,7 @@ def build(cfg: dict, observations):
         lik = GaussianScanLikelihood(observations, pre["frames"], pre["field_size"], itf["scan_softness"],
                                      itf["lot_salience"], feature_background(cfg), inf.get("temperature"),
                                      inf.get("temporal_weight", 0.0), inf.get("cell_draws", 256),
-                                     inf.get("noise_floor", 0.1))
+                                     inf.get("noise_floor", 0.1), features=itf.get("features", "max6"))
     elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         itf = cfg["interface"]

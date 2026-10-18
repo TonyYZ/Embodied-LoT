@@ -28,7 +28,24 @@ def processed_paths(processed_dir: Path, video: Video) -> Dict[str, Path]:
 
 
 def load_trajectory(cfg: dict, video: Video) -> Trajectory:
-    return Trajectory.load(processed_paths(cfg["data"]["processed_dir"], video)["traj"])
+    """The processed trajectory. With ``preprocess.sampling`` other than "segment", its frames are re-taken
+    from the full-rate joints (``grace.temporal``) and its fields redrawn from them."""
+    traj = Trajectory.load(processed_paths(cfg["data"]["processed_dir"], video)["traj"])
+    sampling = cfg["preprocess"].get("sampling", "segment")
+    if sampling == "segment":
+        return traj
+    import dataclasses
+    from grace_lot.grace.temporal import sample_window
+    from grace_lot.grace.trajectories import rasterise, resample
+    pre = cfg["preprocess"]
+    a, b = sample_window(traj.joints_full, sampling)
+    joints = resample(traj.joints_full[a:b], pre["frames"])
+    fields = rasterise(joints, traj.connections, pre["field_size"], pre["window_x"], pre["window_y"],
+                       pre["thickness"], pre["raster_scale"], MEDIAPIPE_TORSO)
+    return dataclasses.replace(traj, joints=joints, fields=fields)
+
+
+MEDIAPIPE_TORSO = (11, 12, 23, 24)            # left / right shoulder, left / right hip (trajectories.TORSO)
 
 
 _estimator = None
