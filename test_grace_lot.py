@@ -915,6 +915,23 @@ class GroupingTests(unittest.TestCase):
         self.assertTrue(np.any((legacy > 0) & (legacy < 1)))             # earlier runs: vacated cells unknown
         embodied_lot.PROBABILISTIC_MOTION = True
 
+    def test_moving_body_leaves_known_emptiness(self):
+        """A body propelled by its own leaf: the home cells it has left read as known empty under probabilistic
+        motion, and as "no claim" in earlier runs; the body itself is drawn the same either way."""
+        import numpy as np
+        import embodied_lot
+        from grace_lot.lot_adapter.adapter import rollout
+        src = "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"
+        embodied_lot.PROBABILISTIC_MOTION = True
+        v = rollout(parse_program(src), 6, 12)[:, 0]
+        embodied_lot.PROBABILISTIC_MOTION = False
+        legacy = rollout(parse_program(src), 6, 12)[:, 0]
+        embodied_lot.PROBABILISTIC_MOTION = True
+        self.assertTrue(np.array_equal(v[0], legacy[0]))                 # at home nothing differs
+        self.assertTrue(np.all(v[3][:, :3] == 0.0))                      # three columns left behind: known empty
+        self.assertTrue(np.all(legacy[3][:, :3] == 0.5))
+        self.assertTrue(np.array_equal(v[3] == 1.0, legacy[3] == 1.0))   # the body is where it was
+
     def test_half_means_no_claim(self):
         import numpy as np
         from grace_lot.inference.likelihood import cell_probability

@@ -206,6 +206,12 @@ every manner, with a difference-in-differences of about 0, so the gain wasn't te
 Under `probabilistic_motion`, cells that moving mass leaves behind therefore read as **known empty** (yin).
 Only contradictions, such as figure piled onto empty at an edge, stay at 0.5.
 
+The same holds for bodies (added later, same flag): a body or group instance drawn away from the region it
+receives leaves the cells it would claim there, but no longer claims, as known empty, as strongly as they
+were claimed. As with pushed mass, the trail is home minus current position: cells a body only passed
+through, outside its home, return to whatever the tree draws there. The caterpillar demo's motion is
+unchanged; its clock observer now rests at 0 between pulses instead of 0.25-0.5.
+
 Real-data triples afterwards (training actors, current sampling, 3 shuffles):
 
 | Manner | `universal*` wins | Gap over `void*`: `neutral*` / `universal*` | Difference-in-differences: `neutral*` / `universal*` |

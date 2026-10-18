@@ -420,7 +420,8 @@ and browser-side evaluation for edited structures.
     - A 0.5 cell is "no claim". It is predicted by a shared background, the training base rate of part
       occupancy (`parts.occupancy_background`, `inference.background = "occupancy"`), so concepts are
       deviations from the average body.
-    - Cells vacated by moving mass read as known empty, so motion can't withdraw a claim.
+    - Cells vacated by moving mass, or by a moving body or group instance (its home region minus where it is
+      now), read as known empty, so motion can't withdraw a claim.
 
 26. The normalised likelihood for v7 (`docs/probabilistic_semantics.md` §10-11; `inference.likelihood = "gaussian"`,
     `GaussianScanLikelihood`).

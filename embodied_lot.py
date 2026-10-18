@@ -202,8 +202,8 @@ GROUPING_NODES = True
 # unit's state in ``ConceptGraph.motion_states``: "a" or "b" (a bulk push one way or the other along the
 # leaf's axis, as top* / bottom*) or "still" (no orders). The likelihood mixes the states: universal a / b
 # with 1/2 each, neutral still 1/2, a 1/4, b 1/4. Unset units default to "a" (universal) and "still"
-# (neutral). Cells that moving mass leaves behind read as known empty (yin), so motion cannot be used to
-# withdraw a claim. With False, universal* gives random pushes, neutral* nothing, and vacated cells read
+# (neutral). Cells that moving mass or a moving body leaves behind read as known empty (yin), so motion
+# cannot be used to withdraw a claim. With False, universal* gives random pushes, neutral* nothing, and vacated cells read
 # as unknown (earlier runs).
 PROBABILISTIC_MOTION = True
 _MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
@@ -2254,6 +2254,28 @@ class ConceptGraph:
             cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
             cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
 
+        def draw_moved(draw, home: Region, region: Region) -> None:
+            """``draw(region)`` paints a body's content where it is. Under PROBABILISTIC_MOTION, the cells it
+            would claim at home (the region it receives) but no longer claims read as known empty, as strongly
+            as they were claimed: a moved body leaves emptiness behind, not "no claim"."""
+            if not PROBABILISTIC_MOTION or region == home:
+                draw(region)
+                return
+
+            def alone(r):                        # the content's paint on its own, at r
+                saved = cv[:]
+                cv[0], cv[1] = np.ones_like(saved[0]), np.ones_like(saved[1])
+                draw(r)
+                out = cv[0], cv[1]
+                cv[:] = saved
+                return out
+            hy, hn = alone(home)
+            ny, nn = alone(region)
+            cv[0] *= ny
+            cv[1] *= nn
+            vacated = ((hy < 1) | (hn < 1)) & (ny == 1) & (nn == 1)
+            cv[1][vacated] *= (hy * hn)[vacated]
+
         def render_node(node: Node, region: Region, weight: float, ikey: tuple = ()) -> None:
             if weight < 1e-9 or is_empty(region):
                 return
@@ -2287,20 +2309,28 @@ class ConceptGraph:
                         cv[0][r0:r1, c0:c1] *= 1.0 - _clamp(w * (1.0 if bit > 0 else 0.5))
             elif isinstance(node, GroupNode):                    # an instance, drawn where it is
                 tok = node.instances.get(ikey)
+                home = region
                 if cv[2] and tok is not None and tok.position is not None:
                     region = tok.rect(region, *cv[3])
-                was_inside = cv[4]
-                cv[4] = True
-                for child in content_children(node):
-                    render_node(child, region, weight * _sg(node), ikey)
-                cv[4] = was_inside
+
+                def draw(r):
+                    was_inside = cv[4]
+                    cv[4] = True
+                    for child in content_children(node):
+                        render_node(child, r, weight * _sg(node), ikey)
+                    cv[4] = was_inside
+                draw_moved(draw, home, region)
             elif isinstance(node, BodyNode):
+                home = region
                 if cv[2] and not isinstance(node, PlanNode) and node.position is not None:
                     region = node.window(*cv[3])
-                was_inside = cv[4]
-                cv[4] = was_inside or not isinstance(node, PlanNode)
-                render_plan(content_children(node), region, weight * _sg(node), ikey)
-                cv[4] = was_inside
+
+                def draw(r):
+                    was_inside = cv[4]
+                    cv[4] = was_inside or not isinstance(node, PlanNode)
+                    render_plan(content_children(node), r, weight * _sg(node), ikey)
+                    cv[4] = was_inside
+                draw_moved(draw, home, region)
             elif isinstance(node, SerialNode):
                 kids = content_children(node)
                 for i, child in enumerate(kids):
