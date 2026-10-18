@@ -286,3 +286,130 @@ class ProbabilisticScanLikelihood:
         if len(self._cache) > self._cache_size:
             self._cache.popitem(last=False)
         return value
+
+
+class GaussianScanLikelihood:
+    """A normalised Gaussian likelihood on detector activations (docs/probabilistic_semantics.md, 10-11).
+
+    Observations are the parts' activations read from their cell boards (``interface.observation_cells``), so
+    both sides come from ``scan_field``. A program and a state combination of its unknown-motion units
+    define a distribution over boards: a cell is claimed with probability |2v - 1| (figure if v > 0.5), and
+    unclaimed cells are filled from a real part board of the training videos (``background["boards"]``;
+    ``draws`` boards, fixed seeds, one uniform per cell held across frames). The resulting activations give a
+    mean and variance per frame, channel and detector, and likewise for frame-to-frame changes. All channels
+    share each draw's fill and uniforms: channels that claim the same get the same moments, so the matching
+    cannot pick among Monte Carlo variants of "no claim".
+
+    Each output predicts a part with variance = its own variance + the observation noise s2. The noise per
+    detector is the across-video variance of the observations given (one manner's actors), floored at
+    ``noise_floor`` times the background variance (and 1e-6); pass ``noise`` to fix it instead. A part with
+    no output is predicted by the background (pooled real part features). Per video, one optimal matching over the
+    whole sequence minimises the summed negative log density
+
+        NLL[k, p] = 1/2 sum_tf [(o - mu)^2 / (s2 + var) + log 2 pi (s2 + var)]   (+ w * the same for changes)
+
+    and log p(v | r) = -temperature * NLL; temperature defaults to 1 / (T F), the mean density per frame and
+    detector. Combinations mix by their prior weights: log sum_c w_c exp(log p(v | c)).
+    """
+
+    def __init__(self, observations, frames: int, size: int, softness: float, salience: float, background: dict,
+                 temperature: float = None, temporal_weight: float = 0.0, draws: int = 256, noise_floor: float = 0.1,
+                 noise: dict = None, cache_size: int = 5000) -> None:
+        from collections import OrderedDict
+        self.O = np.stack(observations).astype(np.float64)              # (N, T, P, 6)
+        N, T, P, F = self.O.shape
+        self.dO = np.diff(self.O, axis=1)
+        self.P, self.w = P, float(temporal_weight)
+        self.temperature = 1.0 / (T * F) if temperature is None else float(temperature)
+        self.frames, self.size, self.softness, self.salience, self.draws = frames, size, softness, salience, draws
+        self.bg = background
+        if noise is None:
+            noise = dict(s2=self.O.var(axis=0).mean(axis=(0, 1)), s2d=self.dO.var(axis=0).mean(axis=(0, 1)))
+        self.s2 = np.maximum(noise["s2"], np.maximum(noise_floor * background["var"], 1e-6))     # 1e-6: a numeric guard
+        self.s2d = np.maximum(noise["s2d"], np.maximum(noise_floor * background["dvar"], 1e-6))
+        self._cache, self._cache_size = OrderedDict(), cache_size
+
+    def moments(self, p) -> list:
+        """Per state combination: its weight and the mean / variance of detector activations and changes."""
+        from grace_lot.grace.scanner import scan_field
+        from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+        real = self.bg["boards"]
+        out = []
+        for states, weight in motion_combinations(p, self.size):
+            v = rollout(p, self.frames, self.size, states)
+            v = v if v.ndim == 4 else v[:, None]
+            T, K, H, W = v.shape
+            if np.all((v == 0) | (v == 1)):
+                Fs = scan_field(v, self.softness, self.salience)[None]
+            else:
+                claim, fig = np.abs(2 * v - 1), v > 0.5
+                boards = np.empty((T, self.draws, K, H, W))
+                for d in range(self.draws):
+                    rng = np.random.Generator(np.random.PCG64(20_000 + d))
+                    fill = real[rng.integers(len(real))][:, None]                               # (T, 1, H, W)
+                    boards[:, d] = np.where(rng.random((H, W))[None, None] < claim, fig, fill)
+                Fs = scan_field(boards.reshape(T, -1, H, W), self.softness, self.salience)
+                Fs = Fs.reshape(T, self.draws, K, -1).transpose(1, 0, 2, 3)                # (D, T, K, 6)
+            dF = np.diff(Fs, axis=1)
+            out.append(dict(weight=weight, mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0)))
+        return out
+
+    @staticmethod
+    def _nll(O, mu, var, s2):
+        """(N, K, P) summed negative log densities of observations O (N, T, P, F) under channels (T, K, F)."""
+        v = (var + s2).transpose(1, 0, 2)[None, :, None]                 # (1, K, 1, T, F)
+        m = mu.transpose(1, 0, 2)[None, :, None]
+        o = O.transpose(0, 2, 1, 3)[:, None]                             # (N, 1, P, T, F)
+        return 0.5 * (((o - m) ** 2) / v + np.log(2 * np.pi * v)).sum(axis=(3, 4))
+
+    def costs(self, m) -> np.ndarray:
+        """(N, K + B, P) NLL of each output (then B = max(0, P - K) background rows) against each part."""
+        N, T, P, F = self.O.shape
+        K = m["mu"].shape[1]
+        b = max(0, P - K)
+        mu = np.concatenate([m["mu"], np.broadcast_to(self.bg["mu"], (T, b, F))], axis=1)
+        var = np.concatenate([m["var"], np.broadcast_to(self.bg["var"], (T, b, F))], axis=1)
+        C = self._nll(self.O, mu, var, self.s2)
+        if self.w:
+            dmu = np.concatenate([m["dmu"], np.broadcast_to(self.bg["dmu"], (T - 1, b, F))], axis=1)
+            dvar = np.concatenate([m["dvar"], np.broadcast_to(self.bg["dvar"], (T - 1, b, F))], axis=1)
+            C = C + self.w * self._nll(self.dO, dmu, dvar, self.s2d)
+        return C
+
+    def _matched(self, m):
+        """Per video: (rows, columns, matched NLL); outputs beyond the parts stay unmatched."""
+        from scipy.optimize import linear_sum_assignment
+        res = []
+        for C in self.costs(m):
+            r, c = linear_sum_assignment(C)
+            res.append((r, c, float(C[r, c].sum())))
+        return res
+
+    def _scores(self, p):
+        ms = self.moments(p)
+        matched = [self._matched(m) for m in ms]
+        L = -self.temperature * np.array([[nll for _, _, nll in mt] for mt in matched])      # (combinations, N)
+        return L + np.log([m["weight"] for m in ms])[:, None], matched
+
+    def per_video_scores(self, p) -> np.ndarray:
+        from scipy.special import logsumexp
+        return logsumexp(self._scores(p)[0], axis=0)
+
+    def assignments(self, p):
+        """Per video, under its most probable state combination: (rows, columns, matched NLL x temperature / P).
+
+        Rows >= the program's output count are background rows (parts no output explains).
+        """
+        L, matched = self._scores(p)
+        best = L.argmax(axis=0)
+        return [(r, c, nll * self.temperature / self.P) for (r, c, nll) in (matched[b][n] for n, b in enumerate(best))]
+
+    def __call__(self, p) -> float:
+        if p in self._cache:
+            self._cache.move_to_end(p)
+            return self._cache[p]
+        value = float(self.per_video_scores(p).sum())
+        self._cache[p] = value
+        if len(self._cache) > self._cache_size:
+            self._cache.popitem(last=False)
+        return value

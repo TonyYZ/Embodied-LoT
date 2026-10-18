@@ -105,3 +105,53 @@ def scan_parts(traj: Trajectory, pre: dict, s: float, edge_samples: int) -> np.n
     pts = part_points(traj, pre, edge_samples)
     T = len(traj.joints)
     return np.stack([[scan_points(pts[p][t], s) for p in PART_NAMES] for t in range(T)])
+
+
+def part_boards(traj: Trajectory, pre: dict, edge_samples: int) -> np.ndarray:
+    """(T, P, H, W) binary boards: a cell is 1 if any of the part's skeleton points falls in it.
+
+    The observation side of ``interface.observation_cells``: parts are quantised to the LoT's cells first, so
+    observed and LoT features both come from ``scan_field``. Points beyond the window go to its border cells.
+    """
+    pts = part_points(traj, pre, edge_samples)
+    n = pre["field_size"]
+    T = len(traj.joints)
+    out = np.zeros((T, len(PART_NAMES), n, n))
+    t = np.arange(T)[:, None]
+    for k, name in enumerate(PART_NAMES):
+        cell = np.clip((pts[name] * n).astype(int), 0, n - 1)                          # (T, M, 2) as (col, row)
+        out[t, k, cell[..., 1], cell[..., 0]] = 1.0
+    return out
+
+
+def scan_part_cells(traj: Trajectory, pre: dict, s: float, salience: float, edge_samples: int) -> np.ndarray:
+    """(T, P, 6) detector activations of the observed parts, read from their cell boards."""
+    return scan_field(part_boards(traj, pre, edge_samples), s, salience)
+
+
+def feature_background(cfg: dict) -> dict:
+    """What "no claim" predicts: real part features and boards pooled over every training video and manner.
+
+    Returns per-detector mean and variance of the features (``mu``, ``var``) and of their frame-to-frame
+    changes (``dmu``, ``dvar``), and the real part boards (``boards``, (M, T, H, W)) that unclaimed cells
+    are filled from. Training actors only; cached in the processed directory.
+    """
+    import hashlib
+    import json
+    from pathlib import Path
+    from grace_lot.grace.preprocess import load_trajectory
+    from grace_lot.inference.run import videos_for
+    pre, itf = cfg["preprocess"], cfg["interface"]
+    key = hashlib.sha1(json.dumps([pre, cfg.get("split", {}), itf], sort_keys=True, default=str).encode()).hexdigest()[:12]
+    path = Path(cfg["data"]["processed_dir"]) / f"background_features_{key}.npz"
+    if not path.exists():
+        bym, _ = videos_for(cfg, "train")
+        boards = [part_boards(load_trajectory(cfg, v), pre, itf["edge_samples"]) for m in sorted(bym) for v in bym[m]]
+        feats = np.concatenate([scan_field(b, itf["scan_softness"], itf["lot_salience"]).transpose(1, 0, 2) for b in boards])
+        d = np.diff(feats, axis=1)                                                     # feats: (M, T, 6)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(path, mu=feats.mean(axis=(0, 1)), var=feats.var(axis=(0, 1)), dmu=d.mean(axis=(0, 1)),
+                            dvar=d.var(axis=(0, 1)),
+                            boards=np.concatenate([b.transpose(1, 0, 2, 3) for b in boards]).astype(bool))
+    with np.load(path) as z:
+        return {k: z[k].astype(np.float64) if k != "boards" else z[k] for k in z.files}

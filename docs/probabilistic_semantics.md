@@ -218,3 +218,164 @@ Real-data triples afterwards (training actors, current sampling, 3 shuffles):
 The motion bonus is now small, and the difference-in-differences is positive everywhere: some of it reflects
 temporal order. With the flags off, v6, v3 and the legacy fuzz are bit-identical, and the explainer is exact
 with its v6 flags.
+
+## 10. Diagnostic: noise from data, and informativity (scratch, 2026-10-18)
+**The question.** Does the likelihood reward informative claims? It should do so through normalisation: a
+sharp, correct claim gets high density, a vague one less, a wrong sharp one little.
+
+**The noise.** Today's β = 250 implies an observation noise variance of about 1.5 per detector value (P·T·F / 2β).
+Estimated from data, the variance between actors doing the same manner (pooled over manners, frames and parts)
+is 0.0002-0.012 per detector: **100-7000 times smaller**. Real parts vary across all training videos with
+variance 0.0005-0.16 per detector. That is what "no claim" should predict.
+
+**The test.** A normalised Gaussian likelihood (data-estimated noise plus the prediction's own variance;
+β = 1; a part with no output is predicted by the background) is compared with the current scorer on
+feature-level predictions:
+- *right*: the manner's mean, leaving each actor out;
+- *vague right*: the same mean with the background's spread;
+- *abstain*: the background;
+- *wrong*: another manner's mean.
+
+| Manner | Gaussian: right / vague / abstain / wrong | Current: right / abstain / wrong |
+| --- | --- | --- |
+| bowing | 3283 / **8744** / 2553 / -22157 | -109 / -285 / -171 |
+| crisscrossing | **14987** / 12297 / 9804 / 9838 | -150 / -335 / -174 |
+| jumping | **11815** / 11122 / 8836 / 9608 | -196 / -386 / -220 |
+| swinging | **21171** / 13885 / 11854 / -2051 | -76 / -267 / -142 |
+
+**Reading the test.**
+- With data-estimated noise the likelihood rewards informativity: right > vague > abstain in 3 of 4
+  manners, and sharp wrong claims are heavily punished.
+- In bowing, the vague right claim wins, because bowing actors vary more than the pooled noise allows. A
+  claim more precise than reality is punished, which is correct. It does suggest per-manner noise or heavier
+  tails.
+- The current scorer rewards even a wrong manner's mean over abstaining. With noise that large, specificity
+  is never costly.
+
+**Programs under the Gaussian likelihood** (unclaimed cells filled from real part trajectories):
+
+| Program | bowing | crisscrossing | jumping | swinging |
+| --- | --- | --- | --- | --- |
+| background only | 2553 | 9804 | 8836 | 11854 |
+| claims nothing, 6 outputs (filled from real parts) | -7971 | 6744 | 5181 | 9088 |
+| diag4 MAP, as certain claims | -21654 | 3411 | -4372 | 8567 |
+| a still band | -21575 | -14037 | -18773 | -14269 |
+| a central column, 6 outputs | -85276 | -66142 | -69229 | -59921 |
+
+**Reading the programs.**
+- **No program beats the background.** The diag4 MAPs come closest (swinging, crisscrossing).
+- **There is information to capture:** the right manner's mean does beat the background in 3 of 4 manners.
+  The current programs just don't capture it.
+- **The two background versions disagree.** The "claims nothing" program is filled from rasterised parts,
+  and it scores below the analytic background built from point-based part features. The rasterised fill and
+  the point-based observation features don't match exactly, and that should be fixed before relying on it.
+
+**Before any change is committed:**
+1. a background consistent with the observation features;
+2. per-manner (or heavier-tailed) noise;
+3. β as a pure temperature, calibrated so the posterior isn't absurdly peaked: at β = 1 with this noise,
+   the log-likelihoods are in the thousands;
+4. a search under the new likelihood, to see whether programs can beat the average body.
+
+### 10b. Second pass: one feature path, per-manner noise or heavy tails, β as temperature
+
+**What changed** (scratch: `informativity2.py`):
+- **One feature path for both sides.** Each observed part is first quantised to the LoT's 12 × 12 cells (a
+  cell is occupied if any of the part's skeleton points falls in it). Its detector features then come from the
+  same `scan_field` that scores LoT outputs. Unclaimed cells are filled from these real part boards.
+- **Check:** with enough fill draws, a program that claims nothing now scores the same as the analytic
+  background (within 4-6 per manner, from time-varying moments). With 24 draws it did not: the Monte Carlo
+  variance of detector 2 (a near-constant detector, variance 0.0003) came out as 0, which spuriously
+  sharpened or broke the prediction. A real scorer needs **a variance floor** or many draws.
+- **Noise:** either per manner (across-actor variance within the manner), or pooled with Student-t tails
+  (ν = 4).
+- **β is a pure temperature** on the log density. It does not change any ordering. Numbers below use
+  β = 1/(T·F) = 1/96, i.e. the mean log density per frame and detector.
+
+**Feature-level test** (right / vague right / abstain / wrong manner; summed over 15 training videos):
+
+| Manner | per-manner Gaussian | pooled Student-t |
+| --- | --- | --- |
+| bowing | **135.0** / 101.4 / 70.9 / 80.6 | **165.4** / 108.2 / 90.2 / 146.7 |
+| crisscrossing | **252.7** / 136.2 / 117.2 / 233.1 | **181.9** / 120.0 / 100.8 / 169.9 |
+| jumping | **234.1** / 122.9 / 104.2 / 216.6 | **168.0** / 112.1 / 92.5 / 158.7 |
+| swinging | **282.2** / 147.3 / 128.7 / -25303 | **207.6** / 129.3 / 112.1 / 153.2 |
+
+- **Both rank right first in every manner,** and right > vague > abstain everywhere. Bowing is fixed:
+  per-manner noise gives bowing its own, larger spread.
+- **"Wrong" here is the next manner's mean,** and neighbouring manners are close (crisscrossing → jumping,
+  jumping → swinging), so a sharp wrong claim can still beat abstaining. Student-t forgives wrong claims
+  most: they come second in every manner.
+- **Swinging's −25303 is the variance floor again.** Swinging's detector 2 has zero across-actor variance, so a
+  tiny mismatch is priced as impossible. A floor (e.g. a fraction of the background variance) is needed.
+
+**Programs** (unclaimed cells filled from real part boards, 200 draws; diag4 MAP as certain claims):
+
+| Program | bowing | crisscrossing | jumping | swinging |
+| --- | --- | --- | --- | --- |
+| *per-manner Gaussian* | | | | |
+| background only | 70.9 | 117.2 | 104.2 | 128.7 |
+| claims nothing, 6 outputs | 74.7 | 113.1 | 100.4 | 125.2 |
+| diag4 MAP | 33.1 | **120.6** | **147.9** | **156.2** |
+| a still band | -160.0 | -209.5 | -172.7 | -85.4 |
+| a central column, 6 outputs | -358.7 | -241.9 | -185.6 | -729.4 |
+| *pooled Student-t* | | | | |
+| background only | 90.2 | 100.8 | 92.5 | 112.1 |
+| claims nothing, 6 outputs | 88.0 | 95.1 | 86.9 | 106.7 |
+| diag4 MAP | **115.1** | **126.0** | **124.5** | **165.1** |
+| a still band | 65.0 | 74.9 | 62.7 | 88.2 |
+| a central column, 6 outputs | 1.5 | 7.7 | -10.2 | 14.2 |
+
+- **With one feature path, real programs can now beat the average body.** The diag4 MAPs beat the
+  background in 3 of 4 manners under the per-manner Gaussian (bowing is the exception), and in all 4 under
+  Student-t. Crude programs (a still band, a central column) lose under both.
+- **Scale.** At β = 1/(T·F), a good program gains about 2-4 nats per video over the background, i.e. some
+  30-60 over a manner's 15 videos. That is the same order as prior differences between programs, so the
+  posterior is no longer absurdly peaked. This is a starting point, not a fitted value.
+
+**Recommendation for a v7 likelihood (not implemented):**
+1. Observations go through the cells: quantise points to cells first. This changes the observation features,
+   so it needs its own flag.
+2. Per-manner Gaussian noise with a variance floor. It ranks right > vague > abstain everywhere and punishes
+   wrong claims, while Student-t forgives them. Per-manner noise is estimated from the training actors the
+   program is fitted to (empirical Bayes); it never touches the test split.
+3. Background = pooled real part features of the training videos. Unclaimed cells filled by Monte Carlo
+   need many draws or a variance floor.
+4. β = 1/(T·F) as the initial temperature.
+5. Then a search under the new likelihood.
+
+## 11. Implemented for v7: the normalised likelihood (2026-10-18)
+
+The recommendation of 10b, behind flags:
+- **`interface.observation_cells = true`.** Parts are quantised to cells first (`scanner.part_boards`; points
+  beyond the window go to the border cells), then scanned with `scan_field`, like LoT outputs.
+- **`inference.likelihood = "gaussian"`** (`GaussianScanLikelihood`):
+  - per state combination, `cell_draws` boards: claims with strength |2v − 1|, unclaimed cells filled from
+    real part boards of the training videos (`scanner.feature_background`, cached with the pooled feature
+    moments);
+  - per-detector noise from the manner's own videos, floored at `noise_floor` × the background variance;
+  - parts with no output predicted by the background;
+  - one matching per video, temperature 1/(T·F) by default; combinations mixed by prior weight.
+- **One fix found on real data:** if each output draws its own fills, the matching picks, for every part,
+  whichever Monte Carlo variant of "no claim" happens to fit. "Claims nothing ×6" then beat the background
+  by 8-27. With fills shared across outputs and 256 draws, it is within ±3 of the background (about 0.2 per
+  video).
+
+**Real-data check** (training actors, `build()` path, summed over 15 videos):
+
+| Program | bowing | crisscrossing | jumping | swinging |
+| --- | --- | --- | --- | --- |
+| background only | 69.4 | 115.1 | 101.1 | 126.6 |
+| claims nothing, 6 outputs | 67.6 | 117.3 | 103.8 | 126.9 |
+| a moving band (universal*) | -80.5 | -108.0 | -52.6 | -66.2 |
+| a still band | -146.7 | -210.1 | -154.2 | -91.2 |
+| a central column, 6 outputs | -258.7 | -287.3 | -224.2 | -401.8 |
+
+**Cost:**
+- A short tempered chain (400 iterations × 4 replicas, jumping) took 100 s, about 60 ms per evaluation, so
+  a full v7 run (40000 iterations × 12 replicas) is many hours per chain.
+- `cell_draws` is the main lever: 64 draws are 4× cheaper but put "claims nothing" 3-5 below the
+  background.
+
+The MAP "distance" printed by `finish_manner` is now the matched NLL × temperature per part, which can be
+negative.

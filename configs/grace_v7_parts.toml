@@ -48,9 +48,13 @@ max_outputs = 6
 content_windows = true                 # `out` / `in` are never templates (diag4 ran without this rule)
 
 [inference]
-likelihood = "probabilistic"           # docs/probabilistic_semantics.md: cell values are p(yang), unknown motion mixed
-cell_draws = 8                         # binary boards drawn per state combination (fixed seeds)
-background = "occupancy"               # 0.5 = no claim: unclaimed cells follow the training base rate of part occupancy
+likelihood = "gaussian"                # docs/probabilistic_semantics.md 10-11: normalised density, cell values are p(yang),
+                                       # unknown motion mixed, unclaimed cells filled from real part boards (training actors)
+                                       # ("probabilistic" = the section 8-9 scorer: beta-implied noise, occupancy background)
+cell_draws = 256                       # boards drawn per state combination (fixed seeds, fills shared by all outputs)
+noise_floor = 0.1                      # observation noise >= 0.1 x the background variance, per detector
+# temperature = 1 / (T F) by default (gaussian only; beta and [selection].beta are unused by it)
+background = "occupancy"               # "probabilistic" only
 prior = "description_length"
 lambda_size = 0.5                      # lenient default; validation chooses from [selection]
 body_param_cost = 0.5
@@ -88,3 +92,4 @@ representation = "parts_scan"
 scan_softness = 0.05
 lot_salience = 0.75
 edge_samples = 4
+observation_cells = true               # parts quantised to the 12 x 12 cells before scanning, like LoT outputs

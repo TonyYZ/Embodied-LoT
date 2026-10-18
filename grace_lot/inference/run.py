@@ -61,6 +61,11 @@ def representation(cfg: dict) -> str:
 
 
 def observations_for(cfg: dict, videos) -> list:
+    if representation(cfg) == "parts_scan" and cfg["interface"].get("observation_cells", False):
+        from grace_lot.grace.scanner import scan_part_cells     # parts quantised to cells first, like LoT outputs
+        itf = cfg["interface"]
+        return [scan_part_cells(load_trajectory(cfg, v), cfg["preprocess"], itf["scan_softness"], itf["lot_salience"],
+                                itf["edge_samples"]) for v in videos]
     if representation(cfg) == "parts_scan":
         from grace_lot.grace.scanner import scan_parts
         itf = cfg["interface"]
@@ -79,7 +84,17 @@ def build(cfg: dict, observations):
     grammar = Grammar.from_config(cfg["lot"])
     renderer = LotRenderer(pre["frames"], pre["field_size"])
     prior = SizePrior.from_config(grammar, inf)
-    if representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
+    if representation(cfg) == "parts_scan" and inf.get("likelihood") == "gaussian":
+        from grace_lot.grace.scanner import feature_background
+        from grace_lot.inference.likelihood import GaussianScanLikelihood
+        itf = cfg["interface"]
+        if not itf.get("observation_cells", False):
+            raise ValueError("likelihood 'gaussian' needs interface.observation_cells")
+        lik = GaussianScanLikelihood(observations, pre["frames"], pre["field_size"], itf["scan_softness"],
+                                     itf["lot_salience"], feature_background(cfg), inf.get("temperature"),
+                                     inf.get("temporal_weight", 0.0), inf.get("cell_draws", 256),
+                                     inf.get("noise_floor", 0.1))
+    elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         itf = cfg["interface"]
         background = inf.get("background")

@@ -422,3 +422,19 @@ and browser-side evaluation for edited structures.
       deviations from the average body.
     - Cells vacated by moving mass read as known empty, so motion can't withdraw a claim.
 
+26. The normalised likelihood for v7 (`docs/probabilistic_semantics.md` §10-11; `inference.likelihood = "gaussian"`,
+    `GaussianScanLikelihood`).
+    - `interface.observation_cells`: observed parts are quantised to the 12 × 12 cells before scanning
+      (`scanner.part_boards`, `scan_part_cells`), so observed and LoT features come from the same `scan_field`.
+      The gaussian likelihood requires it.
+    - Each output predicts a part with a mean and a variance (claims with strength |2v − 1|; unclaimed cells
+      filled from real part boards of the training videos, `scanner.feature_background`, cached). All
+      outputs share each draw's fill, so the matching can't pick among Monte Carlo variants of "no claim".
+    - Observation noise per detector = across-actor variance of the manner's videos, floored at
+      `inference.noise_floor` (0.1) × the background variance. A part with no output is predicted by the
+      background.
+    - log p = −temperature × the matched Gaussian NLL; the temperature defaults to 1/(T·F). β is unused by it.
+    - v7 now uses it, with `cell_draws = 256`; `"probabilistic"` (item 25) remains selectable. Older configs
+      are unchanged.
+    - Not yet handled: `analysis/heldout.py` still scores with the matched likelihood on point features;
+      with this likelihood it must take the noise from the training videos, never the held-out ones.

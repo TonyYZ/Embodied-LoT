@@ -922,6 +922,100 @@ class GroupingTests(unittest.TestCase):
         self.assertTrue(np.allclose(cell_probability(v, 0.1), [0.0, 0.05, 0.1, 0.55, 1.0]))
         self.assertTrue(np.allclose(cell_probability(v, None), v))
 
+    def test_cell_observations_are_read_like_lot_outputs(self):
+        """Observed parts are quantised to cells (x -> column, y -> row, beyond the window -> border cells) and
+        scanned exactly as an LoT output drawing those cells would be."""
+        import numpy as np
+        from types import SimpleNamespace
+        from grace_lot.grace.scanner import part_boards, scan_field, scan_part_cells
+        pre = dict(window_x=[-0.65, 0.65], window_y=[-0.6, 0.7], field_size=12)
+        j = np.zeros((3, 33, 2))
+        j[:, :11] = [-0.6, -0.55]                                         # head: top-left cell
+        j[:, [24, 26]] = [2.0, 0.05]                                      # right leg: beyond the right edge
+        traj = SimpleNamespace(joints=j, connections=np.array([[0, 1], [11, 12], [11, 13], [12, 14], [23, 25], [24, 26]]))
+        B = part_boards(traj, pre, 4)
+        self.assertEqual(B.shape, (3, 6, 12, 12))
+        self.assertEqual(list(zip(*np.nonzero(B[0, 0]))), [(0, 0)])
+        self.assertEqual(list(zip(*np.nonzero(B[0, 5]))), [(6, 11)])
+        lot = np.zeros((3, 1, 12, 12)); lot[:, 0, 0, 0] = 1.0
+        self.assertTrue(np.allclose(scan_part_cells(traj, pre, 0.05, 0.75, 4)[:, 0], scan_field(lot, 0.05, 0.75)[:, 0]))
+
+    @staticmethod
+    def gaussian_setup(T=16):
+        """Real-part stand-ins: random rectangles; their features give the background moments."""
+        import numpy as np
+        from grace_lot.grace.scanner import scan_field
+        rng = np.random.default_rng(1)
+        boards = np.zeros((200, T, 12, 12), dtype=bool)
+        for b in boards:
+            r, c = rng.integers(0, 10, 2)
+            b[:, r:r + rng.integers(1, 4), c:c + rng.integers(1, 4)] = True
+        F = scan_field(boards.transpose(1, 0, 2, 3).astype(float), 0.05, 0.75).transpose(1, 0, 2)
+        d = np.diff(F, axis=1)
+        return dict(mu=F.mean(axis=(0, 1)), var=F.var(axis=(0, 1)), dmu=d.mean(axis=(0, 1)), dvar=d.var(axis=(0, 1)),
+                    boards=boards)
+
+    def test_gaussian_likelihood_is_a_normalised_density(self):
+        """A certain program: per video, the matched Gaussian log density at temperature 1 / (T F), with the
+        noise estimated across videos and floored, and parts without an output predicted by the background."""
+        import numpy as np
+        import embodied_lot
+        from scipy.optimize import linear_sum_assignment
+        from grace_lot.grace.scanner import scan_field
+        from grace_lot.inference.likelihood import GaussianScanLikelihood
+        from grace_lot.lot_adapter.adapter import rollout
+        embodied_lot.PROBABILISTIC_MOTION = True
+        bg = self.gaussian_setup()
+        rng = np.random.default_rng(0)
+        obs = [rng.uniform(0, 1, (16, 3, 6)) for _ in range(4)]
+        prog = parse_program("(parallel (serial_h top/V void/V) out)")
+        lik = GaussianScanLikelihood(obs, 16, 12, 0.05, 0.75, bg, noise_floor=0.1)
+        O = np.stack(obs)
+        s2 = np.maximum(O.var(axis=0).mean(axis=(0, 1)), np.maximum(0.1 * bg["var"], 1e-6))
+        self.assertTrue(np.allclose(lik.s2, s2))
+        mu = scan_field(rollout(prog, 16, 12), 0.05, 0.75)[:, 0]
+        chans = [(mu, s2)] + [(np.broadcast_to(bg["mu"], mu.shape), bg["var"] + s2)] * 2
+        want = []
+        for o in O:
+            C = np.array([[0.5 * (((o[:, p] - m) ** 2) / v + np.log(2 * np.pi * v)).sum() for p in range(3)]
+                          for m, v in chans])
+            r, c = linear_sum_assignment(C)
+            want.append(-C[r, c].sum() / (16 * 6))
+        self.assertTrue(np.allclose(lik.per_video_scores(prog), want))
+        hot = GaussianScanLikelihood(obs, 16, 12, 0.05, 0.75, bg, temperature=1.0)
+        self.assertTrue(np.allclose(hot.per_video_scores(prog), np.array(want) * 96))      # a pure temperature
+
+    def test_gaussian_likelihood_rewards_informative_claims(self):
+        """Videos of a still band: the band beats claiming nothing, which scores as the background does, and a
+        wrong sharp claim (a band elsewhere) scores below both. Moving videos prefer universal* to void*."""
+        import numpy as np
+        import embodied_lot
+        from grace_lot.grace.scanner import scan_field
+        from grace_lot.inference.likelihood import GaussianScanLikelihood
+        from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+        embodied_lot.PROBABILISTIC_MOTION = True
+        bg = self.gaussian_setup()
+        rng = np.random.default_rng(2)
+        scan = lambda src, states=None: scan_field(rollout(parse_program(src), 16, 12, states), 0.05, 0.75)[:, 0]
+        still = scan("(parallel center/V void/V* out)")
+        obs = [np.clip(still + rng.normal(0, 0.02, still.shape), 0, 1)[:, None] for _ in range(6)]
+        lik = GaussianScanLikelihood(obs, 16, 12, 0.05, 0.75, bg, temporal_weight=1.0)
+        right = lik(parse_program("(parallel center/V void/V* out)"))
+        nothing = lik(parse_program("(parallel neutral/V out)"))
+        wrong = lik(parse_program("(parallel top/V void/V* out)"))
+        background = sum(-lik.temperature * nll for _, _, nll in lik._matched(dict(
+            mu=np.zeros((16, 0, 6)), var=np.zeros((16, 0, 6)), dmu=np.zeros((15, 0, 6)), dvar=np.zeros((15, 0, 6)))))
+        self.assertGreater(right, nothing)
+        self.assertGreater(nothing, wrong)
+        self.assertAlmostEqual(nothing, background, delta=0.05 * abs(background) + 1.0)
+        mu = lik.moments(parse_program("(parallel neutral/H (parallel out out out))"))[0]["mu"]
+        self.assertTrue(np.allclose(mu, mu[:, :1]))          # outputs claiming the same share their fills
+        moving = "(parallel center/V universal/V* out)"
+        key = next(iter(motion_combinations(parse_program(moving), 12)[0][0]))
+        vids = [scan(moving, {key: s})[:, None] for s in ("a", "b", "a", "b")]
+        lik = GaussianScanLikelihood(vids, 16, 12, 0.05, 0.75, bg, temporal_weight=1.0)
+        self.assertGreater(lik(parse_program(moving)), lik(parse_program("(parallel center/V void/V* out)")))
+
     def test_probabilistic_likelihood_prices_unknown_motion_at_log2(self):
         """Videos drawn from a program's own distribution: void* wins on still ones, universal* on ones moving
         either way, neutral* on a mix; hedging between still and moving costs at most log 2 per video."""
