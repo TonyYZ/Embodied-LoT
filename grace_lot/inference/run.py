@@ -37,7 +37,7 @@ from grace_lot.grace.dataset import split_videos, study3_exemplars, substituted
 from grace_lot.grace.preprocess import load_trajectory
 from grace_lot.inference.grammar import Grammar
 from grace_lot.inference.likelihood import TrajectoryLikelihood
-from grace_lot.inference.mh import ladder_for, r_hat, run_tempered
+from grace_lot.inference.mh import calibrated_ladder, ladder_for, r_hat, run_tempered
 from grace_lot.inference.prior import SizePrior
 from grace_lot.inference.proposals import ProposalMixture
 from grace_lot.lot_adapter.adapter import LotRenderer
@@ -118,16 +118,32 @@ def build(cfg: dict, observations):
     return grammar, renderer, prior, lik, ProposalMixture(grammar, inf["move_weights"])
 
 
+def save_checkpoint(path: Path, chain) -> None:
+    """A chain's traces so far (written atomically, so ``status`` never reads half a file)."""
+    tmp = path.with_suffix(".tmp.npz")
+    np.savez(tmp, **{key: np.array(getattr(chain, key)) for key in ("log_post", "log_lik", "log_prior")})
+    tmp.replace(path)
+
+
 def run_one_chain(job):
-    cfg, manner, videos, k = job
+    cfg, manner, videos, k, out = job
     inf = cfg["inference"]
     observations = observations_for(cfg, videos)
     _, _, prior, lik, proposal = build(cfg, observations)
-    taus = ladder_for(inf, len(observations))
+    if inf.get("ladder") == "calibrated":                   # scaled to this likelihood, the same for a manner's chains
+        taus = calibrated_ladder(inf, prior, lik, proposal.grammar, random.Random(zlib.crc32(manner.encode())))
+    else:
+        taus = ladder_for(inf, len(observations))
     seed = inf["seed"] * 1000 + k + 17 * zlib.crc32(manner.encode())
     t0 = time.time()
+    checkpoint = out / "checkpoints" / f"{manner}_{k}.npz"
+
+    def report(it, chain):                                  # every progress_every iterations
+        print(f"  {manner} chain {k}: {it}/{inf['iterations']} iterations, "
+              f"{(time.time() - t0) / 60:.0f} min, log-post {chain.log_post[-1]:.1f}", flush=True)
+        save_checkpoint(checkpoint, chain)
     c = run_tempered(prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"],
-                     random.Random(seed), taus, inf.get("swap_every", 1))
+                     random.Random(seed), taus, inf.get("swap_every", 1), report, inf.get("progress_every", 0))
     return manner, k, {
         "samples": [str(p) for p in c.samples], "best": str(c.best), "best_log_post": c.best_log_post,
         "acceptance": c.acceptance_rate, "proposed": dict(c.moves), "accepted": dict(c.accepted),
@@ -180,9 +196,9 @@ def videos_for(cfg: dict, split: str):
 def run(cfg: dict, split: str, out: Path, manners=None, workers: int = 16, quiet: bool = False) -> None:
     by_manner, flags = videos_for(cfg, split)
     manners = manners or sorted(by_manner)
-    jobs = [(cfg, m, by_manner[m], k) for m in manners for k in range(cfg["inference"]["chains"])]
+    jobs = [(cfg, m, by_manner[m], k, out) for m in manners for k in range(cfg["inference"]["chains"])]
     done: Dict[str, List[dict]] = {m: [] for m in manners}
-    out.mkdir(parents=True, exist_ok=True)
+    (out / "checkpoints").mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(
         {"fit_split": split, **{k: cfg[k] for k in ("preprocess", "lot", "inference", "split")},
          "lot": resolved_lot(cfg["lot"]),
@@ -190,10 +206,34 @@ def run(cfg: dict, split: str, out: Path, manners=None, workers: int = 16, quiet
     with Pool(min(workers, len(jobs))) as pool:
         for manner, k, chain in pool.imap_unordered(run_one_chain, jobs):
             done[manner].append(chain)
+            if not quiet:
+                print(f"{manner}: chain {k} done in {chain['seconds'] / 60:.0f} min "
+                      f"({len(done[manner])}/{cfg['inference']['chains']})", flush=True)
             if len(done[manner]) == cfg["inference"]["chains"]:
                 line = finish_manner(cfg, manner, by_manner[manner], done.pop(manner), out, flags)
                 if not quiet:
                     print(line, flush=True)
+
+
+def status(out: Path) -> str:
+    """Convergence so far, from a run's checkpoints (or its finished traces): per manner, the iterations each chain
+    has done and the split R-hat of the log-posterior after burn-in, over the length all its chains have reached."""
+    inf = json.loads((out / "config.json").read_text())["inference"]
+    burn, lines = inf.get("burn_in", 0), []
+    traces: Dict[str, Dict[int, np.ndarray]] = {}
+    for f in sorted((out / "checkpoints").glob("*.npz")):
+        manner, k = f.stem.rsplit("_", 1)
+        traces.setdefault(manner, {})[int(k)] = np.load(f)["log_post"]
+    for f in sorted((out / "traces").glob("*.npz")) if (out / "traces").exists() else []:
+        traces[f.stem] = dict(enumerate(np.load(f)["log_post"]))          # finished: the full traces
+    for manner, chains in sorted(traces.items()):
+        done = [len(chains[k]) for k in sorted(chains)]
+        n = min(done) - burn
+        rh = r_hat([chains[k][burn:burn + n] for k in sorted(chains)]) if n >= 100 and len(chains) > 1 else float("nan")
+        verdict = "converged" if rh < 1.1 else ("not yet" if rh == rh else "too early")
+        lines.append(f"{manner:14s} iterations {done} of {inf['iterations']}  split R-hat {rh:.2f} over {max(n, 0)} "
+                     f"post-burn-in iterations  ({verdict})")
+    return "\n".join(lines) or "no checkpoints yet"
 
 
 def main() -> None:
@@ -204,7 +244,10 @@ def main() -> None:
     ap.add_argument("--set", nargs="*", default=[], help="overrides such as inference.beta=4000")
     ap.add_argument("--manners", nargs="*")
     ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--status", help="print convergence so far for this run directory, and exit")
     args = ap.parse_args()
+    if args.status:
+        return print(status(Path(args.status)))
     cfg = apply_overrides(load_config(args.config), args.set)
     out = Path(args.out) if args.out else cfg["data"]["results_dir"]
     run(cfg, args.split, out, args.manners, args.workers)

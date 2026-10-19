@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v7 Playground</title>
+<style>
+:root{
+  --bg:#f7f6f2; --panel:#ffffff; --ink:#1d1d1b; --muted:#6b6a64; --line:#d9d6cc;
+  --obs:#2f6fdb; --obs-soft:rgba(47,111,219,.12); --img:#d9761f; --meas:#7a5cc4;
+  --body:#1f9a5a; --field:#b8336a; --cell:29,29,27; --yin:#7a5cc4; --accent:#b8336a;
+  --warn-bg:#fdf3dc; --warn:#7a4b00; --bug-bg:#fde4e4; --bug:#8a1c1c;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#17171a; --panel:#212126; --ink:#ecebe6; --muted:#a3a29b; --line:#3a3a40;
+  --obs:#6fa0ff; --obs-soft:rgba(111,160,255,.14); --img:#f0a050; --meas:#a48cf0;
+  --body:#4cc98a; --field:#ff6fa8; --cell:236,235,230; --yin:#a48cf0; --accent:#ff6fa8;
+  --warn-bg:#3a2e12; --warn:#f3cf7a; --bug-bg:#3d1818; --bug:#ffb1b1;
+}}
+:root[data-theme="dark"]{
+  --bg:#17171a; --panel:#212126; --ink:#ecebe6; --muted:#a3a29b; --line:#3a3a40;
+  --obs:#6fa0ff; --obs-soft:rgba(111,160,255,.14); --img:#f0a050; --meas:#a48cf0;
+  --body:#4cc98a; --field:#ff6fa8; --cell:236,235,230; --yin:#a48cf0; --accent:#ff6fa8;
+  --warn-bg:#3a2e12; --warn:#f3cf7a; --bug-bg:#3d1818; --bug:#ffb1b1;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.5}
+main{max-width:1200px;margin:0 auto;padding:20px 16px 64px}
+h1{font-size:1.5rem;margin:0 0 4px}
+h2{font-size:1.05rem;margin:22px 0 8px}
+p{margin:6px 0}
+.muted{color:var(--muted)}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.88em}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:12px}
+textarea{width:100%;min-height:72px;font:14px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+button,select,input[type=number]{font:inherit;font-size:.92rem;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 10px}
+button{cursor:pointer}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+input[type=number]{width:70px}
+.msg{border-radius:6px;padding:8px 10px;margin-top:8px;font-size:.92rem}
+.msg.warn{background:var(--warn-bg);color:var(--warn)}
+.msg.bug{background:var(--bug-bg);color:var(--bug)}
+.msg.ok{color:var(--muted);padding-left:0}
+.msg ul{margin:4px 0 0 18px;padding:0}
+pre{white-space:pre-wrap;font-size:.8rem;margin:6px 0 0}
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;margin-top:8px}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.boards figure{margin:0}
+.boards figcaption{font-size:.8rem;color:var(--muted);margin-bottom:3px}
+svg{display:block;max-width:100%;height:auto}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.controls input[type=range]{flex:1 1 200px}
+.tick{font-variant-numeric:tabular-nums;font-weight:600;min-width:64px}
+.phases{list-style:none;padding:0;margin:0;font-size:.9rem}
+.phases li{padding:6px 0;border-top:1px solid var(--line)}
+.phases li:first-child{border-top:0}
+.phases .k{font-weight:600;display:inline-block;min-width:96px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted);margin-top:8px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}
+.units label{font-size:.88rem;margin-right:10px}
+.tag-obs{color:var(--obs);font-weight:600}.tag-img{color:var(--img);font-weight:600}.tag-body{color:var(--body);font-weight:600}.tag-meas{color:var(--meas);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>v7 playground</h1>
+<p class="muted">Type a program and step it on the 12×12 gameboard. The server runs the real engine (<code>embodied_lot</code>) under the semantics of <code id="cfg"></code>, so what you see is what inference sees. Each run checks itself against <code>ConceptGraph.step()</code> and against the whole-program rollout; a difference shows up as a bug below.</p>
+
+<div class="card">
+  <div class="row" style="margin-top:0">
+    <label class="muted" for="examples" style="font-size:.9rem">Examples</label>
+    <select id="examples"></select>
+  </div>
+  <div style="margin-top:8px"><textarea id="program" spellcheck="false" aria-label="Program"></textarea></div>
+  <div class="row">
+    <button class="primary" id="run">Run</button>
+    <label class="muted" style="font-size:.9rem">ticks <input type="number" id="ticks" min="1" max="80" value="24"></label>
+    <span class="muted" style="font-size:.85rem">Ctrl+Enter runs · trees side by side, then <code>| .a.b&gt;.c.d</code> for dashed edges</span>
+  </div>
+  <div class="row units" id="units"></div>
+  <div id="messages"></div>
+</div>
+
+<div class="card" id="view" hidden>
+  <div class="prog muted" id="prog" style="font:13px ui-monospace,Consolas,monospace;word-break:break-all"></div>
+  <div class="grid2">
+    <div>
+      <h2 style="margin-top:8px">Boards</h2>
+      <div class="boards" id="boards"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:rgba(var(--cell),.85)"></span>figure (1)</span>
+        <span><span class="sw" style="background:var(--yin)"></span>known empty (0)</span>
+        <span><span class="sw" style="border:1px solid var(--line)"></span>unknown (0.5)</span>
+        <span><span class="sw" style="border:2px dashed var(--obs)"></span>observer</span>
+        <span><span class="sw" style="border:2px dashed var(--meas)"></span>measure tree</span>
+        <span><span class="sw" style="border:2px solid var(--body)"></span>body</span>
+        <span><span class="sw" style="border:2px solid var(--field)"></span>field</span>
+      </div>
+      <h2>Output windows <span class="muted" style="font-weight:400;font-size:.85rem">what the likelihood scores, after this tick</span></h2>
+      <div class="boards" id="channels"></div>
+    </div>
+    <div>
+      <h2 style="margin-top:8px">The forest</h2>
+      <svg id="tree"></svg>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--obs)"></span>observer</span>
+        <span><span class="sw" style="background:var(--img)"></span>imagined</span>
+        <span><span class="sw" style="background:var(--meas)"></span>measure tree</span>
+        <span>fill = activation · bar = gate</span>
+      </div>
+    </div>
+  </div>
+  <div class="controls">
+    <button id="first" aria-label="First tick">⏮</button>
+    <button id="prev" aria-label="Previous tick">◀</button>
+    <button id="play" aria-label="Play">▶</button>
+    <button id="next" aria-label="Next tick">▶︎|</button>
+    <span class="tick" id="tick"></span>
+    <input type="range" id="scrub" min="0" value="0" aria-label="Tick">
+    <select id="speed" aria-label="Speed"><option value="700">slow</option><option value="350" selected>normal</option><option value="150">fast</option></select>
+  </div>
+  <h2>What happened this tick</h2>
+  <ul class="phases" id="phases"></ul>
+</div>
+</main>
+
+<script id="boot" type="application/json">__BOOT__</script>
+<script>
+const BOOT = (() => {     // the playground server fills in the boot data; every run goes through it
+  try { return JSON.parse(document.getElementById('boot').textContent); } catch (e) {
+    document.querySelector('main').insertAdjacentHTML('beforeend',
+      '<div class="card"><b>This page needs the playground server.</b> Run ' +
+      '<code>python -m grace_lot.analysis.playground</code> and open ' +
+      '<code>http://localhost:8765/gameboard</code>.</div>');
+    document.getElementById('run').disabled = true;
+    throw new Error('playground_page.html needs the server: python -m grace_lot.analysis.playground');
+  }
+})();
+const NS = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = v => (Math.round(v * 100) / 100).toFixed(2);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+let D = null, t = 0, timer = null, states = {};
+
+$('cfg').textContent = BOOT.config;
+BOOT.examples.forEach((e, i) => { const o = document.createElement('option'); o.value = i; o.textContent = e.title; $('examples').appendChild(o); });
+$('examples').onchange = () => { $('program').value = BOOT.examples[+$('examples').value].program; states = {}; run(); };
+$('program').value = BOOT.examples[0].program;
+
+async function run() {
+  stop();
+  $('run').disabled = true; $('run').textContent = 'Running…';
+  try {
+    const r = await fetch('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({program: $('program').value, ticks: +$('ticks').value, states})});
+    const d = await r.json();
+    if (d.error) { showError(d); return; }
+    D = d; t = Math.min(t, D.frames.length - 1);
+    states = Object.fromEntries(D.units.map(u => [u.key, u.state]));
+    showMessages(); showUnits(); $('view').hidden = false; render();
+  } catch (e) {
+    showError({error: 'Could not reach the playground server. Is it still running?', trace: String(e)});
+  } finally { $('run').disabled = false; $('run').textContent = 'Run'; }
+}
+
+function showError(d) {
+  $('messages').innerHTML = `<div class="msg bug"><b>${esc(d.error)}</b>${d.trace ? `<pre>${esc(d.trace)}</pre>` : ''}</div>`;
+  $('view').hidden = true; $('units').innerHTML = '';
+}
+
+function showMessages() {
+  const m = [];
+  if (D.bugs.length) m.push(`<div class="msg bug"><b>Engine inconsistency</b><ul>${D.bugs.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`);
+  if (D.issues.length) m.push(`<div class="msg warn"><b>Outside the configured language</b> (the engine still runs it; inference would never propose it)<ul>${D.issues.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`);
+  if (!D.bugs.length && !D.issues.length) m.push(`<div class="msg ok">In the language · ${D.windows.length} output window${D.windows.length === 1 ? '' : 's'} · ${D.combinations} motion realization${D.combinations === 1 ? '' : 's'} · recorder and component rollouts agree with the engine</div>`);
+  else if (!D.bugs.length) m.push(`<div class="msg ok">Recorder and component rollouts agree with the engine</div>`);
+  $('messages').innerHTML = m.join('');
+}
+
+function showUnits() {
+  if (!D.units.length) { $('units').innerHTML = ''; return; }
+  $('units').innerHTML = '<span class="muted" style="font-size:.88rem">Unknown motion, this realization:</span> ' + D.units.map(u =>
+    `<label>${esc(u.key)} <select data-key="${esc(u.key)}">${u.options.map(o => `<option${o === u.state ? ' selected' : ''}>${o}</option>`).join('')}</select></label>`).join('');
+  $('units').querySelectorAll('select').forEach(s => s.onchange = () => { states[s.dataset.key] = s.value; run(); });
+}
+
+function board(svg, img, f, overlays) {
+  const N = D.grid, C = 20, P = 2;
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox', `0 0 ${N * C + 2 * P} ${N * C + 2 * P}`);
+  const g = el('g', {transform: `translate(${P},${P})`}, svg);
+  el('rect', {x: 0, y: 0, width: N * C, height: N * C, fill: css('--panel'), stroke: css('--line')}, g);
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const v = img[r][c], k = Math.abs(v - 0.5) * 2;
+    const cell = el('rect', {x: c * C + .5, y: r * C + .5, width: C - 1, height: C - 1, rx: 2,
+      fill: k < 0.02 ? 'transparent' : v > 0.5 ? `rgba(${css('--cell')},${(0.85 * k).toFixed(3)})` : css('--yin'),
+      'fill-opacity': v < 0.5 && k >= 0.02 ? (0.85 * k).toFixed(3) : 1, stroke: css('--line'), 'stroke-width': .5}, g);
+    el('title', {}, cell).textContent = `row ${r}, column ${c}: ${fmt(v)}`;
+  }
+  if (!overlays) return;
+  const outline = (cells, color, dash, width) => {
+    for (const [r, c] of cells) el('rect', {x: c * C + 1.5, y: r * C + 1.5, width: C - 3, height: C - 3, fill: 'none',
+      stroke: color, 'stroke-width': width, 'stroke-dasharray': dash, rx: 2}, g);
+  };
+  for (const u of f.units) outline(u.cells, css(u.kind === 'field' ? '--field' : '--body'), '', 2);
+  for (const o of f.observers) outline(o.cells, css('--obs'), '3 2', 1.2);
+  for (const o of f.measures) outline(o.cells, css('--meas'), '3 2', 1.2);
+}
+
+function figure(parent, caption, img, f, overlays) {
+  const fig = document.createElement('figure');
+  const cap = document.createElement('figcaption'); cap.textContent = caption; fig.appendChild(cap);
+  const svg = document.createElementNS(NS, 'svg'); fig.appendChild(svg); parent.appendChild(fig);
+  board(svg, img, f, overlays);
+}
+
+function tree(f) {
+  const svg = $('tree'); svg.innerHTML = '';
+  const xs = D.nodes.map(n => n.x), ys = D.nodes.map(n => n.y);
+  const DX = 74, DY = 70, PX = 46, PY = 46;
+  const W = (Math.max(...xs) + 1) * DX + PX, H = Math.max(...ys) * DY + 2 * PY + 30;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const pos = {}; D.nodes.forEach(n => pos[n.id] = [PX + n.x * DX, PY + 20 + n.y * DY]);
+  const defs = el('defs', {}, svg);
+  const m = el('marker', {id: 'arr', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse'}, defs);
+  el('path', {d: 'M0,0 L10,5 L0,10 z', fill: css('--accent')}, m);
+  for (const n of D.nodes) if (n.parent && pos[n.parent]) {
+    const [x1, y1] = pos[n.parent], [x2, y2] = pos[n.id];
+    el('line', {x1, y1, x2, y2, stroke: css('--line'), 'stroke-width': 2}, svg);
+  }
+  const changed = new Set(f.gate_changes.map(c => c.node));
+  for (const e of D.dashed) {
+    if (!pos[e.source] || !pos[e.target]) continue;
+    const [x1, y1] = pos[e.source], [x2, y2] = pos[e.target];
+    const lift = 34 + Math.abs(x2 - x1) * 0.12, my = Math.min(y1, y2) - lift;
+    el('path', {d: `M${x1},${y1 - 20} C${x1},${my} ${x2},${my} ${x2},${y2 - 22}`, fill: 'none',
+      stroke: css('--accent'), 'stroke-width': changed.has(e.target) ? 3.5 : 2, 'stroke-dasharray': '6 4',
+      'marker-end': 'url(#arr)', opacity: changed.has(e.target) ? 1 : .75}, svg);
+  }
+  const onset = new Set(f.onsets), meas = new Set(f.measures.map(o => o.id));
+  for (const n of D.nodes) {
+    const [x, y] = pos[n.id], role = f.role[n.id], a = f.activation[n.id] ?? 0, gate = f.gate[n.id] ?? 1;
+    const col = css(meas.has(n.id) ? '--meas' : role === 'observer' ? '--obs' : '--img');
+    const g = el('g', {}, svg);
+    const leaf = !D.nodes.some(k => k.parent === n.id);
+    const shape = leaf ? el('circle', {cx: x, cy: y, r: 16}, g) : el('rect', {x: x - 20, y: y - 15, width: 40, height: 30, rx: 7}, g);
+    shape.setAttribute('fill', col); shape.setAttribute('fill-opacity', (0.08 + 0.85 * Math.min(1, a)).toFixed(3));
+    shape.setAttribute('stroke', onset.has(n.id) ? css('--accent') : col); shape.setAttribute('stroke-width', onset.has(n.id) ? 5 : 2);
+    el('text', {x, y: y + 4, 'text-anchor': 'middle', 'font-size': 10.5, 'font-weight': 700, fill: css('--ink')}, g).textContent = n.id;
+    el('text', {x, y: y + 31, 'text-anchor': 'middle', 'font-size': 10, fill: css('--muted')}, g).textContent = n.label;
+    el('rect', {x: x - 18, y: y + 36, width: 36, height: 4, fill: css('--line'), rx: 2}, g);
+    el('rect', {x: x - 18, y: y + 36, width: 36 * Math.max(0, Math.min(1, gate)), height: 4, fill: changed.has(n.id) ? css('--accent') : css('--ink'), rx: 2}, g);
+    el('title', {}, g).textContent = `${n.id} ${n.label}\nrole: ${meas.has(n.id) ? 'measure tree' : role}\nactivation ${fmt(a)}\ngate ${fmt(gate)}`;
+  }
+}
+
+const label = id => { const n = D.nodes.find(n => n.id === id); return n ? `${id} ${n.label}` : id; };
+const way = o => o.axis === 'vertical' ? (o.direction > 0 ? 'down' : 'up') : (o.direction > 0 ? 'right' : 'left');
+
+function phases(f) {
+  const li = [];
+  const obs = f.observers.map(o => `<span class="tag-obs">${esc(label(o.id))}</span> sees ${fmt(o.value)}`)
+    .concat(f.measures.map(o => `<span class="tag-meas">${esc(label(o.id))}</span> measures ${fmt(o.value)}`)).join('; ');
+  li.push(`<span class="k">1 Perceive</span>${obs || '<span class="muted">no observers or measure trees</span>'}`);
+  const iss = f.issued.map(o => `<span class="tag-img">${esc(label(o.leaf))}</span> → <span class="tag-body">${esc(o.unit)}</span>: ${fmt(o.cells)} cells ${way(o)} (frame axes), ${fmt(o.rate)} per tick`).join('; ');
+  li.push(`<span class="k">2 Orders</span>${iss || '<span class="muted">no new orders</span>'}`);
+  const drive = f.tokens.filter(u => u.drive.some(v => Math.abs(v) > 1e-9)).map(u => `<span class="tag-body">${esc(u.id)}</span> drive (${u.drive.map(fmt).join(', ')})`).join('; ');
+  li.push(`<span class="k">3 Agency</span>${drive || '<span class="muted">no body is driving itself</span>'}`);
+  const gc = f.gate_changes.map(c => `gate of <b>${esc(label(c.node))}</b> ${fmt(c.from)} → ${fmt(c.to)}`).join('; ');
+  li.push(`<span class="k">4 Propagate</span>${gc ? gc + ' <span class="muted">(acts from the next tick)</span>' : '<span class="muted">no gate changes</span>'}`);
+  const step = s => [s.rows ? `${Math.abs(s.rows)} ${s.rows > 0 ? 'down' : 'up'}` : '', s.cols ? `${Math.abs(s.cols)} ${s.cols > 0 ? 'right' : 'left'}` : ''].filter(Boolean).join(' and ');
+  const moved = f.shifts.map(s => `<span class="tag-body">${esc(label(s.unit))}</span> moved ${step(s)}`)
+    .concat(f.mass.map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s mass moved`)).join('; ');
+  const pend = f.tokens.filter(u => u.orders.length).map(u => `<span class="tag-body">${esc(u.id)}</span>: ${u.orders.map(o => `${fmt(o.cells)} cells ${way(o)} (credit ${fmt(o.credit)})`).join(', ')}`).join('; ');
+  li.push(`<span class="k">5 Move</span>${moved || '<span class="muted">nothing moved</span>'}${pend ? ' · still to go: ' + pend : ''}`);
+  li.push(`<span class="k">6 Draw</span>each tree draws its own space; observers read this drawing next tick`);
+  $('phases').innerHTML = li.map(s => `<li>${s}</li>`).join('');
+}
+
+function render() {
+  if (!D) return;
+  const f = D.frames[t];
+  $('prog').textContent = D.program;
+  $('scrub').max = D.frames.length - 1; $('scrub').value = t;
+  $('tick').textContent = `tick ${t}`;
+  const b = $('boards'); b.innerHTML = '';
+  figure(b, 'Seen (last tick, all trees)', f.seen, f, false);
+  figure(b, 'Drawn this tick (all trees)', f.drawn, f, true);
+  if (D.roots.length > 1) D.roots.forEach((r, i) => figure(b, `Tree ${i}'s own space`, f.spaces[r], f, true));
+  const c = $('channels'); c.innerHTML = '';
+  const ch = D.channels[t + 1];
+  ch.forEach((img, k) => figure(c, `window ${k} (${D.windows[k] || 'tree'})`, img, f, false));
+  tree(f);
+  phases(f);
+}
+
+function stop() { clearInterval(timer); timer = null; $('play').textContent = '▶'; }
+function play() {
+  if (timer) return stop();
+  $('play').textContent = '⏸';
+  timer = setInterval(() => { t = (t + 1) % D.frames.length; render(); }, +$('speed').value);
+}
+$('run').onclick = run;
+$('program').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); } });
+$('play').onclick = play;
+$('first').onclick = () => { stop(); t = 0; render(); };
+$('prev').onclick = () => { stop(); t = Math.max(0, t - 1); render(); };
+$('next').onclick = () => { stop(); t = Math.min(D.frames.length - 1, t + 1); render(); };
+$('scrub').oninput = e => { stop(); t = +e.target.value; render(); };
+$('speed').onchange = () => { if (timer) { stop(); play(); } };
+document.addEventListener('keydown', e => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || !D) return;
+  if (e.key === 'ArrowRight') $('next').click();
+  else if (e.key === 'ArrowLeft') $('prev').click();
+  else if (e.key === ' ') { e.preventDefault(); play(); }
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+run();
+</script>
+</body>
+</html>

@@ -123,7 +123,15 @@ svg{display:block;max-width:100%;height:auto}
 
 <script id="data" type="application/json">__DATA__</script>
 <script>
-const DATA = JSON.parse(document.getElementById('data').textContent);
+const DATA = (() => {     // a template: gameboard_traces.py fills in the traces and writes the page
+  try { return JSON.parse(document.getElementById('data').textContent); } catch (e) {
+    document.querySelector('main').insertAdjacentHTML('afterbegin',
+      '<div class="card" style="margin-bottom:16px"><b>This is the page template, without its traces.</b> ' +
+      'Run <code>python -m grace_lot.analysis.gameboard_traces</code> and open ' +
+      '<code>results/gameboard_viz/gameboard.html</code>.</div>');
+    throw new Error('gameboard_page.html is a template: open results/gameboard_viz/gameboard.html');
+  }
+})();
 const NS = 'http://www.w3.org/2000/svg';
 let ex = 0, t = 0, timer = null;
 const $ = id => document.getElementById(id);

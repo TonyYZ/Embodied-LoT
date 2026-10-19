@@ -102,6 +102,19 @@ def temperature_ladder(n: int, tau_min: float) -> List[float]:
     return [1.0] if n <= 1 else list(np.geomspace(1.0, tau_min, n))
 
 
+def calibrated_ladder(inf: dict, log_prior, log_lik, grammar, rng: random.Random) -> List[float]:
+    """A ladder scaled to the likelihood itself (``inference.ladder = "calibrated"``).
+
+    ``ladder_samples`` programs drawn from the prior are scored; the hottest replica's inverse temperature
+    shrinks the spread (standard deviation) of their log-likelihoods to ``hot_spread`` nats, so it moves
+    almost as the prior does whatever the likelihood's scale (the Gaussian likelihood ignores ``beta``).
+    """
+    lls = [log_lik(initial_state(grammar, log_prior, rng)) for _ in range(inf.get("ladder_samples", 32))]
+    spread = float(np.std(lls))
+    tau_min = min(1.0, inf.get("hot_spread", 1.0) / spread) if spread > 0 else 1.0
+    return temperature_ladder(inf.get("replicas", 1), tau_min)
+
+
 def ladder_for(inf: dict, n_observations: int) -> List[float]:
     """The ladder for a run. The hottest replica sees a total likelihood weight of
     ``hot_beta`` (beta x n_observations x tau_min = hot_beta), so the ladder adapts to beta
@@ -112,8 +125,12 @@ def ladder_for(inf: dict, n_observations: int) -> List[float]:
 
 def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
                  proposal: ProposalMixture, iterations: int, burn_in: int, thin: int,
-                 rng: random.Random, taus: List[float], swap_every: int = 1) -> Chain:
-    """Parallel tempering. Returns the tau = 1 chain; swap statistics are in ``chain.swaps``."""
+                 rng: random.Random, taus: List[float], swap_every: int = 1,
+                 progress: Optional[Callable[[int, Chain], None]] = None, progress_every: int = 0) -> Chain:
+    """Parallel tempering. Returns the tau = 1 chain; swap statistics are in ``chain.swaps``.
+
+    ``progress(iteration, chain so far)`` is called every ``progress_every`` iterations.
+    """
     chain = Chain()
     states = []
     for _ in taus:
@@ -132,13 +149,20 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
                 states[k], states[k + 1] = b, a
                 done[k] += 1
         _record(chain, states[0], it, burn_in, thin)
+        if progress and progress_every and (it + 1) % progress_every == 0:
+            progress(it + 1, chain)
     chain.swaps = (done / np.maximum(tried, 1)).tolist()
     return chain
 
 
 def r_hat(traces: List[List[float]]) -> float:
-    """Gelman-Rubin potential scale reduction of a scalar trace (here, the log-posterior)."""
+    """Split Gelman-Rubin potential scale reduction of a scalar trace (here, the log-posterior).
+
+    Each chain is cut into halves treated as separate chains, so a chain still drifting is flagged too.
+    """
     x = np.array([t for t in traces], float)
+    half = x.shape[1] // 2
+    x = np.concatenate([x[:, :half], x[:, x.shape[1] - half:]]) if half else x
     m, n = x.shape
     if m < 2 or n < 2:
         return float("nan")

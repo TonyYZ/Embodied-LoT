@@ -72,7 +72,10 @@ seed = 1
 move_weights = { regenerate = 0.2, leaf = 0.15, composition = 0.08, body = 0.07, swap = 0.05, add_dashed = 0.08, remove_dashed = 0.08, wrap = 0.06, unwrap = 0.06, add_child = 0.085, remove_child = 0.085 }
 replicas = 12
 hot_beta = 20.0
+ladder = "calibrated"                  # hottest replica shrinks the prior-sample log-lik spread to hot_spread nats
+hot_spread = 1.0
 swap_every = 1
+progress_every = 2000                  # a progress line per chain every this many iterations (0 = none)
 
 [split]
 test_actors = ["02M", "04M", "06F", "09F", "11M"]

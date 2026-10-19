@@ -6,9 +6,12 @@ import random
 import unittest
 from collections import Counter
 
+import numpy as np
+
 from grace_lot.inference.grammar import Grammar
 from grace_lot.inference.diagnostics import reachability
-from grace_lot.inference.mh import run_chain, run_tempered, temperature_ladder
+from grace_lot.inference.mh import (calibrated_ladder, initial_state, r_hat, run_chain, run_tempered,
+                                     temperature_ladder)
 from grace_lot.inference.prior import SizePrior
 from grace_lot.inference.proposals import ProposalMixture
 from grace_lot.lot_adapter.program import (LEAF, P, Program, candidate_edges, nodes, parse, parse_program, size,
@@ -116,6 +119,26 @@ class InferenceTests(unittest.TestCase):
         tv = 0.5 * sum(abs(emp[k] / len(chain.samples) - v) for k, v in exact.items())
         self.assertLess(tv, 0.04)
         self.assertTrue(all(0 < a < 1 for a in chain.swaps))
+
+    def test_calibrated_ladder_shrinks_the_prior_spread_to_hot_spread(self):
+        prior = SizePrior(TINY, 0.7, 0.5)
+        log_lik = lambda t: -300.0 * size(t.tree)              # spread scales with the likelihood, not with beta
+        inf = dict(replicas=5, hot_spread=2.0, ladder_samples=64)
+        taus = calibrated_ladder(inf, prior, log_lik, TINY, random.Random(0))
+        rng = random.Random(0)
+        lls = [log_lik(initial_state(TINY, prior, rng)) for _ in range(64)]
+        self.assertEqual(len(taus), 5)
+        self.assertEqual(taus[0], 1.0)
+        self.assertAlmostEqual(taus[-1] * float(np.std(lls)), 2.0)
+        self.assertEqual(calibrated_ladder(inf, prior, lambda t: 0.0, TINY, random.Random(0)), [1.0] * 5)
+
+    def test_split_r_hat_flags_chains_that_drift_together(self):
+        rng = np.random.default_rng(0)
+        steady = rng.normal(size=(4, 2000))
+        self.assertLess(r_hat(steady), 1.01)
+        drifting = steady + np.linspace(0, 10, 2000)          # four chains agreeing with each other, all still climbing
+        self.assertGreater(r_hat(drifting), 1.1)
+        self.assertGreater(r_hat(steady + np.arange(4)[:, None] * 3.0), 1.1)   # same spread, different ranges
 
     def test_every_legal_program_is_reachable(self):
         r = reachability(TINY, SizePrior(TINY, 0.7, 0.5))
@@ -932,6 +955,45 @@ class GroupingTests(unittest.TestCase):
         self.assertTrue(np.all(legacy[3][:, :3] == 0.5))
         self.assertTrue(np.array_equal(v[3] == 1.0, legacy[3] == 1.0))   # the body is where it was
 
+    def test_moving_body_leaves_a_full_trail(self):
+        """Cells a body only passed through, beyond its home, stay known empty after it has gone."""
+        import numpy as np
+        from grace_lot.lot_adapter.adapter import rollout
+        src = "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"
+        v = rollout(parse_program(src), 12, 12)[:, 0]
+        body = np.flatnonzero((v[-1] == 1.0).any(axis=0))
+        self.assertGreater(body.min(), 4)                                 # it has left home (columns 0-3) and more
+        self.assertTrue(np.all(v[-1][:, :body.min()] == 0.0))            # everything it crossed: known empty
+
+    def test_content_moving_in_covers_emptiness_left_behind(self):
+        """Two bodies marching in file: the rear one walks into cells the front one vacated and is drawn there
+        as figure, not as a figure-on-empty contradiction (0.5)."""
+        import numpy as np
+        from grace_lot.lot_adapter.adapter import rollout
+        src = "(parallel (serial_h (body (parallel center/V bottom/H*)) (body (parallel center/V bottom/H*)) neutral/H) out)"
+        v = rollout(parse_program(src), 4, 12)[:, 0]
+        self.assertTrue(np.all(v[3][6, 3:11] == 1.0))                    # both bodies, one cell further on
+        self.assertTrue(np.all(v[3][6, :3] == 0.0))                      # the rear one's trail
+
+    def test_component_rollouts_equal_whole_rollouts(self):
+        """Trees joined by no dashed edge are rolled out (and cached) on their own, with the same result."""
+        import numpy as np
+        from grace_lot.lot_adapter import adapter
+        srcs = ["(parallel (field periphery/V) (body (body periphery/H)) center/H) neutral/V* bottom/V out "
+                "(field periphery/V) top/H",
+                "(parallel periphery/V (field (body out)) periphery/H*) (parallel center/V void/V*) "
+                "(serial_v (serial_v periphery/H) top/V) | .1>.0",
+                "(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) "
+                "(parallel (serial_v (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) neutral/V) out) "
+                "(parallel out (body universal/H)) | .0.0.1>.0.0.0 .0.1.1>.0.1.0"]
+        for src in srcs:
+            p = parse_program(src)
+            self.assertGreater(len(adapter._components(p)), 1)
+            for states, _ in adapter.motion_combinations(p, 12):
+                whole = adapter.rollout_whole(p, 10, 12, states)
+                for _ in range(2):                                           # cold, then from the cache
+                    self.assertTrue(np.array_equal(adapter.rollout(p, 10, 12, states), whole))
+
     def test_half_means_no_claim(self):
         import numpy as np
         from grace_lot.inference.likelihood import cell_probability
@@ -1065,6 +1127,22 @@ class GroupingTests(unittest.TestCase):
             if name == "moving":
                 self.assertTrue(0 < sc["universal"] - sc["neutral"] <= 6 * math.log(2) + 1e-6)
         self.assertEqual(best, {"still": "void", "moving": "universal", "mixed": "neutral"})
+
+
+class PlaygroundTests(unittest.TestCase):
+    def test_examples_agree_with_the_engine(self):
+        """The playground's phase-by-phase recording equals ConceptGraph.step(), and component rollouts equal
+        whole-program rollouts, for every example."""
+        import embodied_lot
+        from grace_lot.analysis.playground import EXAMPLES, record
+        saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        try:
+            for title, src in EXAMPLES:
+                r = record(src, 12, {}, "configs/grace_v7_parts.toml")
+                self.assertEqual(r["bugs"], [], title)
+                self.assertEqual(len(r["channels"]), 13)
+        finally:
+            vars(embodied_lot).update(saved)
 
 
 class InterfaceTests(unittest.TestCase):

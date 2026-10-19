@@ -208,9 +208,14 @@ Only contradictions, such as figure piled onto empty at an edge, stay at 0.5.
 
 The same holds for bodies (added later, same flag): a body or group instance drawn away from the region it
 receives leaves the cells it would claim there, but no longer claims, as known empty, as strongly as they
-were claimed. As with pushed mass, the trail is home minus current position: cells a body only passed
-through, outside its home, return to whatever the tree draws there. The caterpillar demo's motion is
-unchanged; its clock observer now rests at 0 between pulses instead of 0.25-0.5.
+were claimed. The caterpillar demo's motion is unchanged; its clock observer now rests at 0 between pulses
+instead of 0.25-0.5.
+
+Later still (same flag), the trail became a full trail: once a body has moved, every cell it has claimed so
+far, at home or anywhere it has passed through since, reads as known empty when it no longer claims it, at
+the strongest claim it made there. The renderer keeps each moved body's (or instance's) strongest claim per
+cell until `reset_gates()`. Before, only the home region was remembered, so cells a body had merely crossed
+went back to "no claim".
 
 Real-data triples afterwards (training actors, current sampling, 3 shuffles):
 

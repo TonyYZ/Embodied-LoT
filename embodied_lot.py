@@ -231,6 +231,15 @@ def _compose(yang_complement: np.ndarray, yin_complement: np.ndarray) -> np.ndar
     return np.clip(1.0 - yang_complement, 0.0, 1.0)
 
 
+def _covered(yang_complement: np.ndarray, yin_complement: np.ndarray, left: np.ndarray) -> np.ndarray:
+    """The yin complement once emptiness left behind by motion (``left``, PROBABILISTIC_MOTION) is added
+    where nothing else claims the cell: content that moves into a vacated cell covers it."""
+    if left.min() >= 1.0:
+        return yin_complement
+    free = (yang_complement >= 1.0) & (yin_complement >= 1.0)
+    return np.where(free, yin_complement * left, yin_complement)
+
+
 _UNKNOWN_MOTION = {TRIGRAM_PATTERNS["universal"]: "universal", TRIGRAM_PATTERNS["neutral"]: "neutral"}   # PROBABILISTIC_MOTION
 
 def unknown_value() -> float:
@@ -1168,6 +1177,7 @@ class ConceptGraph:
         self._inside: Dict[str, set] = {}        # gameboard: bodies inside each switched-on motion leaf's region
         self._mass: Dict[str, dict] = {}         # gameboard: each root's mass particles (MOTION_KINDS)
         self._tick = 0
+        self._trails: Dict[tuple, np.ndarray] = {}   # probabilistic motion: each moved body's strongest claim per cell so far
         self._version = 0                        # bumped by every structural change (metadata cache key)
         self._meta_key = None
         self._meta_cache: Dict[str, object] = {}
@@ -1311,6 +1321,7 @@ class ConceptGraph:
         conditioned), and pending
         movement orders, onset memory and imagery are cleared.
         """
+        self._trails = {}
         for node in self._nodes.values():
             node.gate = 1.0
             if isinstance(node, PORTALS):
@@ -1624,16 +1635,16 @@ class ConceptGraph:
         drawing is reused (the same inputs give the same drawing).
         """
         cache = self.__dict__.setdefault("_draw_cache", {})
-        yang, yin, spaces = np.ones(self.grid), np.ones(self.grid), {}
+        yang, yin, left, spaces = np.ones(self.grid), np.ones(self.grid), np.ones(self.grid), {}
         for r in self.roots:
             key = self._draw_key(r.node_id)
             hit = cache.get(r.node_id)
             if hit is None or hit[0] != key:
-                a, b = self._paint_root(self.grid, r.node_id, place_bodies=True)
-                hit = cache[r.node_id] = (key, a, b, _compose(a, b))
-            _, a, b, spaces[r.node_id] = hit
-            yang, yin = yang * a, yin * b
-        return spaces, _compose(yang, yin)
+                a, b, v = self._paint_root(self.grid, r.node_id, place_bodies=True)
+                hit = cache[r.node_id] = (key, a, b, v, _compose(a, _covered(a, b, v)))
+            _, a, b, v, spaces[r.node_id] = hit
+            yang, yin, left = yang * a, yin * b, left * v
+        return spaces, _compose(yang, _covered(yang, yin, left))
 
     def _draw_key(self, root_id: str) -> tuple:
         """Everything a tree's drawing depends on (besides structure, which is part of the key)."""
@@ -1655,7 +1666,8 @@ class ConceptGraph:
                 None if st is None else st["off"].tobytes(),
                 tuple(id(n.field) for n in inputs),
                 UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
-                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES)
+                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES,
+                PROBABILISTIC_MOTION, tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
 
     def tree_index(self) -> Dict[str, str]:
         """Which root (tree) each node belongs to."""
@@ -1673,13 +1685,13 @@ class ConceptGraph:
         st = self._mass.get(rid) if MOTION_KINDS and self.dynamics == "gameboard" else None
         if st is None or not place_bodies or tuple(shape) != tuple(self.grid) or not st["off"].any():
             return self._paint(shape, root_id, place_bodies)
-        fy, fn = self._paint(shape, rid, True, layer="free")
-        by, bn = self._paint(shape, rid, True, layer="bodies")
+        fy, fn, _ = self._paint(shape, rid, True, layer="free")
+        by, bn, bv = self._paint(shape, rid, True, layer="bodies")
         sy, sn = _scatter(fy, st["off"]), _scatter(fn, st["off"])
         if PROBABILISTIC_MOTION:                  # what moved away leaves known emptiness, not "no claim"
             vacated = ((fy < 1) | (fn < 1)) & ~((sy < 1) | (sn < 1))
-            sn = np.where(vacated, 0.0, sn)
-        return sy * by, sn * bn
+            bv = np.where(vacated, 0.0, bv)
+        return sy * by, sn * bn, bv
 
     def _perceive(self, views=None) -> None:
         """Each top-most observer evaluates its subtree against last tick's imagery, through its views.
@@ -1842,7 +1854,7 @@ class ConceptGraph:
             root = parents[root.node_id][0]
         st = self._mass_state(root.node_id)
         H, W = self.grid
-        fy, fn = self._paint(self.grid, root.node_id, True, layer="free")
+        fy, fn, _ = self._paint(self.grid, root.node_id, True, layer="free")
         paint = (fy < 1 - 1e-9) | (fn < 1 - 1e-9)                      # source cells that carry mass
         R, C = _grid_index((H, W))
         where = (R + st["off"][..., 0], C + st["off"][..., 1])          # where each source cell's mass is now
@@ -2212,11 +2224,13 @@ class ConceptGraph:
         for it, instead of its parent's whole region. This makes body motion
         visible in the output. The default keeps the original behaviour.
         """
-        return ReceptiveField(_compose(*self._paint_root(shape, output_root_id, place_bodies)))
+        a, b, v = self._paint_root(shape, output_root_id, place_bodies)
+        return ReceptiveField(_compose(a, _covered(a, b, v)))
 
     def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str],
-               place_bodies: bool, layer: str = "all") -> Tuple[np.ndarray, np.ndarray]:
-        """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint.
+               place_bodies: bool, layer: str = "all") -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint, and of the emptiness its
+        moved bodies left behind (applied by ``_covered`` only where nothing else claims a cell).
 
         ``layer`` "free" keeps only paint drawn outside bodies (mass), "bodies" only paint inside them.
         """
@@ -2225,7 +2239,8 @@ class ConceptGraph:
         out_root = self._nodes[output_root_id] if output_root_id is not None else roots[-1]
         # cv: [yang paint (and, in the earlier renderer, yin paint), yin paint, place bodies, frame size].
         # An oriented slot swaps in a canvas for the content's upright frame (render_oriented).
-        cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W), False]   # ..., frame size, inside a body
+        cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W), False,   # ..., frame size, inside a body,
+              np.ones((H, W))]                                                # emptiness left behind
 
         def yang_regions(node: Node, region: Region) -> List[Region]:
             if isinstance(node, ObjectNode):
@@ -2264,35 +2279,45 @@ class ConceptGraph:
             """Draw ``children`` upright in their own frame, then show it in ``slot`` facing ``v``."""
             Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
             saved = cv[:]
-            cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4]]   # bodies live in the frame
+            cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4],   # bodies live in the frame
+                     np.ones((Hc, Wc))]
             render_plan(children, (0, Hc, 0, Wc), weight, ikey)
-            frame_yang, frame_yin = cv[0], cv[1]
+            frame_yang, frame_yin, frame_left = cv[0], cv[1], cv[5]
             cv[:] = saved
             r0, r1, c0, c1 = slot
             cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
             cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
+            cv[5][r0:r1, c0:c1] *= frame_left[rows, cols]
 
-        def draw_moved(draw, home: Region, region: Region) -> None:
-            """``draw(region)`` paints a body's content where it is. Under PROBABILISTIC_MOTION, the cells it
-            would claim at home (the region it receives) but no longer claims read as known empty, as strongly
-            as they were claimed: a moved body leaves emptiness behind, not "no claim"."""
-            if not PROBABILISTIC_MOTION or region == home:
+        def draw_moved(draw, home: Region, region: Region, key: tuple) -> None:
+            """``draw(region)`` paints a body's content where it is. Under PROBABILISTIC_MOTION, once a body has
+            moved, every cell it has claimed so far (at home or anywhere it has been since) but no longer claims
+            reads as known empty, as strongly as it was claimed: a moved body leaves a trail of emptiness behind,
+            not "no claim", unless other content covers the cell (``_covered``). The trail lasts until
+            ``reset_gates()``."""
+            key = (H, W, out_root.node_id, layer, cv[0].shape) + key
+            trail = self._trails.get(key)
+            if not PROBABILISTIC_MOTION or (region == home and trail is None):
                 draw(region)
                 return
 
             def alone(r):                        # the content's paint on its own, at r
                 saved = cv[:]
-                cv[0], cv[1] = np.ones_like(saved[0]), np.ones_like(saved[1])
+                cv[0], cv[1], cv[5] = np.ones_like(saved[0]), np.ones_like(saved[1]), np.ones_like(saved[5])
                 draw(r)
-                out = cv[0], cv[1]
+                out = cv[0], cv[1], cv[5]
                 cv[:] = saved
                 return out
-            hy, hn = alone(home)
-            ny, nn = alone(region)
+            if trail is None:
+                hy, hn, _ = alone(home)
+                trail = hy * hn
+            ny, nn, nv = alone(region)
+            trail = self._trails[key] = np.minimum(trail, ny * nn)
             cv[0] *= ny
             cv[1] *= nn
-            vacated = ((hy < 1) | (hn < 1)) & (ny == 1) & (nn == 1)
-            cv[1][vacated] *= (hy * hn)[vacated]
+            cv[5] *= nv                          # trails of bodies inside it
+            vacated = (trail < 1) & (ny == 1) & (nn == 1)
+            cv[5][vacated] *= trail[vacated]
 
         def render_node(node: Node, region: Region, weight: float, ikey: tuple = ()) -> None:
             if weight < 1e-9 or is_empty(region):
@@ -2337,7 +2362,7 @@ class ConceptGraph:
                     for child in content_children(node):
                         render_node(child, r, weight * _sg(node), ikey)
                     cv[4] = was_inside
-                draw_moved(draw, home, region)
+                draw_moved(draw, home, region, (node.node_id, ikey))
             elif isinstance(node, BodyNode):
                 home = region
                 if cv[2] and not isinstance(node, PlanNode) and node.position is not None:
@@ -2348,7 +2373,7 @@ class ConceptGraph:
                     cv[4] = was_inside or not isinstance(node, PlanNode)
                     render_plan(content_children(node), r, weight * _sg(node), ikey)
                     cv[4] = was_inside
-                draw_moved(draw, home, region)
+                draw_moved(draw, home, region, (node.node_id, ikey))
             elif isinstance(node, SerialNode):
                 kids = content_children(node)
                 for i, child in enumerate(kids):
@@ -2359,7 +2384,7 @@ class ConceptGraph:
                     render_node(child, region, weight * _sg(node), ikey)
 
         render_node(out_root, (0, H, 0, W), 1.0)
-        return cv[0], cv[1]
+        return cv[0], cv[1], cv[5]
 
     def derived_fields(self, shape: Tuple[int, int] = (9, 9)) -> Dict[str, ReceptiveField]:
         """One display field per node (used by the visualizer).

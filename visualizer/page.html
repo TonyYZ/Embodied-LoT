@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>@@TITLE@@</title>
-  <style>
-@@STYLE@@  </style>
+  <title>Embodied-LoT visualizer</title>
+  <!-- Opened directly, the page loads its assets from this folder and shows the example graph below.
+       visualize_lot.py inlines the stylesheet and script and swaps in its own graph data. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Literata:opsz,wght@7..72,400;7..72,600&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
   <div class="app">
     <header>
       <div>
+        <div class="eyebrow">Embodied-LoT · concept graph</div>
         <h1 id="title"></h1>
         <div class="meta" id="frameMeta"></div>
       </div>
@@ -19,10 +23,10 @@
       <svg id="graph" role="img" aria-label="Concept graph visualization">
         <defs>
           <marker id="arrowSolid" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L0,6 L9,3 z" fill="#475569"></path>
+            <path d="M0,0 L0,6 L9,3 z"></path>
           </marker>
           <marker id="arrowDashed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L0,6 L9,3 z" fill="#818cf8"></path>
+            <path d="M0,0 L0,6 L9,3 z"></path>
           </marker>
         </defs>
         <g id="edges"></g>
@@ -49,13 +53,19 @@
         <button id="modeSelectBtn" title="Select and drag nodes">Select</button>
         <label class="node-create-control" title="Choose what the Add button creates">
           <select id="addAction" aria-label="Add action">
-            <optgroup label="Node">
-              <option value="node:object">object node</option>
+            <optgroup label="Node (v7)">
+              <option value="node:object">leaf (trigram)</option>
+              <option value="node:out">out window</option>
+              <option value="node:in">in window</option>
+              <option value="node:parallel">parallel</option>
+              <option value="node:serial">serial</option>
+              <option value="node:template">template</option>
+              <option value="node:field">field</option>
+              <option value="node:body">body</option>
+            </optgroup>
+            <optgroup label="Node (legacy)">
               <option value="node:input">input node</option>
               <option value="node:return">output node</option>
-              <option value="node:parallel">parallel node</option>
-              <option value="node:serial">serial node</option>
-              <option value="node:body">body node</option>
               <option value="node:plan">plan node</option>
             </optgroup>
             <optgroup label="Edge">
@@ -68,6 +78,24 @@
         <button id="removeBtn" class="danger" title="Remove selected node or edge">Remove</button>
         <button id="layoutBtn" title="Reset node positions">Layout</button>
       </div>
+      <!-- v7 engine card -->
+      <div class="card" id="enginePanel">
+        <div class="card-title">v7 Engine</div>
+        <div class="stack">
+          <div class="row"><label for="engineExamples">example</label><select id="engineExamples"></select></div>
+          <textarea id="programText" spellcheck="false" aria-label="v7 program" placeholder="(parallel center/V universal/V* out)"></textarea>
+          <div class="row"><label for="engineTicks">ticks</label><input id="engineTicks" type="number" min="1" max="80" value="24"></div>
+          <div class="engine-buttons">
+            <button id="loadProgramBtn" title="Build the graph from the program text">Load Program</button>
+            <button id="graphToProgramBtn" title="Write the edited graph as program text">Graph → Program</button>
+            <button id="runEngineBtn" class="primary" title="Run the program on the real engine and replay its ticks">Run on Engine</button>
+          </div>
+          <div id="engineUnits"></div>
+          <div id="engineMsgs" class="note"></div>
+          <div id="engineBoards" class="engine-boards"></div>
+        </div>
+      </div>
+
       <!-- Selection card -->
       <div class="card">
         <div class="card-title">Node / Edge</div>
@@ -76,12 +104,16 @@
           <div class="row"><label for="nodeType">type</label>
             <select id="nodeType">
               <option value="object">object</option>
-              <option value="input">input</option>
-              <option value="return">output</option>
+              <option value="out">out window</option>
+              <option value="in">in window</option>
               <option value="parallel">parallel</option>
               <option value="serial">serial</option>
+              <option value="template">template</option>
+              <option value="field">field</option>
               <option value="body">body</option>
-              <option value="plan">plan</option>
+              <option value="input">input (legacy)</option>
+              <option value="return">output (legacy)</option>
+              <option value="plan">plan (legacy)</option>
             </select>
           </div>
           <div class="row"><label for="nodeIcon">icon</label>
@@ -135,7 +167,7 @@
           <button id="scanBtn">Scan Input Siblings</button>
           <button id="propagateBtn">Propagate Dashed Gates</button>
           <button id="averageBtn">Average Children</button>
-          <div class="note" id="simNote">Lightweight browser feedback only.</div>
+          <div class="note" id="simNote">Legacy browser evaluator only: it knows nothing of v7 (gameboard, fields, bodies, templates, windows). Use Run on Engine for v7.</div>
         </div>
       </div>
 
@@ -145,6 +177,7 @@
         <div class="stack">
           <div class="row"><label for="exportFormat">format</label>
             <select id="exportFormat">
+              <option value="program">v7 program</option>
               <option value="tree">tree</option>
               <option value="python">python code</option>
               <option value="json">json</option>
@@ -168,8 +201,7 @@
       </div>
     </aside>
   </div>
-  <script id="lot-data" type="application/json">@@DATA@@</script>
-  <script>
-@@SCRIPT@@  </script>
+  <script id="lot-data" type="application/json">{"version":1,"name":"Example: (parallel center/V universal/V* out)","base":{"label":"example","graph_name":"program","engine":true,"nodes":[{"id":"n2","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[0,1,0],"pattern_name":"center","orientation":"vertical","dynamic":false,"role":"imagined"},{"id":"n3","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[1,1,1],"pattern_name":"universal","orientation":"vertical","dynamic":true,"role":"imagined"},{"id":"n4","type":"out","class":"WindowNode","activation":0.0,"gate":1.0,"children":[],"role":"imagined"},{"id":"n1","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["n2","n3","n4"],"inherited_weight":1.0,"role":"imagined"},{"id":"par_O","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["O","n1"],"inherited_weight":1.0,"role":"imagined"},{"id":"O","type":"return","class":"OutputNode","activation":1.0,"gate":1.0,"children":[],"role":"imagined"}],"result":0.0,"edges":[{"source":"n1","target":"n2","type":"solid"},{"source":"n1","target":"n3","type":"solid"},{"source":"n1","target":"n4","type":"solid"},{"source":"par_O","target":"O","type":"solid"},{"source":"par_O","target":"n1","type":"solid"}],"roots":["par_O"]},"frames":[{"label":"example","graph_name":"program","engine":true,"nodes":[{"id":"n2","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[0,1,0],"pattern_name":"center","orientation":"vertical","dynamic":false,"role":"imagined"},{"id":"n3","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[1,1,1],"pattern_name":"universal","orientation":"vertical","dynamic":true,"role":"imagined"},{"id":"n4","type":"out","class":"WindowNode","activation":0.0,"gate":1.0,"children":[],"role":"imagined"},{"id":"n1","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["n2","n3","n4"],"inherited_weight":1.0,"role":"imagined"},{"id":"par_O","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["O","n1"],"inherited_weight":1.0,"role":"imagined"},{"id":"O","type":"return","class":"OutputNode","activation":1.0,"gate":1.0,"children":[],"role":"imagined"}],"result":0.0,"edges":[{"source":"n1","target":"n2","type":"solid"},{"source":"n1","target":"n3","type":"solid"},{"source":"n1","target":"n4","type":"solid"},{"source":"par_O","target":"O","type":"solid"},{"source":"par_O","target":"n1","type":"solid"}],"roots":["par_O"]}],"icon_sprites":{},"program":"(parallel center/V universal/V* out)"}</script>
+  <script src="viewer.js"></script>
 </body>
 </html>

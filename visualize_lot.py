@@ -352,13 +352,23 @@ _ASSET_DIR = Path(__file__).with_name("visualizer")
 
 
 def _html_template(title: str, payload: Dict[str, Any]) -> str:
-    """Assemble the standalone page from ``visualizer/page.html``, ``viewer.css`` and ``viewer.js``."""
+    """Assemble the standalone page from ``visualizer/page.html``, ``viewer.css`` and ``viewer.js``.
+
+    ``page.html`` also works on its own (it links the two assets and carries an example graph); here the
+    assets are inlined and the graph data replaced, so the written file needs nothing beside it.
+    """
     asset = lambda name: (_ASSET_DIR / name).read_text(encoding="utf-8")
-    return (asset("page.html")
-            .replace("@@TITLE@@", html.escape(title))
-            .replace("@@STYLE@@", asset("viewer.css"))
-            .replace("@@SCRIPT@@", asset("viewer.js"))
-            .replace("@@DATA@@", json.dumps(payload, ensure_ascii=False)))
+    data_open = '<script id="lot-data" type="application/json">'
+    page = asset("page.html")
+    head, rest = page.split(data_open, 1)
+    _, tail = rest.split("</script>", 1)
+    page = head + data_open + json.dumps(payload, ensure_ascii=False).replace("</", r"<\/") + "</script>" + tail
+    for old, new in ((page[page.index("<title>"):page.index("</title>") + 8], f"<title>{html.escape(title)}</title>"),
+                     ('<link rel="stylesheet" href="viewer.css">', "<style>\n" + asset("viewer.css") + "</style>"),
+                     ('<script src="viewer.js"></script>', "<script>\n" + asset("viewer.js") + "</script>")):
+        assert page.count(old) == 1, f"visualizer/page.html no longer has {old!r}"
+        page = page.replace(old, new)
+    return page
 
 
 __all__ = [

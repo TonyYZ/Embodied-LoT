@@ -17,7 +17,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from grace_lot.lot_adapter.program import P, compile_program, output_roots
+from grace_lot.lot_adapter.program import OUT, OUTPUTS, P, Program, as_program, compile_program, nodes, output_roots
 
 
 def _state_signature(graph) -> tuple:
@@ -50,7 +50,105 @@ def motion_combinations(program: P, size: int) -> list:
     return out
 
 
+COMPONENT_CACHE_SIZE = 5_000                    # about 30 KB each: ~150 MB per worker
+_component_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
+
+
+def _components_independent() -> bool:
+    """Whether trees joined by no dashed edge evolve independently, with outputs that do not depend on node
+    numbering: separate tree spaces, grouping nodes, and unknown motion as a latent (no id-seeded pushes)."""
+    import embodied_lot as E
+    return (E.SEPARATE_TREE_SPACES and E.GROUPING_NODES and E.PROBABILISTIC_MOTION
+            and E.DEFAULT_DYNAMICS == "gameboard")
+
+
+def _id_paths(prog: Program) -> dict:
+    """Node id -> tree path, numbered as ``compile_program`` numbers them."""
+    trees = prog.tree.children if prog.tree.kind == OUTPUTS else (prog.tree,)
+    walks = [nodes(t, (k,)) for k, t in enumerate(trees)] if prog.tree.kind == OUTPUTS else [nodes(prog.tree)]
+    return {f"n{i}": path for i, (path, _) in enumerate((x for w in walks for x in w), start=1)}
+
+
+def _components(prog: Program) -> list:
+    """The forest's components (trees joined by dashed edges): (root indices, standalone forest)."""
+    trees = prog.tree.children
+    parent = list(range(len(trees)))
+
+    def find(i):
+        while parent[i] != i:
+            i = parent[i]
+        return i
+    for a, b in prog.dashed:
+        parent[find(a[0])] = find(b[0])
+    groups = {}
+    for i in range(len(trees)):
+        groups.setdefault(find(i), []).append(i)
+    out = []
+    for idx in groups.values():
+        new = {k: j for j, k in enumerate(idx)}
+        edges = tuple(sorted(((new[a[0]],) + a[1:], (new[b[0]],) + b[1:]) for a, b in prog.dashed if a[0] in new))
+        out.append((idx, Program(P(OUTPUTS, (), tuple(trees[k] for k in idx)), edges)))
+    return out
+
+
+def _semantics() -> tuple:
+    import embodied_lot as E
+    return tuple((k, v) for k, v in vars(E).items() if k.isupper() and isinstance(v, (bool, int, float, str)))
+
+
 def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> np.ndarray:
+    """``rollout_whole``, assembled from independently rolled-out and cached components when that is exact.
+
+    Under the v7 semantics (``_components_independent``), trees joined by no dashed edge never affect each
+    other, so each component's output windows are rolled out on their own, memoised, and put back in program
+    order; components without output windows are skipped. Bit-for-bit the same as ``rollout_whole``.
+    """
+    prog = as_program(program)
+    if prog.tree.kind != OUTPUTS or len(prog.tree.children) < 2 or not _components_independent():
+        return rollout_whole(program, frames, size, motion_states)
+    comps = _components(prog)
+    channels = [p for p, q in nodes(prog.tree) if q.kind == OUT]
+    if len(comps) < 2 or not channels:
+        return rollout_whole(program, frames, size, motion_states)
+    ids = _id_paths(prog)
+    states = {k: v for k, v in (motion_states or {}).items()}
+    sem = _semantics()
+    out = np.empty((frames, len(channels), size, size))
+    where = {}                                            # root index -> (component, its index there)
+    for c, (idx, _) in enumerate(comps):
+        for j, k in enumerate(idx):
+            where[k] = (c, j)
+    rolled = {}
+    for c, (idx, sub) in enumerate(comps):
+        sub_channels = [p for p, q in nodes(sub.tree) if q.kind == OUT]
+        if not sub_channels:
+            continue
+        sub_ids = {path: nid for nid, path in _id_paths(sub).items()}
+        sub_states = {}
+        for key, value in states.items():
+            unit, kind = key.rsplit(":", 1)
+            path = ids[unit]
+            if path[0] in idx:
+                sub_states[f"{sub_ids[(idx.index(path[0]),) + path[1:]]}:{kind}"] = value
+        ckey = (sub, tuple(sorted(sub_states.items())), frames, size, sem)
+        v = _component_cache.get(ckey)
+        if v is None:
+            v = rollout_whole(sub, frames, size, sub_states)
+            v = v if v.ndim == 4 else v[:, None]
+            _component_cache[ckey] = v
+            if len(_component_cache) > COMPONENT_CACHE_SIZE:
+                _component_cache.popitem(last=False)
+        else:
+            _component_cache.move_to_end(ckey)
+        rolled[c] = (v, {p: i for i, p in enumerate(sub_channels)})
+    for i, p in enumerate(channels):
+        c, j = where[p[0]]
+        v, index = rolled[c]
+        out[:, i] = v[:, index[(j,) + p[1:]]]
+    return out
+
+
+def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None) -> np.ndarray:
     """Rendered output fields: (T, H, W) for one output, or (T, K, H, W) for a K-channel program.
 
     The rollout is deterministic. If the state (body positions, gates,

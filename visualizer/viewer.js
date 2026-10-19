@@ -1,14 +1,9 @@
     const payload = JSON.parse(document.getElementById("lot-data").textContent);
-    const colors = {
-      input:    "#059669",   // emerald-600 — I windows
-      return:   "#d97706",   // amber-600   — O windows
-      output:   "#d97706",
-      object:   "#3b82f6",   // blue-500    — ObjectNode
-      parallel: "#8b5cf6",   // violet-500  — ParallelNode
-      serial:   "#06b6d4",   // cyan-500    — SerialNode
-      body:     "#f43f5e",   // rose-500    — BodyNode
-      plan:     "#ec4899",   // pink-500    — PlanNode
-    };
+    // Node and board colours are theme tokens in viewer.css (--node-<type>, --surface, --unknown, --accent),
+    // read at draw time so both themes follow.
+    const nodeTypes = ["object", "out", "in", "parallel", "serial", "template", "field", "body", "input", "return", "plan"];
+    const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const nodeColour = type => cssVar(`--node-${type}`) || cssVar("--soft") || "#7d8a82";
 
     const trigramPalette = [
       { name: "void", pattern: [0, 0, 0] },
@@ -195,7 +190,9 @@
         : selectedKind === "edge" && current.edges[selected]
           ? { kind: "edge", edge: { ...current.edges[selected] } }
           : null;
-      if (document.getElementById("freeToggle")?.checked) {
+      if (frame.engine) {                       // the engine's own state: never re-evaluated in the browser
+        current = structuredClone(frame);
+      } else if (document.getElementById("freeToggle")?.checked) {
         applyFrameState(frame);
       } else {
         current = structuredClone(frame);
@@ -268,6 +265,7 @@
       renderMarquee();
       renderDetails();
       renderStructureExport();
+      renderEngineBoards();
       startPhysics();
     }
 
@@ -462,9 +460,9 @@
     }
 
     function barColour(v) {
-      if (v >= 0.75) return "#f59e0b";
-      if (v >= 0.45) return "#6366f1";
-      return "#475569";
+      if (v >= 0.75) return cssVar("--accent");
+      if (v >= 0.45) return cssVar("--amber");
+      return cssVar("--soft");
     }
 
     function isLabViewMode() {
@@ -479,6 +477,10 @@
       if (node.type === "serial") return "stack";
       if (node.type === "body") return "body";
       if (node.type === "plan") return "plan";
+      if (node.type === "template") return "dna";
+      if (node.type === "field") return "map";
+      if (node.type === "out") return "hand";
+      if (node.type === "in") return "eye";
       if (node.dynamic) return "clock";
       return "lens";
     }
@@ -627,7 +629,7 @@
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         circle.setAttribute("r", r);
         // fill: desaturated base color, brightened by activation
-        const base = colors[n.type] || "#475569";
+        const base = nodeColour(n.type);
         circle.setAttribute("fill", base);
         circle.setAttribute("fill-opacity", (0.55 + act * 0.45).toFixed(2));
         attachNodeEvents(circle);
@@ -636,11 +638,12 @@
         text.textContent = shortId(n.id);
         const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
         sub.classList.add("sub");
+        sub.setAttribute("y", r + 13);                    // below the circle, then the gauge
         sub.textContent = `${displayType(n)} ${fmt(n.activation)}`;
 
         const gaugeValue = Math.max(0, Math.min(1, Number(n.activation) || 0));
         const gaugeWidth = 66;
-        const gaugeY = r + 18;
+        const gaugeY = r + 24;
         const track = svgEl("rect", {
           class: "gate-track",
           x: -gaugeWidth / 2,
@@ -1074,13 +1077,16 @@
     }
 
     function fieldColour(v) {
-      // 0 → slate-800 (#1e293b), 0.5 → slate-400, 1 → amber-200
-      // Min shifted up from page background so dark pixels stay visible.
-      const lerp = (a, b, t) => a + (b - a) * t;
-      const r = Math.round(lerp(lerp(30, 148, v * 2), 254, Math.max(0, v * 2 - 1)));
-      const g = Math.round(lerp(lerp(41, 163, v * 2), 240, Math.max(0, v * 2 - 1)));
-      const b = Math.round(lerp(lerp(59, 187, v * 2), 138, Math.max(0, v * 2 - 1)));
-      return `rgb(${r},${g},${b})`;
+      // The board's three readings, as on the caterpillar plates: 0 known empty (surface), 0.5 unknown, 1 figure
+      // (accent); values between blend the neighbouring two.
+      const rgb = hex => {
+        const h = hex.replace("#", "");
+        const f = h.length === 3 ? h.split("").map(c => c + c).join("") : h;
+        return [0, 2, 4].map(k => parseInt(f.slice(k, k + 2), 16));
+      };
+      const [lo, mid, hi] = ["--surface", "--unknown", "--accent"].map(name => rgb(cssVar(name) || "#888888"));
+      const [a, b, t] = v <= 0.5 ? [lo, mid, v * 2] : [mid, hi, (v - 0.5) * 2];
+      return `rgb(${a.map((x, k) => Math.round(x + (b[k] - x) * t)).join(",")})`;
     }
 
     function renderPixelPreview(values) {
@@ -1554,6 +1560,10 @@
         serial: "SerialNode",
         body: "BodyNode",
         plan: "PlanNode",
+        template: "TemplateNode",
+        field: "FieldNode",
+        out: "WindowNode",
+        in: "InWindowNode",
       }[type] || "ObjectNode";
     }
 
@@ -1824,6 +1834,10 @@
         serial: "SerialNode",
         body: "BodyNode",
         plan: "PlanNode",
+        template: "TemplateNode",
+        field: "FieldNode",
+        out: "WindowNode",
+        in: "InWindowNode",
       }[node.type] || (node.class || "Node");
       return `${cls}("${node.id}")`;
     }
@@ -1896,6 +1910,10 @@
       if (node.type === "serial") return `SerialNode(${id}, split_orientation=${pyOrientation(node)})`;
       if (node.type === "body") return `BodyNode(${id})`;
       if (node.type === "plan") return `PlanNode(${id})`;
+      if (node.type === "template") return `TemplateNode(${id})`;
+      if (node.type === "field") return `FieldNode(${id})`;
+      if (node.type === "out") return `WindowNode(${id})`;
+      if (node.type === "in") return `InWindowNode(${id})`;
       return `ParallelNode(${id})`;
     }
 
@@ -1911,7 +1929,7 @@
         names.set(node.id, name);
       });
       const lines = [
-        "from embodied_lot import ConceptGraph, InputNode, OutputNode, ObjectNode, ParallelNode, SerialNode, BodyNode, PlanNode, Orientation, TRIGRAM_PATTERNS",
+        "from embodied_lot import ConceptGraph, InputNode, OutputNode, ObjectNode, ParallelNode, SerialNode, BodyNode, PlanNode, TemplateNode, FieldNode, WindowNode, InWindowNode, Orientation, TRIGRAM_PATTERNS",
         "",
         `g = ConceptGraph(${pyStr(current.graph_name || payload.name || "edited_graph")})`,
       ];
@@ -1951,6 +1969,9 @@
 
     function structureExportText() {
       const format = document.getElementById("exportFormat")?.value || "tree";
+      if (format === "program") {
+        try { return graphToProgram(); } catch (error) { return `# ${error.message}`; }
+      }
       if (format === "python") return exportPython();
       if (format === "json") return exportJson();
       return exportTree();
@@ -1982,9 +2003,8 @@
 
     function renderLegend() {
       const legend = document.getElementById("legend");
-      legend.innerHTML = Object.entries(colors)
-        .filter(([name]) => name !== "return")
-        .map(([name, color]) => `<span><i class="swatch" style="background:${color};width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:-1px"></i>${name}</span>`)
+      legend.innerHTML = nodeTypes
+        .map(name => `<span><i class="swatch" style="background:${nodeColour(name)};width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:-1px"></i>${name === "return" ? "output" : name}</span>`)
         .join("");
     }
 
@@ -2080,10 +2100,240 @@
     document.getElementById("exportFormat").addEventListener("change", renderStructureExport);
     document.getElementById("copyExportBtn").addEventListener("click", copyStructureExport);
     window.addEventListener("resize", () => { layout(); render(); });
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { renderLegend(); render(); });
+
+
+    // ── v7 program text and the real engine ───────────────────────────
+    // Program text is the search's own syntax: trees side by side, then "| .a.b>.c.d" dashed edges
+    // between tree paths. Compiled programs wrap each tree as par_O<k>[O<k>, tree]; those wrappers
+    // (and legacy input/output nodes) are skipped when writing a graph back as text.
+
+    const LEAF_NAMES = ["void", "bottom", "center", "lower", "top", "periphery", "upper", "universal", "neutral"];
+
+    function isWrapper(node) {
+      return node && node.type === "parallel" && /^par_O\d*$/.test(node.id);
+    }
+
+    function programTrees() {
+      const kids = solidChildrenByParent();
+      const trees = [];
+      rootIdsForExport().forEach(id => {
+        const node = nodeById(id);
+        if (!node || node.type === "input" || node.type === "return") return;
+        if (isWrapper(node)) {
+          (kids.get(id) || []).map(nodeById).filter(n => n && n.type !== "return" && n.type !== "input")
+            .forEach(n => trees.push(n.id));
+        } else {
+          trees.push(id);
+        }
+      });
+      return trees;
+    }
+
+    function leafName(node) {
+      const name = node.pattern_name || node.name;
+      if (LEAF_NAMES.includes(name)) return name;
+      const match = trigramPalette.find(item => Array.isArray(node.pattern) &&
+        item.pattern.length === node.pattern.length && item.pattern.every((v, i) => Number(v) === Number(node.pattern[i])));
+      if (!match) throw new Error(`${node.id}: pattern [${node.pattern}] is not a trigram`);
+      return match.name;
+    }
+
+    function graphToProgram() {
+      const kids = solidChildrenByParent();
+      const paths = new Map();
+      const trees = programTrees();
+      if (!trees.length) throw new Error("the graph has no tree to write");
+      const forest = trees.length > 1;
+      const seen = new Set();
+      function write(id, path) {
+        const node = nodeById(id);
+        if (seen.has(id)) throw new Error(`${id} has two parents: a program is a tree`);
+        seen.add(id);
+        paths.set(id, path);
+        const children = (kids.get(id) || []).filter(c => {
+          const t = nodeById(c)?.type;
+          return t !== "input" && t !== "return";
+        });
+        const sub = () => children.map((c, i) => write(c, [...path, i])).join(" ");
+        if (node.type === "object") {
+          const ori = (node.orientation || "vertical") === "horizontal" ? "H" : "V";
+          return `${leafName(node)}/${ori}${node.dynamic ? "*" : ""}`;
+        }
+        if (node.type === "out" || node.type === "in") return node.type;
+        if (!children.length) throw new Error(`${id} (${node.type}) has no children`);
+        if (node.type === "serial") {
+          return `(serial_${(node.split_orientation || "vertical") === "horizontal" ? "h" : "v"} ${sub()})`;
+        }
+        if (["parallel", "template", "field", "body", "plan"].includes(node.type)) {
+          return `(${node.type === "plan" ? "template" : node.type} ${sub()})`;
+        }
+        throw new Error(`${id}: ${node.type} nodes have no program syntax`);
+      }
+      const text = trees.map((id, k) => write(id, forest ? [k] : [])).join(" ");
+      const edges = dashedEdges().map(e => {
+        if (!paths.has(e.source) || !paths.has(e.target)) throw new Error(`dashed edge ${e.source} → ${e.target} leaves the program`);
+        return `.${paths.get(e.source).join(".")}>.${paths.get(e.target).join(".")}`;
+      });
+      return edges.length ? `${text} | ${edges.join(" ")}` : text;
+    }
+
+    let engineRun = null;
+    let engineStates = {};
+
+    function engineAvailable() {
+      return Boolean(payload.engine) && location.protocol.startsWith("http");
+    }
+
+    function engineMessage(html) {
+      document.getElementById("engineMsgs").innerHTML = html;
+    }
+
+    async function enginePost(path, body) {
+      const response = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)});
+      const data = await response.json();
+      if (data.error) throw Object.assign(new Error(data.error), {trace: data.trace});
+      return data;
+    }
+
+    function showEngineError(error) {
+      engineMessage(`<div class="bug"><b>${escapeHtml(error.message)}</b>${error.trace ? "\n" + escapeHtml(error.trace) : ""}</div>`);
+    }
+
+    function issuesHtml(issues) {
+      return issues.length
+        ? `<div class="warn"><b>Outside the configured language</b> (the engine still runs it):\n${issues.map(i => "· " + escapeHtml(i)).join("\n")}</div>`
+        : "";
+    }
+
+    function replaceGraph(base, frames) {
+      payload.base = base;
+      payload.frames = frames;
+      positions = new Map();
+      selected = null; selectedKind = null; selectedNodes.clear();
+      current = structuredClone(frames[0] || base);
+      layout();
+      applyFrame(0);
+    }
+
+    async function loadProgram() {
+      try {
+        const data = await enginePost("/api/graph", {program: document.getElementById("programText").value});
+        engineRun = null;
+        engineStates = {};
+        document.getElementById("engineUnits").innerHTML = "";
+        payload.name = data.program;
+        replaceGraph(data.base, data.frames);
+        document.getElementById("programText").value = data.program;
+        engineMessage(issuesHtml(data.issues) || `<div class="ok">Loaded. Edit the graph, then Graph → Program, or Run on Engine.</div>`);
+      } catch (error) { showEngineError(error); }
+    }
+
+    async function runEngine() {
+      const button = document.getElementById("runEngineBtn");
+      button.disabled = true; button.textContent = "Running…";
+      try {
+        const data = await enginePost("/api/run", {program: document.getElementById("programText").value,
+          ticks: Number(document.getElementById("engineTicks").value) || 24, states: engineStates});
+        engineRun = data;
+        engineStates = Object.fromEntries(data.units.map(u => [u.key, u.state]));
+        document.getElementById("programText").value = data.program;
+        renderEngineUnits();
+        const msgs = [];
+        if (data.bugs.length) msgs.push(`<div class="bug"><b>Engine inconsistency</b>\n${data.bugs.map(b => "· " + escapeHtml(b)).join("\n")}</div>`);
+        msgs.push(issuesHtml(data.issues));
+        msgs.push(`<div class="ok">${data.snapshots.length} ticks · ${data.windows.length} output window${data.windows.length === 1 ? "" : "s"} · ${data.combinations} motion realization${data.combinations === 1 ? "" : "s"}${data.bugs.length ? "" : " · recorder and component rollouts agree with the engine"}. Replay with Play or the timeline.</div>`);
+        engineMessage(msgs.join(""));
+        payload.name = data.program;
+        replaceGraph(data.snapshots[0], data.snapshots);
+      } catch (error) {
+        showEngineError(error);
+      } finally {
+        button.disabled = false; button.textContent = "Run on Engine";
+      }
+    }
+
+    function renderEngineUnits() {
+      const box = document.getElementById("engineUnits");
+      if (!engineRun || !engineRun.units.length) { box.innerHTML = ""; return; }
+      box.innerHTML = "unknown motion:" + engineRun.units.map(u =>
+        `<label>${escapeHtml(u.key)} <select data-key="${escapeHtml(u.key)}">${u.options.map(o =>
+          `<option${o === u.state ? " selected" : ""}>${o}</option>`).join("")}</select></label>`).join("");
+      box.querySelectorAll("select").forEach(sel => sel.addEventListener("change", () => {
+        engineStates[sel.dataset.key] = sel.value;
+        runEngine();
+      }));
+    }
+
+    function boardFigure(caption, values) {
+      const fig = document.createElement("figure");
+      const cap = document.createElement("figcaption");
+      cap.textContent = caption;
+      const grid = document.createElement("div");
+      grid.className = "pixel-preview";
+      grid.style.gridTemplateRows = `repeat(${values.length}, 1fr)`;
+      grid.style.gridTemplateColumns = `repeat(${values[0].length}, 1fr)`;
+      values.forEach((row, r) => row.forEach((value, c) => {
+        const cell = document.createElement("span");
+        cell.style.background = fieldColour(Math.max(0, Math.min(1, Number(value))));
+        cell.title = `row ${r}, column ${c}: ${Number(value).toFixed(2)}`;
+        grid.appendChild(cell);
+      }));
+      fig.append(cap, grid);
+      return fig;
+    }
+
+    function renderEngineBoards() {
+      const box = document.getElementById("engineBoards");
+      if (!box) return;
+      box.innerHTML = "";
+      const f = engineRun && current.engine ? engineRun.frames[frameIndex] : null;
+      if (!f) return;
+      box.appendChild(boardFigure(`drawn, tick ${f.t}`, f.drawn));
+      if (engineRun.roots.length > 1) engineRun.roots.forEach((r, i) => box.appendChild(boardFigure(`tree ${i} space`, f.spaces[r])));
+      (engineRun.channels[frameIndex + 1] || []).forEach((img, k) =>
+        box.appendChild(boardFigure(`out ${k} (${engineRun.windows[k] || "tree"})`, img)));
+    }
+
+    function initEnginePanel() {
+      const select = document.getElementById("engineExamples");
+      if (!engineAvailable()) {
+        document.querySelectorAll("#enginePanel select, #enginePanel textarea, #enginePanel input, #enginePanel button:not(#graphToProgramBtn)")
+          .forEach(el => { el.disabled = true; });
+        engineMessage(`<div class="warn">No engine here (the page was opened as a file). To run programs on the engine, start the server:\npython -m grace_lot.analysis.playground\nand open http://localhost:8765. Graph → Program still works here.</div>`);
+        return;
+      }
+      payload.engine.examples.forEach((e, i) => {
+        const o = document.createElement("option");
+        o.value = i; o.textContent = e.title;
+        select.appendChild(o);
+      });
+      select.addEventListener("change", () => {
+        document.getElementById("programText").value = payload.engine.examples[Number(select.value)].program;
+        engineStates = {};
+        loadProgram();
+      });
+      document.getElementById("programText").value = payload.program || payload.engine.examples[0].program;
+      engineMessage(issuesHtml(payload.issues || []) || `<div class="ok">Semantics from ${escapeHtml(payload.engine.config)}.</div>`);
+      document.getElementById("loadProgramBtn").addEventListener("click", loadProgram);
+      document.getElementById("runEngineBtn").addEventListener("click", runEngine);
+      document.getElementById("programText").addEventListener("keydown", e => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runEngine(); }
+      });
+    }
+
+    document.getElementById("graphToProgramBtn").addEventListener("click", () => {
+      try {
+        document.getElementById("programText").value = graphToProgram();
+        engineMessage(`<div class="ok">Program written from the graph.</div>`);
+      } catch (error) { showEngineError(error); }
+    });
 
     document.getElementById("iconSizeValue").textContent = `${Math.round(labIconScale * 100)}%`;
     renderLegend();
     renderTrigramPalette();
     populateIconSelect();
+    initEnginePanel();
     layout();
     render();

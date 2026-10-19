@@ -143,12 +143,72 @@ MAP programs:
 - **Full weighting (1) is too sharp for the current sampler.** The tempering ladder is set from `beta`,
   which the Gaussian likelihood doesn't use, so even its hottest replica stays sharp.
 
+These next steps were run as Run 4, below.
+
+## Run 4: the calibrated ladder, 40,000 iterations
+
+Changes since Run 1, all in place for this run:
+- **Calibrated ladder** (`inference.ladder = "calibrated"`). The hottest replica is set from the likelihood itself:
+  32 prior programs are scored, and the hottest replica shrinks the spread of their log-likelihoods to about one nat
+  (here tau_min ≈ 0.001, against 0.016 from `beta`).
+- **Split R-hat.** Each chain is cut in half, so chains that agree but are still drifting are flagged. Runs 1-3
+  above report the earlier, unsplit statistic. Rescored split, Run 1 is 1.53-2.51, not 1.18-1.52.
+- **Semantics.** Moving bodies leave a full trail of known emptiness, which content moving in covers.
+- **Speed.** Component rollouts and per-channel cost rows make each likelihood evaluation 2.6 times faster, with
+  bit-identical rollouts.
+
+### Run 4: λ = 1, temperature 1/16, calibrated ladder, full trails
+
+λ = 1.0, temperature = 0.0625, 40000 iterations (burn-in 10000), 4 chains × 12 replicas. Wall time: 2.3 to 6 hours
+per chain, on 16 workers.
+
+| Manner | Split R-hat | Distinct programs | Mass of the top program | Median log-lik / log-prior of samples | MAP log-lik / log-prior | Samples that move | field / body / template |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| bowing | 1.53 | 3915 | 0.001 | 979.5 / -91.8 | 1015.6 / -76.6 | 0.12 | 0.49 / 0.37 / 0.63 |
+| crisscrossing | 2.46 | 3851 | 0.001 | 1121.9 / -86.3 | 1149.0 / -75.0 | 0.02 | 0.29 / 0.36 / 0.91 |
+| jumping | 2.30 | 3880 | 0.001 | 1102.5 / -83.8 | 1157.8 / -74.7 | 0.03 | 0.52 / 0.55 / 0.95 |
+| swinging | 1.31 | 3956 | 0.001 | 982.3 / -82.0 | 1029.4 / -74.3 | 0.00 | 0.51 / 0.41 / 0.71 |
+
+MAP programs:
+
+- **bowing:** `bottom/H (parallel (parallel center/H (serial_v neutral/V out) out) (parallel center/V out out) (template (serial_v top/H out) center/H (serial_h bottom/H lower/V out))) | .1.2.1>.1`
+- **crisscrossing:** `(template (template (body out) (serial_v periphery/H out) out) (parallel (serial_v neutral/V out) out out) (serial_v void/V (template center/H center/H universal/H) (parallel void/H bottom/V)))`
+- **jumping:** `(parallel (serial_v void/H neutral/V) out) (parallel (parallel out out (serial_v void/H out)) (field (template center/H center/V center/H)) (parallel out (serial_v center/H* out)))`
+- **swinging:** `(parallel (template (parallel out out) (body out) (template center/H center/H center/V)) (serial_v out (parallel out out)) (template bottom/V void/H)) periphery/H | .0.0.2.1>.0.0.1 .1>.0.0.0`
+
+Mean log-posterior of each chain over the four quarters after burn-in, and its swap acceptance between neighbouring
+replicas (pair k joins replicas k and k + 1; tau falls from 1 by a factor of about 0.54 per step):
+
+| Manner | Chain means by quarter | Swaps, pairs 0-4 | Swaps, pairs 5-10 |
+| --- | --- | --- | --- |
+| bowing | 858→892, 845→927, 824→899, 862→896 | 0.01-0.65 | 0.95-0.99 |
+| crisscrossing | 1026→1036, 949→1055, 936→1045, 963→1033 | 0.01-0.85 | 0.95-0.99 |
+| jumping | 1019→1047, 930→1076, 852→1004, 939→1025 | 0.00-0.95 | 0.94-0.99 |
+| swinging | 817→916, 831→887, 872→910, 848→942 | 0.00-0.94 | 0.98-0.99 |
+
+**Reading.**
+- **Not converged, and still climbing.** Split R-hat is 1.31-2.46. Most chains' means still rise after burn-in
+  (jumping chain 2 by 150 nats over 30,000 iterations), and chains that level off do so at different heights
+  (bowing: 892 against 927). The chains are both non-stationary and in different modes.
+- **The calibrated ladder is too hot.** Six of the twelve replicas (tau below about 0.05) swap 95-99% of the time:
+  they all sample nearly the prior, so they add cost without moving programs. The cold end (tau 1 to 0.16) swaps
+  only 1-20% of the time, so programs found by hot replicas rarely reach tau = 1. A spread of one nat at the
+  hottest replica was the wrong target; the useful range of the ladder is tau = 1 to about 0.05.
+- **Better fits, almost no motion.** Samples fit about 100 nats better than Run 1's (median log-lik 980-1120
+  against 810-1000), but almost none move (0-12%; swinging 0%, against 17% in Run 1). Static programs with
+  templates and five or six output windows win. This matches the audit: without latent phase, motion cannot be
+  rewarded across videos whose cycles are not aligned. The full-trail semantics may also cost moving programs
+  (vacated cells read as known empty); this run cannot separate the two.
+- **Cost.** Late programs take about 36 ms to score, against about 9 ms early on, so iterations slow down as the
+  chains find larger programs: the first 2,000 iterations took 2-3 minutes, the last ones 6-8 minutes per 1,000.
+
 **Next steps, not yet run:**
-1. **Fix the temperature ladder.** For the Gaussian likelihood, scale the hottest replica to the
-   likelihood's actual size instead of to `beta`.
-2. **Rerun temperature 1/16** with more iterations, and perhaps 1/4 between it and the full Gaussian, until
-   R-hat falls below 1.1.
-3. **Run all 26 manners** once one setting converges, then use validation recognition to choose between
-   the remaining settings. Recognition is the one score comparable across likelihood weights.
-4. **Add latent phase, and probably tempo,** to the v7 likelihood. The audit showed motion can only be
-   rewarded once each video's phase is aligned.
+1. **Space the ladder by its swap rates.** Adapt the spacing during burn-in so that neighbouring replicas swap at
+   similar rates (a standard adaptive parallel-tempering scheme; adaptation stops at burn-in, so the sampler stays
+   exact afterwards), with tau_min near 0.05 and the replicas concentrated near tau = 1.
+2. **Add latent phase** (and probably tempo) to the v7 likelihood, so motion can be rewarded.
+3. **Separate the trail semantics from the missing phase** with a short counterfactual: score the Run 1 and Run 4
+   moving samples with and without full trails.
+4. **Use checkpoints** (`python -m grace_lot.inference.run --status <run dir>`) to stop the next run once split
+   R-hat is below 1.1, instead of running a fixed number of iterations.
+5. **Run all 26 manners** once one setting converges.

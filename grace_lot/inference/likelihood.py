@@ -399,14 +399,30 @@ class GaussianScanLikelihood:
         N, T, P, F = self.O.shape
         K = m["mu"].shape[1]
         b = max(0, P - K)
-        mu = np.concatenate([m["mu"], np.broadcast_to(self.bg["mu"], (T, b, F))], axis=1)
-        var = np.concatenate([m["var"], np.broadcast_to(self.bg["var"], (T, b, F))], axis=1)
-        C = self._nll(self.O, mu, var, self.s2)
-        if self.w:
-            dmu = np.concatenate([m["dmu"], np.broadcast_to(self.bg["dmu"], (T - 1, b, F))], axis=1)
-            dvar = np.concatenate([m["dvar"], np.broadcast_to(self.bg["dvar"], (T - 1, b, F))], axis=1)
-            C = C + self.w * self._nll(self.dO, dmu, dvar, self.s2d)
-        return C
+        rows = [self._row(*(m[key][:, k] for key in ("mu", "var", "dmu", "dvar"))) for k in range(K)]
+        if b:
+            rows += [self._row(*(np.broadcast_to(self.bg[key], (len(m[key]), 1, F))[:, 0]
+                                 for key in ("mu", "var", "dmu", "dvar")))] * b
+        return np.stack(rows, axis=1)
+
+    def _row(self, mu, var, dmu, dvar) -> np.ndarray:
+        """(N, P) cost of one output channel (moments over T, F) against each part, memoised by the moments.
+
+        Computed from contiguous copies, so a row depends only on the values (numpy's summation order follows
+        memory layout): within about 1e-16 relative of computing all channels together, and the canonical value.
+        """
+        key = (mu.tobytes(), var.tobytes(), dmu.tobytes(), dvar.tobytes()) if self.w else (mu.tobytes(), var.tobytes())
+        cache = self.__dict__.setdefault("_row_cache", {})
+        row = cache.get(key)
+        if row is None:
+            mu, var, dmu, dvar = (np.ascontiguousarray(a) for a in (mu, var, dmu, dvar))
+            row = self._nll(self.O, mu[:, None], var[:, None], self.s2)[:, 0]
+            if self.w:
+                row = row + self.w * self._nll(self.dO, dmu[:, None], dvar[:, None], self.s2d)[:, 0]
+            if len(cache) > 50_000:
+                cache.clear()
+            cache[key] = row
+        return row
 
     def _matched(self, m):
         """Per video: (rows, columns, matched NLL); outputs beyond the parts stay unmatched."""

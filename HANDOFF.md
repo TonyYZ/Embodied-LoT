@@ -470,3 +470,20 @@ and browser-side evaluation for edited structures.
     - `MeasureTreeTests` cover the fade, the time-varying alpha and the observer
       control.
     - The gameboard explainer now pins all of the v6 semantics, not just grouping.
+27. Inference and tooling for v7 (Run 4 in `docs/v7_diagnostics.md`).
+    - `inference.ladder = "calibrated"`: the hottest replica is set from the likelihood itself (the
+      spread of 32 prior programs' log-likelihoods shrinks to `hot_spread` nats). Run 4 showed this is
+      too hot: replicas below tau ≈ 0.05 swap 95-99% of the time. Next: space the ladder by swap rates.
+    - `mh.r_hat` is split R-hat (each chain cut in half), so chains drifting together are flagged.
+    - Runs print a progress line per chain every `progress_every` iterations and save checkpoints;
+      `python -m grace_lot.inference.run --status <run dir>` gives split R-hat mid-run.
+    - Probabilistic motion: a moved body leaves a full trail of known emptiness (every cell it has
+      claimed, until `reset_gates()`), kept as a separate layer that content moving in covers
+      (`_covered`). Trails are part of the draw-cache key.
+    - Speed, 2.6x per chain: `adapter.rollout` rolls out trees joined by no dashed edge separately and
+      caches them (v7 semantics only; bit-identical on 52k rollouts); the Gaussian likelihood memoises
+      per-channel cost rows (canonical per row, within ~1e-16 of the batched sum).
+    - `python -m grace_lot.analysis.playground` serves the v7 visualizer (`visualizer/page.html`: v7
+      node types, program text in and out, runs on the real engine with tick replay and boards) at /,
+      and a board-first page at /gameboard. Each run checks itself against `ConceptGraph.step()` and
+      whole-program rollouts. `page.html` also opens on its own, with an example graph.
