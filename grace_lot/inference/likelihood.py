@@ -338,18 +338,36 @@ class GaussianScanLikelihood:
         for states, weight in motion_combinations(p, self.size):
             v = rollout(p, self.frames, self.size, states)
             v = v if v.ndim == 4 else v[:, None]
-            T, K, H, W = v.shape
-            if np.all((v == 0) | (v == 1)):
-                Fs = field_features(v, self.softness, self.salience, self.features)[None]
-            else:
-                fills, uniforms = self._draws(T, H, W)                                         # (T, D, H, W), (D, H, W)
-                claim, fig = np.abs(2 * v - 1), v > 0.5
-                boards = np.where(uniforms[None, :, None] < claim[:, None], fig[:, None], fills[:, :, None])
-                Fs = field_features(boards, self.softness, self.salience, self.features)    # (T, D, K, F)
-                Fs = Fs.transpose(1, 0, 2, 3)                                                # (D, T, K, F)
-            dF = np.diff(Fs, axis=1)
-            out.append(dict(weight=weight, mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0)))
+            per = [self._channel_moments(v[:, k]) for k in range(v.shape[1])]
+            out.append(dict(weight=weight, **{key: np.stack([c[key] for c in per], axis=1)
+                                              for key in ("mu", "var", "dmu", "dvar")}))
         return out
+
+    def _channel_moments(self, c: np.ndarray) -> dict:
+        """Mean / variance of one channel's features (T, H, W) over the draws, and of their changes.
+
+        Channels are independent given the shared draws, so each is computed on its own and memoised by its
+        values: a proposal usually leaves most channels as they were, and these are not recomputed."""
+        from grace_lot.grace.scanner import field_features
+        key = c.tobytes()
+        cache = self.__dict__.setdefault("_channel_cache", {})
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+        T, H, W = c.shape
+        if np.all((c == 0) | (c == 1)):
+            Fs = field_features(c[:, None], self.softness, self.salience, self.features)[None, :, 0]   # (1, T, F)
+        else:
+            fills, uniforms = self._draws(T, H, W)                                             # (T, D, H, W), (D, H, W)
+            claim, fig = np.abs(2 * c - 1), c > 0.5
+            boards = np.where(uniforms[None] < claim[:, None], fig[:, None], fills)          # (T, D, H, W)
+            Fs = field_features(boards, self.softness, self.salience, self.features).transpose(1, 0, 2)   # (D, T, F)
+        dF = np.diff(Fs, axis=1)
+        hit = dict(mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0))
+        if len(cache) > 50_000:
+            cache.clear()
+        cache[key] = hit
+        return hit
 
     def _draws(self, T: int, H: int, W: int):
         """The draws' fills and uniforms: they depend only on the draw index (fixed seeds), so they are made once.
