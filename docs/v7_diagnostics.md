@@ -495,3 +495,25 @@ every chain sits on `out`.
 
 λ = 2 is the useful setting: near-converged within an hour, with fits that still distinguish most manners. Structure
 is only weakly identified at any λ before the programs stop describing the data.
+
+## Finer λ sweep: 1.5 and 2.5 (with latent phase)
+
+As Run 7 (λ = 2 with phase) with λ = 1.5 and 2.5. The decision rule was fixed before the runs: (1) split R-hat
+≤ 1.2 for all four manners; (2) own-manner behaviour AUC ≥ 0.75 for every manner; (3) among the λ passing both,
+the highest structure AUC; (4) if none passes, keep λ = 2. Model-side measures only.
+
+| λ | Split R-hat (bowing / crisscrossing / jumping / swinging) | Behaviour AUC (same order) | Structure AUC, best programs (tree_unordered / flat / full) | Structure AUC, posteriors | Chain-best size | Wall time |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1.5 | 1.11 / 1.18 / 1.27 / 1.22 | 0.98 / 1.00 / 0.75 / 0.81 | 0.60 / 0.47 / 0.74 | 0.65 / 0.67 / 0.67 | 19.0 | about 70 min |
+| 2 | 1.42 / 1.11 / 1.29 / 1.18 | 0.77 / 0.96 / 0.62 / 1.00 | 0.60 / 0.64 / 0.55 | 0.54 / 0.73 / 0.49 | 16.7 | about 25 min |
+| 2.5 | 1.29 / 1.17 / 1.81 / 2.12 | 0.77 / 0.94 / 0.46 / 0.38 | 0.58 / 0.54 / 0.58 | 0.60 / 0.50 / 0.56 | 9.9 | about 20 min |
+
+Median log-likelihood of samples at λ = 1.5: 864 / 1026 / 924 / 794 (λ = 2: 787 / 932 / 868 / 797).
+
+**Reading.**
+- **By the rule, none passes** (no λ has R-hat ≤ 1.2 in all four manners), so the rule keeps λ = 2.
+- **But λ = 1.5 is at least as good as λ = 2 on every criterion:** its worst R-hat is lower (1.27 against 1.42), it is
+  the only λ whose behaviour AUC is ≥ 0.75 for every manner, its fits are tighter, and its structure AUC is similar
+  or higher. Its cost is time: about three times slower per chain.
+- **λ = 2.5 is already too strong:** jumping and swinging stop converging and their programs no longer fit their own
+  manner best.
