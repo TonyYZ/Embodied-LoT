@@ -36,6 +36,7 @@ class Chain:
     best: Optional[P] = None
     best_log_post: float = -math.inf
     swaps: List[float] = field(default_factory=list)       # parallel tempering: swap acceptance per neighbouring pair
+    taus: List[float] = field(default_factory=list)        # parallel tempering: the ladder used (after any adaptation)
 
     @property
     def acceptance_rate(self) -> float:
@@ -126,11 +127,24 @@ def ladder_for(inf: dict, n_observations: int) -> List[float]:
 def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
                  proposal: ProposalMixture, iterations: int, burn_in: int, thin: int,
                  rng: random.Random, taus: List[float], swap_every: int = 1,
-                 progress: Optional[Callable[[int, Chain], None]] = None, progress_every: int = 0) -> Chain:
+                 progress: Optional[Callable[[int, Chain], None]] = None, progress_every: int = 0,
+                 adapt_until: int = 0) -> Chain:
     """Parallel tempering. Returns the tau = 1 chain; swap statistics are in ``chain.swaps``.
 
     ``progress(iteration, chain so far)`` is called every ``progress_every`` iterations.
+
+    With ``adapt_until`` > 0 the ladder's spacing adapts during the first ``adapt_until`` iterations (keep it within
+    the burn-in) so that every neighbouring pair swaps at the same rate (Vousden, Farr & Mandel 2016). Its ends stay
+    fixed (tau = 1 and the given hottest tau): with temperatures T = 1 / tau, each gap log(T[k+1] - T[k]) takes a
+    Robbins-Monro step by how much its pair's running swap rate exceeds the mean, and the gaps are rescaled to keep
+    the extent. A fixed target rate would not do: replicas hot enough to sample the prior swap at rate 1 however
+    far apart they are. Afterwards the ladder is fixed and the sampler is ordinary tempering: ``chain.swaps`` counts
+    only the swaps after adaptation, and ``chain.taus`` is the ladder used.
     """
+    taus = list(taus)
+    gaps = np.log(np.diff(1.0 / np.asarray(taus, float))) if adapt_until and len(taus) > 2 else None
+    extent = 1.0 / taus[-1] - 1.0
+    rates = np.full(len(taus) - 1, 0.5)                      # running swap rate per pair, while adapting
     chain = Chain()
     states = []
     for _ in taus:
@@ -145,13 +159,22 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
             a, b = states[k], states[k + 1]
             log_alpha = (taus[k] - taus[k + 1]) * (b.ll - a.ll)
             tried[k] += 1
+            if gaps is not None and it < adapt_until:        # no extra random draws: same stream as without
+                step = (tried[k] + 1) ** -0.6
+                rates[k] += step * (math.exp(min(log_alpha, 0.0)) - rates[k])
+                gaps[k] += step * (rates[k] - rates.mean())
+                gaps += math.log(extent) - math.log(np.exp(gaps).sum())      # keep both ends of the ladder
+                taus[1:] = (1.0 / (1.0 + np.cumsum(np.exp(gaps)))).tolist()
             if log_alpha >= 0 or rng.random() < math.exp(log_alpha):
                 states[k], states[k + 1] = b, a
                 done[k] += 1
+        if gaps is not None and it + 1 == adapt_until:
+            tried[:] = done[:] = 0                          # report the swap rates of the fixed ladder
         _record(chain, states[0], it, burn_in, thin)
         if progress and progress_every and (it + 1) % progress_every == 0:
             progress(it + 1, chain)
     chain.swaps = (done / np.maximum(tried, 1)).tolist()
+    chain.taus = list(taus)
     return chain
 
 

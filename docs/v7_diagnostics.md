@@ -212,3 +212,85 @@ replicas (pair k joins replicas k and k + 1; tau falls from 1 by a factor of abo
 4. **Use checkpoints** (`python -m grace_lot.inference.run --status <run dir>`) to stop the next run once split
    R-hat is below 1.1, instead of running a fixed number of iterations.
 5. **Run all 26 manners** once one setting converges.
+
+## Synthetic recovery: is it the sampler and language, or the fit to real data?
+
+`python -m grace_lot.inference.recovery --config configs/grace_v7_parts.toml --n 4 --actors 15 --from-run
+results/grace_v7_parts/diag5_l1_t16_trail --manners bowing crisscrossing jumping swinging --set
+inference.iterations=10000 inference.burn_in=3000 inference.chains=2 inference.lambda_size=1.0 inference.temperature=0.0625`
+(results in `results/grace_v7_parts/recovery_v7/`).
+
+**Design.** Eight known programs: Run 4's four MAPs (21-23 nodes, the size real fits reach) and four moving prior
+draws. For each, 15 synthetic actors are drawn from the v7 likelihood's own generative model: a motion realization
+by its prior weight, a board per output channel (claimed cells figure, unclaimed cells filled from a real part board,
+fresh randomness per actor), scan features, Gaussian noise at the real manners' level, and the channels shuffled as
+parts. Phases are aligned. Inference is exactly the v7 setting (adaptive ladder, temperature 1/16, λ = 1),
+10,000 iterations, 2 chains. If inference cannot recover programs from data they generated, the trouble is search
+(sampler and language), whatever the real-data fit.
+
+| True program | Nodes | Truth log-post | Best found (each chain) | Same rendering? | Split R-hat | Hours |
+| --- | --- | --- | --- | --- | --- | --- |
+| bowing MAP | 22 | 512.3 | 509.9, 488.5 | no | 1.47 | 6.6 |
+| crisscrossing MAP | 23 | 455.1 | 400.0, 404.1 | no | 2.28 | 1.6 |
+| jumping MAP | 23 | 618.2 | 576.9, 533.4 | no | 1.92 | 7.5 |
+| swinging MAP | 21 | 679.4 | 663.6, 682.8 | no | 1.35 | 3.0 |
+| prior draw | 20 | 85.5 | 130.2, 134.2 | no | 1.06 | 5.7 |
+| prior draw | 23 | 26.6 | 93.0, 88.0 | no | 1.01 | 3.6 |
+| prior draw | 5 | -10.1 | 3.0, -2.0 | yes (`out`) | 1.00 | 1.0 |
+| prior draw | 15 | 69.7 | 111.4, 111.4 | no | 1.04 | 1.2 |
+
+**Reading.**
+- **Search fails on realistic programs.** For three of the four MAP-sized truths no chain reaches the truth's
+  log-posterior: 2, 51 and 41 nats short. The fourth finds a different program scoring 3 nats better. The two chains
+  end 5-44 nats apart, and split R-hat is 1.35-2.28: the same non-convergence as on real data, here with data the
+  model generated itself and aligned phases. So the real-data non-convergence does not need a misfit likelihood to
+  happen. **The bottleneck is search over large programs**: the moves and the brittleness of the language.
+- **Small posteriors converge.** For the prior draws, chains agree (split R-hat 1.00-1.06) and beat the truth by
+  40-65 nats with much smaller programs. Most of a random program's detail (neutral leaves, invisible fields, edges
+  that change nothing) leaves no trace in the features, so the posterior rightly prefers a shorter description:
+  this is Occam's razor, not failure.
+- **Together:** the language's large programs sit in a landscape the current local moves cannot cross, even under
+  tempering. When the posterior is on small programs, sampling is fine.
+
+**What this points to (not yet done):**
+1. **Larger moves.** Moves that rewrite whole subtrees or trees in one step (for example regenerating a whole tree of
+   a forest, or swapping trees between programs held by different replicas) and moves aware of the matching
+   (re-pointing an output at a different part).
+2. **Better starting points.** Start chains from data-driven programs (one output per part, fitted greedily), so
+   search begins near the high-scoring region.
+3. **A less brittle language.** Fewer ways to write the same rendering, and smaller jumps in output for one-node
+   edits.
+4. **Model-side, independently:** latent phase for motion, and a weaker temperature if the posterior stays this sharp.
+
+## Run 5: the adaptive ladder
+
+λ = 1, temperature 1/16, 40,000 iterations (burn-in 10,000, during which the ladder adapts), 4 chains × 12 replicas,
+`inference.ladder = "adaptive"` with tau from 1 to 0.05. About 11 hours: the recovery experiment shared the
+machine for its first 8.
+
+| Manner | Split R-hat | Distinct programs | Median log-lik / log-prior of samples | MAP log-lik / log-prior | Samples that move | field / body / template |
+| --- | --- | --- | --- | --- | --- | --- |
+| bowing | 1.82 | 3903 | 996.4 / -95.8 | 1039.9 / -79.9 | 0.05 | 0.34 / 0.41 / 0.73 |
+| crisscrossing | 1.66 | 3939 | 1089.4 / -88.0 | 1141.0 / -80.2 | 0.00 | 0.39 / 0.47 / 0.62 |
+| jumping | 1.99 | 3899 | 1118.9 / -86.0 | 1140.7 / -75.5 | 0.08 | 0.47 / 0.41 / 0.89 |
+| swinging | 1.68 | 3936 | 977.0 / -84.9 | 1037.7 / -74.1 | 0.00 | 0.42 / 0.52 / 0.75 |
+
+Chain means of the log-posterior over the four post-burn-in quarters:
+
+| Manner | Chain 0 | Chain 1 | Chain 2 | Chain 3 |
+| --- | --- | --- | --- | --- |
+| bowing | 902 → 929 | 880 → 892 | 867 → 925 | 867 → 948 |
+| crisscrossing | 982 → 1012 | 951 → 1022 | 962 → 997 | 964 → 1042 |
+| jumping | 944 → 941 | 1043 → 1049 | 1022 → 1045 | 943 → 1007 |
+| swinging | 864 → 902 | 784 → 872 | 919 → 936 | 808 → 852 |
+
+**Reading.**
+- **No better than Run 4.** Split R-hat is 1.66-1.99 (Run 4: 1.31-2.46), fits are about as good, and motion stays at
+  0-8%.
+- **Separate modes, not just slow climbing.** Jumping's chain 0 sits flat at about 942 for 30,000 iterations while
+  chain 1 sits at about 1047: a 100-nat gap that tempering never bridged. Other chains are still climbing at the end.
+- **The ladder adapted only partly.** The middle of the ladder evened out, but in most chains the last gap (down to
+  tau = 0.05) stayed wide, with swap rates near 0 there: 10,000 iterations of shrinking adaptation steps were not
+  enough to settle it while the chains were still climbing.
+- **Consistent with the recovery experiment:** swaps were never the main problem. The moves cannot reach better
+  regions of large programs, on synthetic or real data alike.

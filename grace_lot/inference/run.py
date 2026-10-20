@@ -37,7 +37,7 @@ from grace_lot.grace.dataset import split_videos, study3_exemplars, substituted
 from grace_lot.grace.preprocess import load_trajectory
 from grace_lot.inference.grammar import Grammar
 from grace_lot.inference.likelihood import TrajectoryLikelihood
-from grace_lot.inference.mh import calibrated_ladder, ladder_for, r_hat, run_tempered
+from grace_lot.inference.mh import calibrated_ladder, ladder_for, r_hat, run_tempered, temperature_ladder
 from grace_lot.inference.prior import SizePrior
 from grace_lot.inference.proposals import ProposalMixture
 from grace_lot.lot_adapter.adapter import LotRenderer
@@ -118,6 +118,15 @@ def build(cfg: dict, observations):
     return grammar, renderer, prior, lik, ProposalMixture(grammar, inf["move_weights"])
 
 
+def chain_ladder(inf: dict, prior, lik, proposal, n_observations: int, key: str) -> tuple:
+    """The tempering ladder a chain starts with, and how long it adapts (``inference.ladder``)."""
+    if inf.get("ladder") == "adaptive":                     # spaced by swap rates during burn-in, from a geometric start
+        return temperature_ladder(inf.get("replicas", 1), inf.get("tau_min", 0.05)), inf["burn_in"]
+    if inf.get("ladder") == "calibrated":                   # scaled to this likelihood, the same for a manner's chains
+        return calibrated_ladder(inf, prior, lik, proposal.grammar, random.Random(zlib.crc32(key.encode()))), 0
+    return ladder_for(inf, n_observations), 0
+
+
 def save_checkpoint(path: Path, chain) -> None:
     """A chain's traces so far (written atomically, so ``status`` never reads half a file)."""
     tmp = path.with_suffix(".tmp.npz")
@@ -130,10 +139,7 @@ def run_one_chain(job):
     inf = cfg["inference"]
     observations = observations_for(cfg, videos)
     _, _, prior, lik, proposal = build(cfg, observations)
-    if inf.get("ladder") == "calibrated":                   # scaled to this likelihood, the same for a manner's chains
-        taus = calibrated_ladder(inf, prior, lik, proposal.grammar, random.Random(zlib.crc32(manner.encode())))
-    else:
-        taus = ladder_for(inf, len(observations))
+    taus, adapt_until = chain_ladder(inf, prior, lik, proposal, len(observations), manner)
     seed = inf["seed"] * 1000 + k + 17 * zlib.crc32(manner.encode())
     t0 = time.time()
     checkpoint = out / "checkpoints" / f"{manner}_{k}.npz"
@@ -143,11 +149,12 @@ def run_one_chain(job):
               f"{(time.time() - t0) / 60:.0f} min, log-post {chain.log_post[-1]:.1f}", flush=True)
         save_checkpoint(checkpoint, chain)
     c = run_tempered(prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"],
-                     random.Random(seed), taus, inf.get("swap_every", 1), report, inf.get("progress_every", 0))
+                     random.Random(seed), taus, inf.get("swap_every", 1), report, inf.get("progress_every", 0),
+                     adapt_until)
     return manner, k, {
         "samples": [str(p) for p in c.samples], "best": str(c.best), "best_log_post": c.best_log_post,
         "acceptance": c.acceptance_rate, "proposed": dict(c.moves), "accepted": dict(c.accepted),
-        "swaps": c.swaps, "log_post": c.log_post, "log_lik": c.log_lik, "log_prior": c.log_prior,
+        "swaps": c.swaps, "taus": c.taus, "log_post": c.log_post, "log_lik": c.log_lik, "log_prior": c.log_prior,
         "seconds": time.time() - t0}
 
 
@@ -172,7 +179,7 @@ def finish_manner(cfg, manner, videos, chains: List[dict], out: Path, flags: Dic
         "map_log_lik": lik(best_prog), "map_log_prior": prior(best_prog),
         "map_distance": map_d,
         "chains": [{k: c[k] for k in ("best", "best_log_post", "acceptance", "proposed", "accepted",
-                                      "swaps", "seconds")} for c in chains],
+                                      "swaps", "taus", "seconds")} for c in chains],
         "r_hat_log_post": r_hat([c["log_post"][inf["burn_in"]:] for c in chains]),
         "unique_programs": len(counts),
     }

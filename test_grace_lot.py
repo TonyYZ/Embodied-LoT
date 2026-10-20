@@ -120,6 +120,25 @@ class InferenceTests(unittest.TestCase):
         self.assertLess(tv, 0.04)
         self.assertTrue(all(0 < a < 1 for a in chain.swaps))
 
+    def test_adaptive_ladder_keeps_the_exact_posterior_and_evens_the_swaps(self):
+        """The ladder's spacing adapts during burn-in only: afterwards tempering is exact, with even swap rates."""
+        prior = SizePrior(TINY, 0.7, 0.5)
+        n_top = lambda t: sum(1 for q in _leaves(t.tree) if q.params[0] == "top")
+        log_lik = lambda t: -6.0 * abs(n_top(t) - 1.5)
+        states = support(TINY, prior)
+        w = [math.exp(prior(t) + log_lik(t)) for t in states]
+        exact = Counter()
+        for t, wt in zip(states, w):
+            exact[(size(t.tree), n_top(t), len(t.dashed))] += wt / sum(w)
+        chain = run_tempered(prior, log_lik, ProposalMixture(TINY, MOVES), 80_000, 10_000, 2,
+                             random.Random(2), temperature_ladder(5, 0.02), adapt_until=10_000)
+        emp = Counter((size(t.tree), n_top(t), len(t.dashed)) for t in chain.samples)
+        tv = 0.5 * sum(abs(emp[k] / len(chain.samples) - v) for k, v in exact.items())
+        self.assertLess(tv, 0.04)
+        self.assertEqual(chain.taus[0], 1.0)
+        self.assertAlmostEqual(chain.taus[-1], 0.02)          # the ends stay
+        self.assertLess(max(chain.swaps) - min(chain.swaps), 0.15, chain.swaps)
+
     def test_calibrated_ladder_shrinks_the_prior_spread_to_hot_spread(self):
         prior = SizePrior(TINY, 0.7, 0.5)
         log_lik = lambda t: -300.0 * size(t.tree)              # spread scales with the likelihood, not with beta

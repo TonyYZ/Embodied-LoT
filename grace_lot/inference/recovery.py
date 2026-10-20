@@ -23,6 +23,13 @@ Programs that render the same as the truth are indistinguishable by any
 likelihood, so ``equiv_mass``, not ``exact_mass``, is the target. A low
 ``search_ok`` rate or ``equiv_mass`` is an implementation or mixing failure.
 Nothing here touches human data.
+
+With the v7 interface (``parts_scan`` and the Gaussian likelihood) each synthetic actor is a draw from that
+likelihood's own generative model: a motion realization (by its prior weight), one board per output channel
+(claimed cells figure, unclaimed cells filled from a real part board, fresh randomness per actor), scan features,
+Gaussian noise at the real manners' level, and the channels in a random order as parts. Equivalence is then
+rendering identically under every motion realization, up to channel order; the ladder is the run's
+(``run.chain_ladder``).
 """
 
 from __future__ import annotations
@@ -95,8 +102,52 @@ def synthetic_copies(y: np.ndarray, n: int, noise: float, shift: int, rng) -> li
     return out
 
 
+def scan_signature(p, frames: int, size: int) -> tuple:
+    """A program's renderings under every motion realization, up to channel order: equal means indistinguishable."""
+    from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+    out = []
+    for states, w in motion_combinations(p, size):
+        v = rollout(p, frames, size, states)
+        v = v if v.ndim == 4 else v[:, None]
+        out.append((round(w, 9), tuple(sorted(v[:, k].tobytes() for k in range(v.shape[1])))))
+    return tuple(sorted(out))
+
+
+def scan_actor(truth, cfg: dict, background: dict, s2: np.ndarray, rng) -> np.ndarray:
+    """One synthetic actor (T, K, F), drawn from the Gaussian scan likelihood's generative model."""
+    from grace_lot.grace.scanner import field_features
+    from grace_lot.lot_adapter.adapter import motion_combinations, rollout
+    pre, itf = cfg["preprocess"], cfg["interface"]
+    combos = motion_combinations(truth, pre["field_size"])
+    w = np.array([c[1] for c in combos])
+    v = rollout(truth, pre["frames"], pre["field_size"], combos[rng.choice(len(combos), p=w / w.sum())][0])
+    v = v if v.ndim == 4 else v[:, None]                                               # (T, K, H, W)
+    fill = background["boards"][rng.integers(len(background["boards"]))].astype(float)   # (T, H, W)
+    uniform = rng.random(v.shape[2:])
+    boards = np.where(uniform[None, None] < np.abs(2 * v - 1), (v > 0.5).astype(float), fill[:, None])
+    feats = field_features(boards, itf["scan_softness"], itf["lot_salience"], itf.get("features", "max6"))
+    feats = feats + rng.normal(0.0, np.sqrt(s2), feats.shape)
+    return feats[:, rng.permutation(feats.shape[1])]
+
+
+def recover_scan(cfg: dict, truth, actors: int, s2: np.ndarray, seed: int) -> tuple:
+    """Synthetic v7 observations of ``truth``, their likelihood, and an equivalence test."""
+    from grace_lot.grace.scanner import feature_background
+    from grace_lot.inference.likelihood import GaussianScanLikelihood
+    pre, itf, inf = cfg["preprocess"], cfg["interface"], cfg["inference"]
+    background = feature_background(cfg)
+    rng = np.random.default_rng(seed)
+    obs = [scan_actor(truth, cfg, background, s2, rng) for _ in range(actors)]
+    lik = GaussianScanLikelihood(obs, pre["frames"], pre["field_size"], itf["scan_softness"], itf["lot_salience"],
+                                 background, inf.get("temperature"), inf.get("temporal_weight", 0.0),
+                                 inf.get("cell_draws", 256), inf.get("noise_floor", 0.1), features=itf.get("features", "max6"))
+    target = scan_signature(truth, pre["frames"], pre["field_size"])
+    return obs, lik, lambda p: scan_signature(p, pre["frames"], pre["field_size"]) == target
+
+
 def recover_one(job) -> dict:
-    cfg, truth_str, k, actors, noise, seed, shift, label = job
+    cfg, truth_str, k, actors, noise, seed, shift, label = job[:8]
+    s2 = np.asarray(job[8]) if len(job) > 8 else None
     from grace_lot.lot_adapter.program import parse_program
     truth = parse_program(truth_str)
     inf, pre = cfg["inference"], cfg["preprocess"]
@@ -106,8 +157,12 @@ def recover_one(job) -> dict:
     renderer = LotRenderer(pre["frames"], pre["field_size"])
     rng = np.random.default_rng(seed)
     y = renderer(truth)
-    parts_mode = cfg.get("interface", {}).get("representation", "occupancy") == "parts"
-    if parts_mode:
+    itf = cfg.get("interface", {})
+    parts_mode = itf.get("representation", "occupancy") in ("parts", "parts_scan")
+    scan_mode = itf.get("representation") == "parts_scan" and inf.get("likelihood") == "gaussian"
+    if scan_mode:
+        obs, lik, same_render = recover_scan(cfg, truth, actors, s2, seed)
+    elif parts_mode:
         # Anonymous outputs: every actor shows the true channels in its own random order.
         from grace_lot.inference.likelihood import MatchedPartsLikelihood
         yk = y if y.ndim == 4 else y[:, None]
@@ -127,15 +182,17 @@ def recover_one(job) -> dict:
         same_render = lambda p: euclid(renderer(p), y) < EQUIV_TOL
     prior = SizePrior.from_config(g, inf)
     prop = ProposalMixture(g, inf["move_weights"])
-    taus = ladder_for(inf, len(obs))
+    from grace_lot.inference.run import chain_ladder
+    taus, adapt_until = chain_ladder(inf, prior, lik, prop, len(obs), f"truth{k}")
     t0 = time.time()
     chains = [run_tempered(prior, lik, prop, inf["iterations"], inf["burn_in"], inf["thin"],
-                           random.Random(seed * 100 + c), taus, inf.get("swap_every", 1))
+                           random.Random(seed * 100 + c), taus, inf.get("swap_every", 1), adapt_until=adapt_until)
               for c in range(inf["chains"])]
     post = posterior(chains)
     truth_lp = prior(truth) + lik(truth)
     best_lp = max(c.best_log_post for c in chains)
-    equiv = sum(w for p, w in post.items() if same_render(p))
+    top = sorted(post.items(), key=lambda kv: -kv[1])[:500]      # equivalence is costly in v7: the heaviest programs
+    equiv = sum(w for p, w in top if same_render(p))
     full = MEASURES["tree_unordered"] if parts_mode else MEASURES["full"]   # output order is arbitrary
     sim_post = sum(w * full(p, truth) for p, w in post.items())
     prng = random.Random(seed)
@@ -147,6 +204,7 @@ def recover_one(job) -> dict:
             "map": str(best), "map_equiv": bool(same_render(best)),
             "sim_to_truth": sim_post, "sim_prior": sim_prior,
             "r_hat": r_hat([c.log_post[inf["burn_in"]:] for c in chains]),
+            "chain_best": [c.best_log_post for c in chains], "chain_best_equiv": [bool(same_render(c.best)) for c in chains],
             "swap_rates": [round(s, 2) for s in chains[0].swaps], "seconds": time.time() - t0}
 
 
@@ -176,7 +234,14 @@ def main() -> None:
                 for m in args.manners]
     labelled += [("hand-picked", parse_program(t)) for t in args.truths]
     labelled += [("prior draw", t) for t in make_truths(g, prior, renderer, args.n, random.Random(12345))]
-    jobs = [(cfg, str(t), k, args.actors, args.noise, 1000 + k, args.shift, label)
+    s2 = None
+    if cfg.get("interface", {}).get("representation") == "parts_scan" and cfg["inference"].get("likelihood") == "gaussian":
+        from grace_lot.inference.run import build, observations_for, videos_for   # the real manners' noise level
+        by_manner, _ = videos_for(cfg, "train")
+        s2 = np.mean([build(cfg, observations_for(cfg, by_manner[m]))[3].s2
+                      for m in (args.manners or ["bowing", "crisscrossing", "jumping", "swinging"])], axis=0).tolist()
+        apply_semantics(cfg["lot"])
+    jobs = [(cfg, str(t), k, args.actors, args.noise, 1000 + k, args.shift, label, s2)
             for k, (label, t) in enumerate(labelled)]
     results = []
     with Pool(min(args.workers, len(jobs))) as pool:

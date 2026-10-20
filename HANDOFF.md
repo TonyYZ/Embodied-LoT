@@ -487,3 +487,12 @@ and browser-side evaluation for edited structures.
       node types, program text in and out, runs on the real engine with tick replay and boards) at /,
       and a board-first page at /gameboard. Each run checks itself against `ConceptGraph.step()` and
       whole-program rollouts. `page.html` also opens on its own, with an example graph.
+28. Adaptive ladder and v7 recovery (Run 5 and the recovery experiment in `docs/v7_diagnostics.md`).
+    - `inference.ladder = "adaptive"` (v7 default): during burn-in the gaps between replicas' temperatures adapt
+      so neighbouring pairs swap equally often (Vousden, Farr & Mandel 2016), with both ends fixed (tau 1 and
+      `tau_min` = 0.05); afterwards the ladder is frozen, so sampling is exact. Each chain records its `taus`.
+    - `run.chain_ladder` sets a chain's ladder for both real runs and recovery.
+    - `recovery.py` supports the v7 Gaussian scan likelihood: synthetic actors are drawn from that likelihood's own
+      generative model at the real manners' noise level.
+    - Finding: inference fails to recover realistic (21-23 node) programs even from data they generated, while
+      small programs converge. The bottleneck is search (moves and language), not the ladder or the likelihood alone.
