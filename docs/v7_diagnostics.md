@@ -463,3 +463,35 @@ As Run 6, plus `inference.phases = 8`: each video is scored at every circular sh
 - **Structure stays only weakly identified** under every setting tried, while behaviour is identified well. Different
   programs that fit equally well remain the main obstacle for a structural comparison with human similarity.
 - **Latent phase helps motion and fit, not identifiability.**
+
+## Runs 8-9: λ = 3, without and with latent phase
+
+As Runs 6-7 with λ = 3. About 10 minutes each.
+
+| Manner | Split R-hat (no phase / phase) | Distinct programs | Mass of the top program | Median log-lik of samples |
+| --- | --- | --- | --- | --- |
+| bowing | 1.27 / 1.82 | 132 / 337 | 0.84 / 0.76 | 632 / 630 |
+| crisscrossing | 1.31 / 1.29 | 927 / 737 | 0.27 / 0.33 | 793 / 772 |
+| jumping | 4.46 / 1.57 | 106 / 76 | 0.84 / 0.84 | 718 / 724 |
+| swinging | 1.00 / 1.00 | 3 / 3 | 1.00 / 1.00 | 574 / 580 |
+
+Chain-best programs average 5.4 / 4.8 nodes; swinging's posterior is the bare window `out`, and no samples move.
+Structure AUC (best programs, tree_unordered / flat / full): 0.69 / 0.63 / 0.68 without phase, 0.61 / 0.62 / 0.61
+with phase. Behaviour AUC (bowing / crisscrossing / jumping / swinging): 0.60 / 0.96 / 0.31 / 0.21 without phase,
+0.67 / 0.83 / 0.46 / 0.38 with phase; 7-8 of 16 programs fit their own manner best.
+
+**Reading.** λ = 3 is too strong: programs collapse to a few nodes (swinging to an empty window), the data no longer
+shape them, and own-manner fit breaks down (swinging's programs fit other manners better than its own). The slightly
+higher structure AUC only reflects near-empty programs resembling each other. Swinging's R-hat of 1.00 is trivial:
+every chain sits on `out`.
+
+## The λ sweep
+
+| λ | Split R-hat | Chain-best size | Structure AUC (best programs) | Behaviour AUC | Motion |
+| --- | --- | --- | --- | --- | --- |
+| 1 (Runs 4-5) | 1.31-2.46 | 21 nodes | 0.51-0.54 | 0.77-0.99 | 0-12% |
+| **2** (Runs 6-7) | 1.09-1.42 | 17 nodes | 0.55-0.64 | 0.52-1.00 | up to 21% with phase |
+| 3 (Runs 8-9) | 1.00-4.46 | 5 nodes | 0.61-0.69 | 0.21-0.96 | 0% |
+
+λ = 2 is the useful setting: near-converged within an hour, with fits that still distinguish most manners. Structure
+is only weakly identified at any λ before the programs stop describing the data.
