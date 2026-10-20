@@ -7,7 +7,9 @@
 tau_0 = 1 > tau_1 > ... (the prior is never tempered) and proposes swaps
 between neighbouring replicas: parallel tempering. Hot replicas move
 freely between modes and pass good programs down to the cold one. Only the
-tau = 1 replica is recorded as posterior samples.
+tau = 1 replica is recorded as posterior samples. Optionally, neighbouring
+replicas also exchange subtrees (crossover), so pieces a hot replica found can
+reach the cold one without being rebuilt node by node.
 """
 
 from __future__ import annotations
@@ -21,8 +23,8 @@ from typing import Callable, Dict, List, Optional
 import numpy as np
 
 from grace_lot.inference.grammar import Grammar
-from grace_lot.inference.proposals import ProposalMixture
-from grace_lot.lot_adapter.program import P, Program
+from grace_lot.inference.proposals import ProposalMixture, _free_sites, _get
+from grace_lot.lot_adapter.program import P, Program, replace
 
 
 @dataclass
@@ -37,6 +39,7 @@ class Chain:
     best_log_post: float = -math.inf
     swaps: List[float] = field(default_factory=list)       # parallel tempering: swap acceptance per neighbouring pair
     taus: List[float] = field(default_factory=list)        # parallel tempering: the ladder used (after any adaptation)
+    crossovers: List[int] = field(default_factory=lambda: [0, 0])   # subtree exchanges between replicas: tried, accepted
 
     @property
     def acceptance_rate(self) -> float:
@@ -116,6 +119,36 @@ def calibrated_ladder(inf: dict, log_prior, log_lik, grammar, rng: random.Random
     return temperature_ladder(inf.get("replicas", 1), tau_min)
 
 
+def _crossover(a: _State, b: _State, tau_a: float, tau_b: float, log_prior, log_lik, rng: random.Random) -> bool:
+    """Exchange one subtree between two replicas' programs; accept with the joint tempered MH rule.
+
+    Each side picks uniformly among its subtrees that no dashed edge touches (not the whole program; a whole tree
+    of a forest is allowed). Picking the same two paths again undoes the exchange, so the Hastings ratio is
+    |S_a| |S_b| / (|S_a'| |S_b'|), the numbers of such sites before and after.
+    """
+    sites = lambda p: [s for s in _free_sites(p) if s]
+    sa, sb = sites(a.program), sites(b.program)
+    if not sa or not sb:
+        return False
+    pa, pb = rng.choice(sa), rng.choice(sb)
+    ta, tb = _get(a.program.tree, pa), _get(b.program.tree, pb)
+    if ta == tb:
+        return False
+    na = Program(replace(a.program.tree, pa, tb), a.program.dashed)
+    nb = Program(replace(b.program.tree, pb, ta), b.program.dashed)
+    lpa, lpb = log_prior(na), log_prior(nb)
+    if lpa == -math.inf or lpb == -math.inf:
+        return False
+    lla, llb = log_lik(na), log_lik(nb)
+    log_alpha = ((lpa + tau_a * lla + lpb + tau_b * llb) - (a.lp + tau_a * a.ll + b.lp + tau_b * b.ll)
+                 + math.log(len(sa) * len(sb)) - math.log(len(sites(na)) * len(sites(nb))))
+    if log_alpha >= 0 or rng.random() < math.exp(log_alpha):
+        a.program, a.lp, a.ll = na, lpa, lla
+        b.program, b.lp, b.ll = nb, lpb, llb
+        return True
+    return False
+
+
 def ladder_for(inf: dict, n_observations: int) -> List[float]:
     """The ladder for a run. The hottest replica sees a total likelihood weight of
     ``hot_beta`` (beta x n_observations x tau_min = hot_beta), so the ladder adapts to beta
@@ -128,7 +161,8 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
                  proposal: ProposalMixture, iterations: int, burn_in: int, thin: int,
                  rng: random.Random, taus: List[float], swap_every: int = 1,
                  progress: Optional[Callable[[int, Chain], None]] = None, progress_every: int = 0,
-                 adapt_until: int = 0) -> Chain:
+                 adapt_until: int = 0, crossover: float = 0.0,
+                 init: Optional[Callable[[random.Random], P]] = None) -> Chain:
     """Parallel tempering. Returns the tau = 1 chain; swap statistics are in ``chain.swaps``.
 
     ``progress(iteration, chain so far)`` is called every ``progress_every`` iterations.
@@ -140,6 +174,10 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
     the extent. A fixed target rate would not do: replicas hot enough to sample the prior swap at rate 1 however
     far apart they are. Afterwards the ladder is fixed and the sampler is ordinary tempering: ``chain.swaps`` counts
     only the swaps after adaptation, and ``chain.taus`` is the ladder used.
+
+    With ``crossover`` > 0, each sweep also tries, with that probability, to exchange a subtree between a random
+    neighbouring pair of replicas (``_crossover``). ``init(rng)`` gives each replica's starting program (default:
+    a draw from the generator).
     """
     taus = list(taus)
     gaps = np.log(np.diff(1.0 / np.asarray(taus, float))) if adapt_until and len(taus) > 2 else None
@@ -148,7 +186,7 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
     chain = Chain()
     states = []
     for _ in taus:
-        p = initial_state(proposal.grammar, log_prior, rng)
+        p = init(rng) if init else initial_state(proposal.grammar, log_prior, rng)
         states.append(_State(p, log_prior(p), log_lik(p)))
     tried, done = np.zeros(len(taus) - 1), np.zeros(len(taus) - 1)
     for it in range(iterations):
@@ -168,6 +206,10 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
             if log_alpha >= 0 or rng.random() < math.exp(log_alpha):
                 states[k], states[k + 1] = b, a
                 done[k] += 1
+        if crossover and len(taus) > 1 and rng.random() < crossover:     # no extra draws when off
+            k = rng.randrange(len(taus) - 1)
+            chain.crossovers[0] += 1
+            chain.crossovers[1] += _crossover(states[k], states[k + 1], taus[k], taus[k + 1], log_prior, log_lik, rng)
         if gaps is not None and it + 1 == adapt_until:
             tried[:] = done[:] = 0                          # report the swap rates of the fixed ladder
         _record(chain, states[0], it, burn_in, thin)

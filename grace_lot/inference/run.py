@@ -127,6 +127,19 @@ def chain_ladder(inf: dict, prior, lik, proposal, n_observations: int, key: str)
     return ladder_for(inf, n_observations), 0
 
 
+def tempered(inf: dict, prior, lik, proposal, rng: random.Random, taus, adapt_until: int, report=None):
+    """One tempered chain with the configured options: ``crossover`` (probability per sweep of a subtree exchange
+    between neighbouring replicas) and ``start`` ("parts": data-driven starting programs, ``start_candidates`` trees
+    per pool; otherwise draws from the generator)."""
+    init = None
+    if inf.get("start") == "parts":
+        from grace_lot.inference.starts import part_fit_start
+        init = lambda r: part_fit_start(lik, proposal, prior, r, inf.get("start_candidates", 100), inf.get("start_steps", 200))
+    return run_tempered(prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"], rng, taus,
+                        inf.get("swap_every", 1), report, inf.get("progress_every", 0), adapt_until,
+                        inf.get("crossover", 0.0), init)
+
+
 def save_checkpoint(path: Path, chain) -> None:
     """A chain's traces so far (written atomically, so ``status`` never reads half a file)."""
     tmp = path.with_suffix(".tmp.npz")
@@ -148,13 +161,11 @@ def run_one_chain(job):
         print(f"  {manner} chain {k}: {it}/{inf['iterations']} iterations, "
               f"{(time.time() - t0) / 60:.0f} min, log-post {chain.log_post[-1]:.1f}", flush=True)
         save_checkpoint(checkpoint, chain)
-    c = run_tempered(prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"],
-                     random.Random(seed), taus, inf.get("swap_every", 1), report, inf.get("progress_every", 0),
-                     adapt_until)
+    c = tempered(inf, prior, lik, proposal, random.Random(seed), taus, adapt_until, report)
     return manner, k, {
         "samples": [str(p) for p in c.samples], "best": str(c.best), "best_log_post": c.best_log_post,
         "acceptance": c.acceptance_rate, "proposed": dict(c.moves), "accepted": dict(c.accepted),
-        "swaps": c.swaps, "taus": c.taus, "log_post": c.log_post, "log_lik": c.log_lik, "log_prior": c.log_prior,
+        "swaps": c.swaps, "taus": c.taus, "crossovers": c.crossovers, "log_post": c.log_post, "log_lik": c.log_lik, "log_prior": c.log_prior,
         "seconds": time.time() - t0}
 
 
@@ -179,7 +190,7 @@ def finish_manner(cfg, manner, videos, chains: List[dict], out: Path, flags: Dic
         "map_log_lik": lik(best_prog), "map_log_prior": prior(best_prog),
         "map_distance": map_d,
         "chains": [{k: c[k] for k in ("best", "best_log_post", "acceptance", "proposed", "accepted",
-                                      "swaps", "taus", "seconds")} for c in chains],
+                                      "swaps", "taus", "crossovers", "seconds")} for c in chains],
         "r_hat_log_post": r_hat([c["log_post"][inf["burn_in"]:] for c in chains]),
         "unique_programs": len(counts),
     }

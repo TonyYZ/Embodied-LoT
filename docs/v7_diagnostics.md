@@ -294,3 +294,40 @@ Chain means of the log-posterior over the four post-burn-in quarters:
   enough to settle it while the chains were still climbing.
 - **Consistent with the recovery experiment:** swaps were never the main problem. The moves cannot reach better
   regions of large programs, on synthetic or real data alike.
+
+## Benchmark: crossover and data-driven starts
+
+Recovery of Run 4's four MAP programs (same synthetic data for every variant, as in the recovery experiment),
+5,000 iterations (burn-in 1,500, adaptive ladder), 2 chains per program; `results/grace_v7_parts/bench_moves/`.
+- **crossover** (`inference.crossover = 0.5`): on half the sweeps, two neighbouring replicas exchange one subtree
+  each (possibly a whole tree of the forest), accepted by the joint tempered rule. Exact (toy test).
+- **starts** (`inference.start = "parts"`): each replica starts from a forest of trees fitted greedily, one per
+  observed part (`grace_lot/inference/starts.py`). Only the burn-in changes.
+
+| Variant | Best found minus truth: mean / median | Last-quarter chain mean minus truth | Split R-hat (mean) | Crossovers accepted |
+| --- | --- | --- | --- | --- |
+| baseline | -72.2 / -87.7 | -110.1 | 1.50 | - |
+| crossover | -58.2 / -53.8 | -93.6 | 1.55 | 19% |
+| crossover + starts | -46.9 / -48.7 | -86.6 | 1.38 | 17% |
+
+Per program (best found minus truth, chain 1 / chain 2):
+
+| Program | baseline | crossover | crossover + starts |
+| --- | --- | --- | --- |
+| bowing | -15 / -10 | -21 / -27 | -16 / **+1** |
+| crisscrossing | -86 / -89 | -66 / -104 | -76 / -42 |
+| jumping | -96 / -120 | -108 / -33 | -62 / -44 |
+| swinging | -26 / -135 | -47 / -61 | -82 / -53 |
+
+**Reading.**
+- **Both help, modestly.** Crossover closes about 15 nats of the gap on average, and starts another 10. One chain
+  (bowing, crossover + starts) reaches the truth's score. Crossovers are accepted 17-19% of the time, so pieces do
+  travel between replicas.
+- **Neither solves it.** After 5,000 iterations every variant is still 50-90 nats short on average, and the chains
+  are still climbing. With 2 chains on 4 programs, differences of 10-15 nats are within the run-to-run spread.
+- **Why starts are weak:** fitted one part at a time, a whole tree barely pays for its prior (about 4 nats of
+  tempered fit for most parts against about 10 nats of prior for a 3-node tree), while good programs share trees
+  across several windows. Starting programs score 20-90 nats above random ones, far below good programs.
+- **So:** the landscape of large programs needs more than moves that recombine existing pieces. The remaining
+  options are a less brittle language (fewer near-equivalent ways to write a rendering, smaller output jumps per
+  edit), a weaker temperature, or fitting smaller programs per manner.

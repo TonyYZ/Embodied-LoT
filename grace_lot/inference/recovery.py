@@ -47,7 +47,7 @@ import numpy as np
 from grace_lot.config import load_config
 from grace_lot.inference.grammar import Grammar
 from grace_lot.inference.likelihood import TrajectoryLikelihood
-from grace_lot.inference.mh import ladder_for, posterior, r_hat, run_tempered
+from grace_lot.inference.mh import posterior, r_hat
 from grace_lot.inference.prior import SizePrior
 from grace_lot.inference.proposals import ProposalMixture, _addable
 from grace_lot.lot_adapter.adapter import LotRenderer
@@ -182,11 +182,10 @@ def recover_one(job) -> dict:
         same_render = lambda p: euclid(renderer(p), y) < EQUIV_TOL
     prior = SizePrior.from_config(g, inf)
     prop = ProposalMixture(g, inf["move_weights"])
-    from grace_lot.inference.run import chain_ladder
+    from grace_lot.inference.run import chain_ladder, tempered
     taus, adapt_until = chain_ladder(inf, prior, lik, prop, len(obs), f"truth{k}")
     t0 = time.time()
-    chains = [run_tempered(prior, lik, prop, inf["iterations"], inf["burn_in"], inf["thin"],
-                           random.Random(seed * 100 + c), taus, inf.get("swap_every", 1), adapt_until=adapt_until)
+    chains = [tempered(inf, prior, lik, prop, random.Random(seed * 100 + c), taus, adapt_until)
               for c in range(inf["chains"])]
     post = posterior(chains)
     truth_lp = prior(truth) + lik(truth)
@@ -205,7 +204,8 @@ def recover_one(job) -> dict:
             "sim_to_truth": sim_post, "sim_prior": sim_prior,
             "r_hat": r_hat([c.log_post[inf["burn_in"]:] for c in chains]),
             "chain_best": [c.best_log_post for c in chains], "chain_best_equiv": [bool(same_render(c.best)) for c in chains],
-            "swap_rates": [round(s, 2) for s in chains[0].swaps], "seconds": time.time() - t0}
+            "swap_rates": [round(s, 2) for s in chains[0].swaps], "crossovers": [c.crossovers for c in chains],
+            "chain_log_post": [c.log_post for c in chains], "seconds": time.time() - t0}
 
 
 def main() -> None:

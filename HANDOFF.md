@@ -496,3 +496,11 @@ and browser-side evaluation for edited structures.
       generative model at the real manners' noise level.
     - Finding: inference fails to recover realistic (21-23 node) programs even from data they generated, while
       small programs converge. The bottleneck is search (moves and language), not the ladder or the likelihood alone.
+29. Crossover and data-driven starts (options, off by default; benchmark in `docs/v7_diagnostics.md`).
+    - `inference.crossover` (probability per sweep): two neighbouring replicas exchange one subtree each (a whole
+      forest tree allowed), accepted by the joint tempered rule; exact (toy test). Chains record `crossovers`.
+    - `inference.start = "parts"` (`inference/starts.py`): replicas start from forests of trees fitted greedily, one
+      per observed part (`start_candidates`, `start_steps`). Only the burn-in changes.
+    - `run.tempered` runs a chain with these options, for real runs and recovery alike.
+    - On recovery of Run 4's MAPs (5,000 iterations) they narrow the gap to the truth from about 72 to 47 nats;
+      neither recovers the programs. Next is a model-side choice: language brittleness, temperature, program size.
