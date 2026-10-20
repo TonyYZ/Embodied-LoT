@@ -314,18 +314,26 @@ class GaussianScanLikelihood:
 
     def __init__(self, observations, frames: int, size: int, softness: float, salience: float, background: dict,
                  temperature: float = None, temporal_weight: float = 0.0, draws: int = 256, noise_floor: float = 0.1,
-                 noise: dict = None, cache_size: int = 5000, features: str = "max6") -> None:
+                 noise: dict = None, cache_size: int = 5000, features: str = "max6", phases: int = 1) -> None:
         from collections import OrderedDict
         self.features = features                                          # interface.features (scanner.field_features)
-        self.O = np.stack(observations).astype(np.float64)              # (N, T, P, F)
-        N, T, P, F = self.O.shape
+        O = np.stack(observations).astype(np.float64)                   # (N, T, P, F)
+        N, T, P, F = O.shape
+        self.N, self.phases = N, int(phases)
+        # Latent phase: each video is scored at every circular shift of its frames by 0 .. phases - 1 and the
+        # densities are averaged (a uniform prior over the phase). Valid when a video's frames are whole cycles,
+        # as with preprocess.sampling = "cycle2" (two cycles of 16 frames: phases = 8 covers one cycle). The
+        # shifted copies are scored as videos of their own, (video, phase) in video-major order.
+        self.O = np.concatenate([np.roll(O, -s, axis=1)[:, None] for s in range(self.phases)], axis=1
+                                ).reshape(N * self.phases, T, P, F) if self.phases > 1 else O
         self.dO = np.diff(self.O, axis=1)
         self.P, self.w = P, float(temporal_weight)
         self.temperature = 1.0 / (T * F) if temperature is None else float(temperature)
         self.frames, self.size, self.softness, self.salience, self.draws = frames, size, softness, salience, draws
         self.bg = background
-        if noise is None:
-            noise = dict(s2=self.O.var(axis=0).mean(axis=(0, 1)), s2d=self.dO.var(axis=0).mean(axis=(0, 1)))
+        if noise is None:                                               # from the videos as given, not shifted
+            dO = np.diff(O, axis=1)
+            noise = dict(s2=O.var(axis=0).mean(axis=(0, 1)), s2d=dO.var(axis=0).mean(axis=(0, 1)))
         self.s2 = np.maximum(noise["s2"], np.maximum(noise_floor * background["var"], 1e-6))     # 1e-6: a numeric guard
         self.s2d = np.maximum(noise["s2d"], np.maximum(noise_floor * background["dvar"], 1e-6))
         self._cache, self._cache_size = OrderedDict(), cache_size
@@ -434,9 +442,13 @@ class GaussianScanLikelihood:
         return res
 
     def _scores(self, p):
+        """(combinations, N) log densities (phase marginalised), and the matchings per (video, phase)."""
+        from scipy.special import logsumexp
         ms = self.moments(p)
         matched = [self._matched(m) for m in ms]
-        L = -self.temperature * np.array([[nll for _, _, nll in mt] for mt in matched])      # (combinations, N)
+        L = -self.temperature * np.array([[nll for _, _, nll in mt] for mt in matched])      # (combinations, N x phases)
+        if self.phases > 1:
+            L = logsumexp(L.reshape(len(ms), self.N, self.phases), axis=2) - np.log(self.phases)
         return L + np.log([m["weight"] for m in ms])[:, None], matched
 
     def per_video_scores(self, p) -> np.ndarray:
@@ -450,7 +462,9 @@ class GaussianScanLikelihood:
         """
         L, matched = self._scores(p)
         best = L.argmax(axis=0)
-        return [(r, c, nll * self.temperature / self.P) for (r, c, nll) in (matched[b][n] for n, b in enumerate(best))]
+        S = self.phases                                                  # its best phase, under that combination
+        pick = lambda b, n: min(matched[b][n * S:(n + 1) * S], key=lambda x: x[2])
+        return [(r, c, nll * self.temperature / self.P) for (r, c, nll) in (pick(b, n) for n, b in enumerate(best))]
 
     def __call__(self, p) -> float:
         if p in self._cache:

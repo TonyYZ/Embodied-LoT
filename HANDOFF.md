@@ -504,3 +504,11 @@ and browser-side evaluation for edited structures.
     - `run.tempered` runs a chain with these options, for real runs and recovery alike.
     - On recovery of Run 4's MAPs (5,000 iterations) they narrow the gap to the truth from about 72 to 47 nats;
       neither recovers the programs. Next is a model-side choice: language brittleness, temperature, program size.
+30. Per-chain samples, latent phase, λ = 2 (Runs 6-7 and the chain-agreement checks in `docs/v7_diagnostics.md`).
+    - Posterior files now hold each chain's own posterior (its 500 most frequent programs) under `chains[k].posterior`.
+    - `inference.phases` (Gaussian scan likelihood): each video is scored at every circular shift of its frames by
+      0 .. phases - 1 and the densities averaged (a uniform prior over phase). With cycle2 sampling, 8 covers a cycle.
+      `LatentPhaseTests` checks the score no longer depends on where a cycle starts.
+    - Findings: chains agree on behaviour (own-manner fit) but structure is weakly identified (same- vs different-manner
+      AUC about 0.5 at λ = 1, about 0.6 at λ = 2); rendering-preserving normal forms do not change that. λ = 2 nearly
+      converges in under an hour; latent phase brings motion back for crisscrossing and jumping.

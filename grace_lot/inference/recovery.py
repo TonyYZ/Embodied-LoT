@@ -140,7 +140,8 @@ def recover_scan(cfg: dict, truth, actors: int, s2: np.ndarray, seed: int) -> tu
     obs = [scan_actor(truth, cfg, background, s2, rng) for _ in range(actors)]
     lik = GaussianScanLikelihood(obs, pre["frames"], pre["field_size"], itf["scan_softness"], itf["lot_salience"],
                                  background, inf.get("temperature"), inf.get("temporal_weight", 0.0),
-                                 inf.get("cell_draws", 256), inf.get("noise_floor", 0.1), features=itf.get("features", "max6"))
+                                 inf.get("cell_draws", 256), inf.get("noise_floor", 0.1), features=itf.get("features", "max6"),
+                                 phases=inf.get("phases", 1))
     target = scan_signature(truth, pre["frames"], pre["field_size"])
     return obs, lik, lambda p: scan_signature(p, pre["frames"], pre["field_size"]) == target
 

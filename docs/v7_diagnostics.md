@@ -331,3 +331,135 @@ Per program (best found minus truth, chain 1 / chain 2):
 - **So:** the landscape of large programs needs more than moves that recombine existing pieces. The remaining
   options are a less brittle language (fewer near-equivalent ways to write a rendering, smaller output jumps per
   edit), a weaker temperature, or fitting smaller programs per manner.
+
+## Do chains in different modes agree on what matters?
+
+Per-chain samples are not saved (posteriors pool the chains), so this uses each chain's best program: 4 chains in
+each of Runs 4 and 5, so 8 independently found programs per manner, 32 in all. Model-side only: the human ratings
+are not used, so no choice here is tuned on them.
+
+**Structure.** Mean similarity of two chain-best programs:
+
+| Measure | Same manner, different chains | Different manners | AUC (same vs different) |
+| --- | --- | --- | --- |
+| tree_unordered | 0.614 | 0.610 | 0.51 |
+| flat | 0.254 | 0.245 | 0.52 |
+| full | 0.527 | 0.521 | 0.54 |
+
+**Behaviour.** Each manner's likelihood (temperature 1/16) scores all 32 programs:
+
+| Manner's videos | Its own programs | Other manners' programs | AUC own vs other | Own programs beating every other |
+| --- | --- | --- | --- | --- |
+| bowing | 982 .. 1040 | 611 .. 1009 | 0.96 | 5 / 8 |
+| crisscrossing | 1091 .. 1149 | 725 .. 1131 | 0.97 | 3 / 8 |
+| jumping | 1023 .. 1158 | 846 .. 1149 | 0.77 | 1 / 8 |
+| swinging | 946 .. 1038 | 710 .. 949 | 0.99 | 7 / 8 |
+
+21 of the 32 programs fit their own manner's videos best.
+
+**Reading.**
+- **The modes agree on behaviour.** Whichever mode a chain lands in, its program fits its own manner far better than
+  other manners' programs do (AUC 0.77-0.99).
+- **They do not agree on structure.** Programs for the same manner are no more alike than programs for different
+  manners (AUC 0.51-0.54, chance) on every tree measure. The data identify what programs render, not how they are
+  written.
+- **So non-convergence matters for the human comparison as it stands.** `analysis/run.py` compares manners by the
+  structure of their programs (tree measures). With structure this arbitrary, those similarities would mostly
+  reflect which mode each chain fell into.
+
+**Options:**
+1. **Normalise programs before comparing them:** remove what has no effect on the rendering (neutral fillers,
+   gates and edges that change nothing, child order) and compare the normal forms. Cheap and model-side; it shows
+   whether a rendering-preserving normal form makes structure identifiable.
+2. **A less redundant language,** so that fewer different programs render the same boards.
+3. **Behavioural similarity** (how well one manner's programs explain another manner's videos) is robust to the
+   mode, but it is close to a kinematic baseline and gives up the structural claim of the LoT account.
+
+### Normal forms do not help
+
+Each of the 32 chain-best programs was simplified greedily: remove a dashed edge, remove a child subtree, or unwrap
+a single-child composition, keeping an edit only if the program stays in the language and renders exactly the same
+boards under every motion realization (channel order ignored).
+
+| | Mean size | Structure AUC (tree_unordered / flat / full) | Distinct programs per manner |
+| --- | --- | --- | --- |
+| original | 21.3 nodes | 0.51 / 0.52 / 0.54 | 8 of 8 |
+| normal form | 20.2 nodes | 0.52 / 0.51 / 0.55 | 8 of 8 |
+
+**Reading.** Very little of each program is removable without changing what it draws, and the normal forms are
+still no more alike within a manner than across manners. The chains' programs are not one rendering written in
+different ways: they draw different boards that fit about equally well. So the structure is unidentified because
+the data constrain it only weakly (8 features per part, matched to whichever output fits best, and no phase), not
+because the language writes the same thing many ways. A less redundant notation alone would not fix it.
+
+**What would:**
+1. **A stronger simplicity prior** (a larger λ, or fewer windows or less depth), so only the simplest adequate
+   programs remain. Recovery showed small posteriors converge; the question is whether manners still separate.
+2. **Observations that constrain structure more:** latent phase and tempo, temporal features, and finer parts.
+3. **Comparing concepts by behaviour,** which is robust (AUC 0.77-0.99), at the cost of the structural claim.
+
+## Run 6: a stronger simplicity prior (λ = 2)
+
+λ = 2, temperature 1/16, 30,000 iterations (burn-in 10,000, adaptive ladder), crossover 0.5, 4 chains × 12
+replicas. About 15-20 minutes per chain (Run 5: 6-11 hours). Each chain's own posterior is now saved.
+
+| Manner | Split R-hat | Distinct programs | Mass of the top program | Median log-lik / log-prior of samples | MAP log-lik / log-prior | Samples that move |
+| --- | --- | --- | --- | --- | --- | --- |
+| bowing | 1.09 | 1968 | 0.032 | 816.0 / -74.3 | 1006.7 / -155.7 | 0.03 |
+| crisscrossing | 1.32 | 2265 | 0.024 | 895.7 / -100.3 | 1080.4 / -136.4 | 0.01 |
+| jumping | 1.28 | 1929 | 0.084 | 818.8 / -73.9 | 1097.7 / -97.1 | 0.11 |
+| swinging | 1.23 | 1414 | 0.170 | 651.9 / -56.3 | 842.7 / -95.2 | 0.00 |
+
+Chain agreement (16 chains; model-side only):
+
+| Measure | AUC on chains' best programs (Runs 4-5 at λ = 1) | AUC on chains' posteriors |
+| --- | --- | --- |
+| tree_unordered | 0.59 (0.51) | 0.62 |
+| flat | 0.57 (0.52) | 0.70 |
+| full | 0.57 (0.54) | 0.60 |
+
+Behaviour AUC (each manner's likelihood, chains' best programs): bowing 0.98, crisscrossing 1.00, jumping 0.52,
+swinging 0.90; 8 of 16 programs fit their own manner best.
+
+**Reading.**
+- **Much closer to convergence, and about 30 times cheaper.** Split R-hat 1.09-1.32 (λ = 1: 1.66-1.99); bowing is
+  converged. Chain-best programs average 17 nodes (λ = 1: 21).
+- **Structure becomes somewhat identifiable.** Same-manner chains are now more alike than different-manner chains
+  (AUC 0.57-0.59 on best programs, 0.60-0.70 on posteriors, against 0.51-0.54 at λ = 1), but the separation is still
+  weak.
+- **Behaviour mostly holds,** except jumping, whose programs no longer fit jumping better than other manners do.
+- **Fits are looser** (median log-lik 650-900 against about 980-1120 at λ = 1), and motion stays rare (0-11%).
+
+## Run 7: λ = 2 with latent phase
+
+As Run 6, plus `inference.phases = 8`: each video is scored at every circular shift of its frames within one cycle
+(cycle2 sampling gives two cycles of 16 frames), averaged over the shifts. About 25 minutes in all.
+
+| Manner | Split R-hat (Run 6) | Median log-lik / log-prior of samples | Samples that move (Run 6) |
+| --- | --- | --- | --- |
+| bowing | 1.42 (1.09) | 786.6 / -68.9 | 0.03 (0.03) |
+| crisscrossing | 1.11 (1.32) | 931.6 / -98.8 | **0.21** (0.01) |
+| jumping | 1.29 (1.28) | 868.4 / -85.9 | 0.15 (0.11) |
+| swinging | 1.18 (1.23) | 796.9 / -87.1 | 0.00 (0.00) |
+
+| Chain agreement | Run 7 | Run 6 |
+| --- | --- | --- |
+| Structure AUC, best programs (tree_unordered / flat / full) | 0.60 / 0.64 / 0.55 | 0.59 / 0.57 / 0.57 |
+| Structure AUC, posteriors (tree_unordered / flat / full) | 0.54 / 0.73 / 0.49 | 0.62 / 0.70 / 0.60 |
+| Behaviour AUC (bowing / crisscrossing / jumping / swinging) | 0.77 / 0.96 / 0.62 / 1.00 | 0.98 / 1.00 / 0.52 / 0.90 |
+
+**Reading.**
+- **Phase brings some motion back:** crisscrossing's samples move 21% of the time (Run 6: 1%), jumping 15%. Bowing
+  and swinging stay static.
+- **Fits improve** (median log-lik up 30-145 nats per manner, more than the few nats of generic best-start bonus
+  phase gives every program), so the search finds programs that use the freedom.
+- **Convergence and structure do not change** in a consistent direction: R-hat 1.11-1.42, structure AUC 0.49-0.73.
+  Behaviour AUC moves both ways.
+
+## Where this leaves v7
+
+- **λ = 2 makes inference practical:** near-converged in under an hour instead of a night, and structure becomes
+  weakly identifiable (AUC about 0.6). λ = 1 is neither converged nor structurally identified.
+- **Structure stays only weakly identified** under every setting tried, while behaviour is identified well. Different
+  programs that fit equally well remain the main obstacle for a structural comparison with human similarity.
+- **Latent phase helps motion and fit, not identifiability.**

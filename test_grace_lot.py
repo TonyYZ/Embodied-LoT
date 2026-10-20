@@ -1165,6 +1165,25 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(best, {"still": "void", "moving": "universal", "mixed": "neutral"})
 
 
+class LatentPhaseTests(unittest.TestCase):
+    def test_latent_phase_makes_the_score_independent_of_where_a_cycle_starts(self):
+        """Periodic observations (two cycles of 8 frames): with phases = 8 a rolled video scores the same."""
+        import numpy as np
+        from grace_lot.inference.likelihood import GaussianScanLikelihood
+        rng = np.random.default_rng(0)
+        F = 6
+        bg = dict(mu=np.zeros(F), var=np.ones(F), dmu=np.zeros(F), dvar=np.ones(F),
+                  boards=rng.random((5, 16, 12, 12)) < 0.3)
+        obs = [np.tile(rng.random((8, 2, F)), (2, 1, 1)) for _ in range(3)]          # (16, 2 parts, F), period 8
+        prog = parse_program("(parallel center/V universal/V* out)")
+        noise = dict(s2=np.full(F, 0.05), s2d=np.full(F, 0.05))       # fixed: the estimate depends on the start frame
+        score = lambda o, phases: GaussianScanLikelihood(o, 16, 12, 0.05, 0.75, bg, draws=16, phases=phases,
+                                                         temporal_weight=0.5, noise=noise)(prog)
+        rolled = [np.roll(o, 3, axis=0) for o in obs]
+        self.assertAlmostEqual(score(obs, 8), score(rolled, 8), places=6)
+        self.assertNotAlmostEqual(score(obs, 1), score(rolled, 1), places=3)
+
+
 class PlaygroundTests(unittest.TestCase):
     def test_examples_agree_with_the_engine(self):
         """The playground's phase-by-phase recording equals ConceptGraph.step(), and component rollouts equal

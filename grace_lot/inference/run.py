@@ -93,7 +93,8 @@ def build(cfg: dict, observations):
         lik = GaussianScanLikelihood(observations, pre["frames"], pre["field_size"], itf["scan_softness"],
                                      itf["lot_salience"], feature_background(cfg), inf.get("temperature"),
                                      inf.get("temporal_weight", 0.0), inf.get("cell_draws", 256),
-                                     inf.get("noise_floor", 0.1), features=itf.get("features", "max6"))
+                                     inf.get("noise_floor", 0.1), features=itf.get("features", "max6"),
+                                     phases=inf.get("phases", 1))
     elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         itf = cfg["interface"]
@@ -189,8 +190,10 @@ def finish_manner(cfg, manner, videos, chains: List[dict], out: Path, flags: Dic
         "map": best["best"], "map_log_post": best["best_log_post"],
         "map_log_lik": lik(best_prog), "map_log_prior": prior(best_prog),
         "map_distance": map_d,
-        "chains": [{k: c[k] for k in ("best", "best_log_post", "acceptance", "proposed", "accepted",
-                                      "swaps", "taus", "crossovers", "seconds")} for c in chains],
+        "chains": [{**{k: c[k] for k in ("best", "best_log_post", "acceptance", "proposed", "accepted",
+                                         "swaps", "taus", "crossovers", "seconds")},
+                    "posterior": [[s, n / len(c["samples"])] for s, n in Counter(c["samples"]).most_common(500)]}
+                   for c in chains],                          # each chain's own samples: its 500 most frequent programs
         "r_hat_log_post": r_hat([c["log_post"][inf["burn_in"]:] for c in chains]),
         "unique_programs": len(counts),
     }
