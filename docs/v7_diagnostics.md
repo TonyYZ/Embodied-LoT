@@ -586,3 +586,34 @@ stored scores re-checked from scratch for swinging and skating (exact match).
 - **So structural identifiability is not yet measurable.** The weak structure agreement (AUC 0.5-0.6) mostly reflects
   which mode each chain got stuck in. Fix search first; only then ask whether the posterior is sharp, and whether
   a reuse prior or skeleton information is needed.
+
+## Search fix, first attempt: population selection, a fixed ladder, longer runs
+
+Five manners (bowing, jumping, swinging, shuffling, scurrying), λ = 1.5, latent phase, crossover as in the 26-manner
+run. Changed: each manner gets 4 independent **searches**, each 4 ladders side by side; every 1,000 iterations of
+the burn-in the ladder with the lowest τ = 1 log posterior continues from a copy of the best one
+(`inference.population`, `select_every`). 60,000 iterations (30,000 burn-in) instead of 30,000 (10,000). A fixed
+geometric ladder of 8 replicas from 1 to 0.15 instead of the adaptive 12. About 5x the compute per manner.
+`results/grace_v7_parts/search_pop`. (The first two starts ran out of memory: the likelihood memos, keyed by raw
+array bytes, reached GBs per worker. Now keyed by a 16-byte hash and capped at 10,000 entries; results unchanged.)
+
+Yardstick, fixed beforehand: all 4 searches' best log posteriors within 3 nats.
+
+| Manner | Best (old run) | Best (this run) | Gaps of the other 3 searches | Similarity of search bests |
+| --- | --- | --- | --- | --- |
+| bowing | 911.8 | 966.1 | 28.7, 47.6, 77.2 | 0.62 |
+| jumping | 1033.2 | 1039.1 | 36.4, 85.1, 162.9 | 0.61 |
+| swinging | 925.1 | 932.7 | 7.7, 26.4, 64.9 | 0.65 |
+| shuffling | 1628.5 | 1621.1 | 34.2, 156.5, 177.4 | 0.61 |
+| scurrying | 1951.2 | 2159.6 | 68.5, 210.6, 347.2 | 0.64 |
+
+- **Fails the yardstick: 0 of 5** (old run: 0 of 5). The median gap of non-best searches halves (127 to 69 nats),
+  and the best rises for 4 of 5 manners (scurrying by 208 nats), but searches still end on different peaks, with
+  structurally different programs (similarity 0.54-0.79 for the top two, about the level of different manners).
+- **The fixed ladder was a mistake.** Swap rates between τ = 1 and the next replica (0.76) are 1-2%, and 2-16% for
+  the next pair: the cold replica was nearly cut off from the rest, so tempering did little. The adaptive ladder had
+  packed replicas between 1 and 0.985 for a reason: log-likelihood differences between programs are hundreds of
+  nats, so even Δτ = 0.02 is a large step. Its hot end was redundant (swaps 0.97-1.0 here too).
+- **What the swap rates say about the posterior.** It is extremely sharp: changing τ by a few percent changes which
+  programs are plausible. That makes search hard and is itself a modelling question: the Gaussian likelihood
+  treats every actor, frame, part and feature as independent evidence, though they are strongly correlated.
