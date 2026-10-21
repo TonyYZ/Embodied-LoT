@@ -517,3 +517,48 @@ Median log-likelihood of samples at λ = 1.5: 864 / 1026 / 924 / 794 (λ = 2: 78
   or higher. Its cost is time: about three times slower per chain.
 - **λ = 2.5 is already too strong:** jumping and swinging stop converging and their programs no longer fit their own
   manner best.
+
+## All 26 manners: λ = 1.5, latent phase, crossover
+
+`results/grace_v7_parts/all26_l15_phase` (temperature 1/16, 30,000 iterations, burn-in 10,000, adaptive ladder,
+4 chains × 12 replicas). Interrupted once when the computer shut down: the 5 manners finished by then were kept
+and the other 21 rerun with the same seeds (the 4 diagnostic manners reproduce the λ = 1.5 sweep run exactly).
+
+**Convergence.** Median split R-hat 1.19; 14 of 26 manners ≤ 1.2, 5 ≤ 1.1. Worst: mermaiding 1.57, scurrying 1.55,
+hopscotching 1.42, hopping 1.30.
+
+**Chain agreement (model-side).** Behaviour: median own-manner AUC about 0.85 (20 of 26 ≥ 0.74; weakest trotting 0.48,
+swinging 0.56, jumping 0.58, creeping 0.61, twisting 0.62). Structure: same- vs different-manner AUC 0.57-0.64 on
+chain posteriors, 0.49-0.56 on chain-best programs.
+
+**Human similarity** (`python -m grace_lot.analysis.run --results results/grace_v7_parts/all26_l15_phase`; run once,
+test actors sealed, nothing tuned on the ratings). Spearman ρ over manner pairs, Mantel permutation p, ΔR² over the
+kinematic baselines with its permutation p, and leave-one-manner-out cross-validated ρ.
+
+| Model | ρ | 95% CI | Mantel p | ΔR² over kinematic | p(ΔR²) | CV ρ kinematic + model |
+| --- | --- | --- | --- | --- | --- | --- |
+| noise ceiling (split-half) | 0.895 | ± 0.018 | | | | |
+| kin_manner_prototype | 0.616 | [0.559, 0.618] | 0.0001 | | | |
+| kinematic baselines only (CV) | | | | | | 0.590 |
+| lot_full | **0.302** | [0.253, 0.311] | 0.0020 | 0.026 | 0.040 | 0.602 |
+| lot_tree_ordered | 0.285 | [0.238, 0.295] | 0.0025 | 0.027 | 0.039 | 0.602 |
+| lot_tree_unordered | 0.273 | [0.227, 0.283] | 0.0034 | 0.020 | 0.059 | 0.593 |
+| lot_flat | 0.156 | [0.114, 0.172] | 0.0489 | 0.000 | 0.83 | 0.577 |
+| map_full | 0.011 | [-0.021, 0.035] | 0.42 | 0.000 | 0.93 | 0.584 |
+| map_tree_unordered | 0.194 | [0.155, 0.212] | 0.0090 | 0.001 | 0.54 | 0.585 |
+
+Ablations of lot_full range from 0.244 (no hierarchy) to 0.350 (no dashed edges); see `analysis/summary.md`.
+For comparison, v2 (the last full analysis): lot_full 0.137, tree measures -0.03 to -0.06, lot_flat 0.219.
+
+**Reading.**
+- **The structural LoT measures now track human similarity:** lot_full ρ = 0.30 (Mantel p = 0.002), up from 0.14 in
+  v2, and the tree measures go from about zero to 0.27-0.29.
+- **They add a little beyond kinematics:** ΔR² about 0.02-0.03 (p 0.04-0.06), and cross-validated ρ rises from 0.590
+  to 0.602. Small and borderline: one of several measures tested, without correction for multiple comparisons.
+- **Posterior averages carry the signal, single programs do not:** MAP-based measures are near zero (0.01-0.19).
+  This matches the chain-agreement finding: any single program's structure is close to arbitrary, but averaged over
+  the posterior, some structure shared within manners survives.
+- **Kinematics remain far better** (0.62), and both sit well below the human ceiling (0.90).
+- **Caveats:** 12 of 26 manners are not converged to R-hat ≤ 1.2; the ablation that drops dashed edges (0.35) is a
+  post-hoc observation, not a test; the per-manner fit figures failed (the figure code predates multi-output
+  programs), the summary and other figures are complete.
