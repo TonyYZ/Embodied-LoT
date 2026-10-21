@@ -186,8 +186,10 @@ def recover_one(job) -> dict:
     from grace_lot.inference.run import chain_ladder, tempered
     taus, adapt_until = chain_ladder(inf, prior, lik, prop, len(obs), f"truth{k}")
     t0 = time.time()
-    chains = [tempered(inf, prior, lik, prop, random.Random(seed * 100 + c), taus, adapt_until)
-              for c in range(inf["chains"])]
+    searches = [tempered(inf, prior, lik, prop, random.Random(seed * 100 + c), taus, adapt_until)
+                for c in range(inf["chains"])]
+    searches = [s if isinstance(s, list) else [s] for s in searches]       # inference.population: ladders per search
+    chains = [c for s in searches for c in s]
     post = posterior(chains)
     truth_lp = prior(truth) + lik(truth)
     best_lp = max(c.best_log_post for c in chains)
@@ -204,7 +206,8 @@ def recover_one(job) -> dict:
             "map": str(best), "map_equiv": bool(same_render(best)),
             "sim_to_truth": sim_post, "sim_prior": sim_prior,
             "r_hat": r_hat([c.log_post[inf["burn_in"]:] for c in chains]),
-            "chain_best": [c.best_log_post for c in chains], "chain_best_equiv": [bool(same_render(c.best)) for c in chains],
+            "chain_best": [c.best_log_post for c in chains], "chain_search": [i for i, s in enumerate(searches) for _ in s],
+            "chain_best_equiv": [bool(same_render(c.best)) for c in chains],
             "swap_rates": [round(s, 2) for s in chains[0].swaps], "crossovers": [c.crossovers for c in chains],
             "chain_log_post": [c.log_post for c in chains], "seconds": time.time() - t0}
 

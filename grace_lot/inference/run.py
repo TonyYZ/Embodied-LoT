@@ -6,7 +6,9 @@
     python -m grace_lot.inference.run --set inference.beta=4000 --out results/x
 
 Each (manner, chain) pair is one parallel job. Chains use parallel
-tempering when ``inference.replicas > 1``. For each manner this writes
+tempering when ``inference.replicas > 1``. With ``inference.population`` > 1
+each job is a search of that many ladders with selection (``run_population``),
+and every ladder is reported as a chain, tagged with its search. For each manner this writes
 ``<out>/posteriors/<manner>.json``:
 * the pooled posterior;
 * the MAP program per chain;
@@ -37,7 +39,8 @@ from grace_lot.grace.dataset import split_videos, study3_exemplars, substituted
 from grace_lot.grace.preprocess import load_trajectory
 from grace_lot.inference.grammar import Grammar
 from grace_lot.inference.likelihood import TrajectoryLikelihood
-from grace_lot.inference.mh import calibrated_ladder, ladder_for, r_hat, run_tempered, temperature_ladder
+from grace_lot.inference.mh import (calibrated_ladder, ladder_for, r_hat, run_population, run_tempered,
+                                    temperature_ladder)
 from grace_lot.inference.prior import SizePrior
 from grace_lot.inference.proposals import ProposalMixture
 from grace_lot.lot_adapter.adapter import LotRenderer
@@ -123,6 +126,8 @@ def chain_ladder(inf: dict, prior, lik, proposal, n_observations: int, key: str)
     """The tempering ladder a chain starts with, and how long it adapts (``inference.ladder``)."""
     if inf.get("ladder") == "adaptive":                     # spaced by swap rates during burn-in, from a geometric start
         return temperature_ladder(inf.get("replicas", 1), inf.get("tau_min", 0.05)), inf["burn_in"]
+    if inf.get("ladder") == "geometric":                    # fixed: geometric from 1 down to tau_min
+        return temperature_ladder(inf.get("replicas", 1), inf["tau_min"]), 0
     if inf.get("ladder") == "calibrated":                   # scaled to this likelihood, the same for a manner's chains
         return calibrated_ladder(inf, prior, lik, proposal.grammar, random.Random(zlib.crc32(key.encode()))), 0
     return ladder_for(inf, n_observations), 0
@@ -131,14 +136,17 @@ def chain_ladder(inf: dict, prior, lik, proposal, n_observations: int, key: str)
 def tempered(inf: dict, prior, lik, proposal, rng: random.Random, taus, adapt_until: int, report=None):
     """One tempered chain with the configured options: ``crossover`` (probability per sweep of a subtree exchange
     between neighbouring replicas) and ``start`` ("parts": data-driven starting programs, ``start_candidates`` trees
-    per pool; otherwise draws from the generator)."""
+    per pool; otherwise draws from the generator). With ``population`` > 1, a search of that many chains with
+    selection every ``select_every`` iterations of the burn-in: a list of chains."""
     init = None
     if inf.get("start") == "parts":
         from grace_lot.inference.starts import part_fit_start
         init = lambda r: part_fit_start(lik, proposal, prior, r, inf.get("start_candidates", 100), inf.get("start_steps", 200))
-    return run_tempered(prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"], rng, taus,
-                        inf.get("swap_every", 1), report, inf.get("progress_every", 0), adapt_until,
-                        inf.get("crossover", 0.0), init)
+    args = (prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"], rng, taus, inf.get("swap_every", 1),
+            report, inf.get("progress_every", 0), adapt_until, inf.get("crossover", 0.0), init)
+    if inf.get("population", 1) > 1:
+        return run_population(inf["population"], *args, select_every=inf.get("select_every", 1000))
+    return run_tempered(*args)
 
 
 def save_checkpoint(path: Path, chain) -> None:
@@ -159,15 +167,17 @@ def run_one_chain(job):
     checkpoint = out / "checkpoints" / f"{manner}_{k}.npz"
 
     def report(it, chain):                                  # every progress_every iterations
+        chain = max(chain, key=lambda c: c.log_post[-1]) if isinstance(chain, list) else chain   # a search: its lead
         print(f"  {manner} chain {k}: {it}/{inf['iterations']} iterations, "
               f"{(time.time() - t0) / 60:.0f} min, log-post {chain.log_post[-1]:.1f}", flush=True)
         save_checkpoint(checkpoint, chain)
-    c = tempered(inf, prior, lik, proposal, random.Random(seed), taus, adapt_until, report)
-    return manner, k, {
-        "samples": [str(p) for p in c.samples], "best": str(c.best), "best_log_post": c.best_log_post,
+    cs = tempered(inf, prior, lik, proposal, random.Random(seed), taus, adapt_until, report)
+    return manner, k, [{
+        "search": k, "samples": [str(p) for p in c.samples], "best": str(c.best), "best_log_post": c.best_log_post,
         "acceptance": c.acceptance_rate, "proposed": dict(c.moves), "accepted": dict(c.accepted),
-        "swaps": c.swaps, "taus": c.taus, "crossovers": c.crossovers, "log_post": c.log_post, "log_lik": c.log_lik, "log_prior": c.log_prior,
-        "seconds": time.time() - t0}
+        "swaps": c.swaps, "taus": c.taus, "crossovers": c.crossovers, "replaced": c.replaced,
+        "log_post": c.log_post, "log_lik": c.log_lik, "log_prior": c.log_prior,
+        "seconds": time.time() - t0} for c in (cs if isinstance(cs, list) else [cs])]
 
 
 def finish_manner(cfg, manner, videos, chains: List[dict], out: Path, flags: Dict[str, str]) -> str:
@@ -190,8 +200,8 @@ def finish_manner(cfg, manner, videos, chains: List[dict], out: Path, flags: Dic
         "map": best["best"], "map_log_post": best["best_log_post"],
         "map_log_lik": lik(best_prog), "map_log_prior": prior(best_prog),
         "map_distance": map_d,
-        "chains": [{**{k: c[k] for k in ("best", "best_log_post", "acceptance", "proposed", "accepted",
-                                         "swaps", "taus", "crossovers", "seconds")},
+        "chains": [{**{k: c[k] for k in ("search", "best", "best_log_post", "acceptance", "proposed", "accepted",
+                                         "swaps", "taus", "crossovers", "replaced", "seconds")},
                     "posterior": [[s, n / len(c["samples"])] for s, n in Counter(c["samples"]).most_common(500)]}
                    for c in chains],                          # each chain's own samples: its 500 most frequent programs
         "r_hat_log_post": r_hat([c["log_post"][inf["burn_in"]:] for c in chains]),
@@ -218,19 +228,21 @@ def run(cfg: dict, split: str, out: Path, manners=None, workers: int = 16, quiet
     by_manner, flags = videos_for(cfg, split)
     manners = manners or sorted(by_manner)
     jobs = [(cfg, m, by_manner[m], k, out) for m in manners for k in range(cfg["inference"]["chains"])]
-    done: Dict[str, List[dict]] = {m: [] for m in manners}
+    done: Dict[str, List[dict]] = {m: [] for m in manners}            # chains (every ladder of a search)
+    searches = Counter()
     (out / "checkpoints").mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(
         {"fit_split": split, **{k: cfg[k] for k in ("preprocess", "lot", "inference", "split")},
          "lot": resolved_lot(cfg["lot"]),
          "interface": cfg.get("interface", {"representation": "occupancy"})}, indent=1))
     with Pool(min(workers, len(jobs))) as pool:
-        for manner, k, chain in pool.imap_unordered(run_one_chain, jobs):
-            done[manner].append(chain)
+        for manner, k, chains in pool.imap_unordered(run_one_chain, jobs):
+            done[manner] += chains
+            searches[manner] += 1
             if not quiet:
-                print(f"{manner}: chain {k} done in {chain['seconds'] / 60:.0f} min "
-                      f"({len(done[manner])}/{cfg['inference']['chains']})", flush=True)
-            if len(done[manner]) == cfg["inference"]["chains"]:
+                print(f"{manner}: chain {k} done in {chains[0]['seconds'] / 60:.0f} min "
+                      f"({searches[manner]}/{cfg['inference']['chains']})", flush=True)
+            if searches[manner] == cfg["inference"]["chains"]:
                 line = finish_manner(cfg, manner, by_manner[manner], done.pop(manner), out, flags)
                 if not quiet:
                     print(line, flush=True)

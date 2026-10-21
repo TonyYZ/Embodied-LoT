@@ -9,7 +9,8 @@ between neighbouring replicas: parallel tempering. Hot replicas move
 freely between modes and pass good programs down to the cold one. Only the
 tau = 1 replica is recorded as posterior samples. Optionally, neighbouring
 replicas also exchange subtrees (crossover), so pieces a hot replica found can
-reach the cold one without being rebuilt node by node.
+reach the cold one without being rebuilt node by node. ``run_population`` runs
+several ladders as one search, with selection among them during the burn-in.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ class Chain:
     swaps: List[float] = field(default_factory=list)       # parallel tempering: swap acceptance per neighbouring pair
     taus: List[float] = field(default_factory=list)        # parallel tempering: the ladder used (after any adaptation)
     crossovers: List[int] = field(default_factory=lambda: [0, 0])   # subtree exchanges between replicas: tried, accepted
+    replaced: int = 0                                      # population selection: times continued from a better ladder
 
     @property
     def acceptance_rate(self) -> float:
@@ -179,45 +181,105 @@ def run_tempered(log_prior: Callable[[P], float], log_lik: Callable[[P], float],
     neighbouring pair of replicas (``_crossover``). ``init(rng)`` gives each replica's starting program (default:
     a draw from the generator).
     """
-    taus = list(taus)
-    gaps = np.log(np.diff(1.0 / np.asarray(taus, float))) if adapt_until and len(taus) > 2 else None
-    extent = 1.0 / taus[-1] - 1.0
-    rates = np.full(len(taus) - 1, 0.5)                      # running swap rate per pair, while adapting
-    chain = Chain()
-    states = []
-    for _ in taus:
-        p = init(rng) if init else initial_state(proposal.grammar, log_prior, rng)
-        states.append(_State(p, log_prior(p), log_lik(p)))
-    tried, done = np.zeros(len(taus) - 1), np.zeros(len(taus) - 1)
+    ladder = _Ladder(log_prior, log_lik, proposal, rng, taus, swap_every, adapt_until, crossover, init)
     for it in range(iterations):
+        ladder.sweep(it, burn_in, thin)
+        if progress and progress_every and (it + 1) % progress_every == 0:
+            progress(it + 1, ladder.chain)
+    return ladder.finish()
+
+
+class _Ladder:
+    """One parallel-tempering ladder, advanced one sweep at a time (``run_tempered``, ``run_population``)."""
+
+    def __init__(self, log_prior, log_lik, proposal, rng, taus, swap_every, adapt_until, crossover, init):
+        self.log_prior, self.log_lik, self.proposal, self.rng = log_prior, log_lik, proposal, rng
+        self.swap_every, self.adapt_until, self.crossover = swap_every, adapt_until, crossover
+        self.taus = list(taus)
+        self.gaps = np.log(np.diff(1.0 / np.asarray(taus, float))) if adapt_until and len(taus) > 2 else None
+        self.extent = 1.0 / self.taus[-1] - 1.0
+        self.rates = np.full(len(taus) - 1, 0.5)            # running swap rate per pair, while adapting
+        self.chain = Chain()
+        self.states = []
+        for _ in taus:
+            p = init(rng) if init else initial_state(proposal.grammar, log_prior, rng)
+            self.states.append(_State(p, log_prior(p), log_lik(p)))
+        self.tried, self.done = np.zeros(len(taus) - 1), np.zeros(len(taus) - 1)
+
+    @property
+    def log_post(self) -> float:
+        """The tau = 1 replica's current log posterior."""
+        return self.states[0].lp + self.states[0].ll
+
+    def sweep(self, it: int, burn_in: int, thin: int) -> None:
+        states, taus, rng, chain = self.states, self.taus, self.rng, self.chain
         for k, (s, tau) in enumerate(zip(states, taus)):
-            _mh_step(s, tau, log_prior, log_lik, proposal, rng, chain if k == 0 else None)
-        if len(taus) > 1 and it % swap_every == 0:
+            _mh_step(s, tau, self.log_prior, self.log_lik, self.proposal, rng, chain if k == 0 else None)
+        if len(taus) > 1 and it % self.swap_every == 0:
             k = rng.randrange(len(taus) - 1)          # one random neighbouring pair per sweep
             a, b = states[k], states[k + 1]
             log_alpha = (taus[k] - taus[k + 1]) * (b.ll - a.ll)
-            tried[k] += 1
-            if gaps is not None and it < adapt_until:        # no extra random draws: same stream as without
-                step = (tried[k] + 1) ** -0.6
+            self.tried[k] += 1
+            if self.gaps is not None and it < self.adapt_until:     # no extra random draws: same stream as without
+                gaps, rates = self.gaps, self.rates
+                step = (self.tried[k] + 1) ** -0.6
                 rates[k] += step * (math.exp(min(log_alpha, 0.0)) - rates[k])
                 gaps[k] += step * (rates[k] - rates.mean())
-                gaps += math.log(extent) - math.log(np.exp(gaps).sum())      # keep both ends of the ladder
+                gaps += math.log(self.extent) - math.log(np.exp(gaps).sum())      # keep both ends of the ladder
                 taus[1:] = (1.0 / (1.0 + np.cumsum(np.exp(gaps)))).tolist()
             if log_alpha >= 0 or rng.random() < math.exp(log_alpha):
                 states[k], states[k + 1] = b, a
-                done[k] += 1
-        if crossover and len(taus) > 1 and rng.random() < crossover:     # no extra draws when off
+                self.done[k] += 1
+        if self.crossover and len(taus) > 1 and rng.random() < self.crossover:     # no extra draws when off
             k = rng.randrange(len(taus) - 1)
             chain.crossovers[0] += 1
-            chain.crossovers[1] += _crossover(states[k], states[k + 1], taus[k], taus[k + 1], log_prior, log_lik, rng)
-        if gaps is not None and it + 1 == adapt_until:
-            tried[:] = done[:] = 0                          # report the swap rates of the fixed ladder
+            chain.crossovers[1] += _crossover(states[k], states[k + 1], taus[k], taus[k + 1],
+                                              self.log_prior, self.log_lik, rng)
+        if self.gaps is not None and it + 1 == self.adapt_until:
+            self.tried[:] = self.done[:] = 0                # report the swap rates of the fixed ladder
         _record(chain, states[0], it, burn_in, thin)
+
+    def take(self, other: "_Ladder") -> None:
+        """Continue from another ladder's replicas (and its ladder spacing); keep this one's records and stream."""
+        self.states = [_State(s.program, s.lp, s.ll) for s in other.states]
+        self.taus = list(other.taus)
+        if other.gaps is not None:
+            self.gaps, self.rates = other.gaps.copy(), other.rates.copy()
+        self.chain.replaced += 1
+
+    def finish(self) -> Chain:
+        self.chain.swaps = (self.done / np.maximum(self.tried, 1)).tolist()
+        self.chain.taus = list(self.taus)
+        return self.chain
+
+
+def run_population(n: int, log_prior: Callable[[P], float], log_lik: Callable[[P], float],
+                   proposal: ProposalMixture, iterations: int, burn_in: int, thin: int,
+                   rng: random.Random, taus: List[float], swap_every: int = 1,
+                   progress: Optional[Callable[[int, List[Chain]], None]] = None, progress_every: int = 0,
+                   adapt_until: int = 0, crossover: float = 0.0,
+                   init: Optional[Callable[[random.Random], P]] = None,
+                   select_every: int = 0) -> List[Chain]:
+    """``n`` tempered ladders run side by side (one search), with selection during the burn-in.
+
+    Every ``select_every`` iterations until ``burn_in``, the ladder whose tau = 1 replica has the lowest log
+    posterior continues from a copy of the highest one's replicas (``Chain.replaced`` counts it), so compute is not
+    spent on ladders stuck far below the others. Selection only chooses where ladders stand at the end of the
+    burn-in; afterwards each is ordinary tempering, so the samples are valid. The ladders are no longer
+    independent, though: agreement within a search says nothing about convergence; compare separate searches.
+    Each ladder draws from its own stream, seeded from ``rng``.
+    """
+    ladders = [_Ladder(log_prior, log_lik, proposal, random.Random(rng.getrandbits(64)), taus, swap_every,
+                       adapt_until, crossover, init) for _ in range(n)]
+    for it in range(iterations):
+        for ladder in ladders:
+            ladder.sweep(it, burn_in, thin)
+        if select_every and n > 1 and it + 1 < burn_in and (it + 1) % select_every == 0:
+            ranked = sorted(ladders, key=lambda l: l.log_post)
+            ranked[0].take(ranked[-1])
         if progress and progress_every and (it + 1) % progress_every == 0:
-            progress(it + 1, chain)
-    chain.swaps = (done / np.maximum(tried, 1)).tolist()
-    chain.taus = list(taus)
-    return chain
+            progress(it + 1, [l.chain for l in ladders])
+    return [l.finish() for l in ladders]
 
 
 def r_hat(traces: List[List[float]]) -> float:

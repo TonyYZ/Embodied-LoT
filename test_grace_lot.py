@@ -10,7 +10,7 @@ import numpy as np
 
 from grace_lot.inference.grammar import Grammar
 from grace_lot.inference.diagnostics import reachability
-from grace_lot.inference.mh import (calibrated_ladder, initial_state, r_hat, run_chain, run_tempered,
+from grace_lot.inference.mh import (calibrated_ladder, initial_state, r_hat, run_chain, run_population, run_tempered,
                                      temperature_ladder)
 from grace_lot.inference.prior import SizePrior
 from grace_lot.inference.proposals import ProposalMixture
@@ -155,6 +155,23 @@ class InferenceTests(unittest.TestCase):
         tv = 0.5 * sum(abs(emp[k] / len(chain.samples) - v) for k, v in exact.items())
         self.assertLess(tv, 0.04)
         self.assertGreater(chain.crossovers[1], 1000)          # exchanges do happen
+
+    def test_population_selection_keeps_the_exact_posterior(self):
+        """Selection among ladders acts during the burn-in only: the pooled samples are still the exact posterior."""
+        prior = SizePrior(TINY, 0.7, 0.5)
+        n_top = lambda t: sum(1 for q in _leaves(t.tree) if q.params[0] == "top")
+        log_lik = lambda t: -6.0 * abs(n_top(t) - 1.5)
+        states = support(TINY, prior)
+        w = [math.exp(prior(t) + log_lik(t)) for t in states]
+        exact = Counter()
+        for t, wt in zip(states, w):
+            exact[(size(t.tree), n_top(t), len(t.dashed))] += wt / sum(w)
+        chains = run_population(3, prior, log_lik, ProposalMixture(TINY, MOVES), 30_000, 5_000, 2,
+                                random.Random(4), temperature_ladder(4, 0.05), select_every=100)
+        emp = Counter((size(t.tree), n_top(t), len(t.dashed)) for c in chains for t in c.samples)
+        tv = 0.5 * sum(abs(emp[k] / sum(emp.values()) - v) for k, v in exact.items())
+        self.assertLess(tv, 0.04)
+        self.assertEqual(sum(c.replaced for c in chains), 49)   # every 100 iterations of the burn-in, one ladder
 
     def test_calibrated_ladder_shrinks_the_prior_spread_to_hot_spread(self):
         prior = SizePrior(TINY, 0.7, 0.5)
