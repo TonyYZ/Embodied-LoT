@@ -288,6 +288,9 @@ class ProbabilisticScanLikelihood:
         return value
 
 
+MEMO_SIZE = 10_000          # entries per channel / row memo (a few KB each: ~100 MB per worker), then cleared
+
+
 def _digest(*arrays) -> bytes:
     """A 16-byte key for memoising by array values (raw bytes as keys cost ~36 KB each: GBs per worker)."""
     import hashlib
@@ -381,7 +384,7 @@ class GaussianScanLikelihood:
             Fs = field_features(boards, self.softness, self.salience, self.features).transpose(1, 0, 2)   # (D, T, F)
         dF = np.diff(Fs, axis=1)
         hit = dict(mu=Fs.mean(0), var=Fs.var(0), dmu=dF.mean(0), dvar=dF.var(0))
-        if len(cache) > 50_000:
+        if len(cache) > MEMO_SIZE:
             cache.clear()
         cache[key] = hit
         return hit
@@ -436,7 +439,7 @@ class GaussianScanLikelihood:
             row = self._nll(self.O, mu[:, None], var[:, None], self.s2)[:, 0]
             if self.w:
                 row = row + self.w * self._nll(self.dO, dmu[:, None], dvar[:, None], self.s2d)[:, 0]
-            if len(cache) > 50_000:
+            if len(cache) > MEMO_SIZE:
                 cache.clear()
             cache[key] = row
         return row
