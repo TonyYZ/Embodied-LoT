@@ -562,3 +562,27 @@ For comparison, v2 (the last full analysis): lot_full 0.137, tree measures -0.03
 - **Caveats:** 12 of 26 manners are not converged to R-hat ≤ 1.2; the ablation that drops dashed edges (0.35) is a
   post-hoc observation, not a test; the per-manner fit figures failed (the figure code predates multi-output
   programs), the summary and other figures are complete.
+
+## Search failure or real ambiguity? Gaps between the chains' best programs
+
+The chains disagree on structure (see above). That could mean real ambiguity (several structures score about the
+same) or a search failure (some chains never reach the best mode). Test, model side only: per manner, each chain's
+best log posterior and its gap to the best chain's. A chain Δ nats below another holds a mode with e^-Δ the
+posterior mass, so a mixing sampler would have left it. Script: `scratchpad/chain_gaps.py` (not in the repo);
+stored scores re-checked from scratch for swinging and skating (exact match).
+
+| Gap to the best chain (78 non-best chains, 26 manners) | Chains |
+| --- | --- |
+| ≤ 3 nats (≤ 20x odds: a tie) | 3 |
+| 3-10 nats | 5 |
+| > 10 nats | 70 |
+| median | 42.6 nats |
+
+- **Mostly search failure.** Only 3 manners (hopscotching, skating, turning) have two near-tied chains, and their
+  tied programs are fairly similar (tree_unordered 0.61-0.75). Elsewhere, three of four chains sit tens to hundreds
+  of nats below the best one.
+- **Split R-hat missed it:** median 1.19 while the bests are ~40 nats apart. Agreement of the chains' best log
+  posteriors is the better check for these runs.
+- **So structural identifiability is not yet measurable.** The weak structure agreement (AUC 0.5-0.6) mostly reflects
+  which mode each chain got stuck in. Fix search first; only then ask whether the posterior is sharp, and whether
+  a reuse prior or skeleton information is needed.
