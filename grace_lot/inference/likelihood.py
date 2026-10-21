@@ -288,6 +288,15 @@ class ProbabilisticScanLikelihood:
         return value
 
 
+def _digest(*arrays) -> bytes:
+    """A 16-byte key for memoising by array values (raw bytes as keys cost ~36 KB each: GBs per worker)."""
+    import hashlib
+    h = hashlib.blake2b(digest_size=16)
+    for a in arrays:
+        h.update(np.ascontiguousarray(a).tobytes())
+    return h.digest()
+
+
 class GaussianScanLikelihood:
     """A normalised Gaussian likelihood on detector activations (docs/probabilistic_semantics.md, 10-11).
 
@@ -357,7 +366,7 @@ class GaussianScanLikelihood:
         Channels are independent given the shared draws, so each is computed on its own and memoised by its
         values: a proposal usually leaves most channels as they were, and these are not recomputed."""
         from grace_lot.grace.scanner import field_features
-        key = c.tobytes()
+        key = _digest(c)
         cache = self.__dict__.setdefault("_channel_cache", {})
         hit = cache.get(key)
         if hit is not None:
@@ -419,7 +428,7 @@ class GaussianScanLikelihood:
         Computed from contiguous copies, so a row depends only on the values (numpy's summation order follows
         memory layout): within about 1e-16 relative of computing all channels together, and the canonical value.
         """
-        key = (mu.tobytes(), var.tobytes(), dmu.tobytes(), dvar.tobytes()) if self.w else (mu.tobytes(), var.tobytes())
+        key = _digest(mu, var, dmu, dvar) if self.w else _digest(mu, var)
         cache = self.__dict__.setdefault("_row_cache", {})
         row = cache.get(key)
         if row is None:
