@@ -1206,9 +1206,8 @@ class ExpressivityTests(unittest.TestCase):
         import numpy as np
         from grace_lot.analysis.expressivity import mismatches, parse_sketch
         board = np.zeros((12, 12)); board[:4] = 1.0; board[4:8, :6] = 1.0            # top band; left half of middle
-        self.assertFalse(mismatches(parse_sketch("##\n?*\n.."), board).any())     # 2 x 2 sketch: blocks of 6 x 6
-        self.assertEqual(mismatches(parse_sketch("###\n#..\n..."), board).tolist(),
-                         [[False] * 3, [False, False, False], [False] * 3])      # 3 x 3: the middle-left block is figure
+        self.assertFalse(mismatches(parse_sketch("#?\n?."), board).any())         # 2 x 2: blocks of 6 x 6 (2/3, 1/3 figure)
+        self.assertFalse(mismatches(parse_sketch("###\n#?.\n..."), board).any())  # 3 x 3: blocks of 4 x 4
         self.assertTrue(mismatches(parse_sketch("###\n...\n..."), board)[1, 0])
         with self.assertRaises(ValueError):
             parse_sketch("##\n#")
