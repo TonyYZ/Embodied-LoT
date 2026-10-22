@@ -2,7 +2,7 @@
 
 Semantics: pure_claims=true, solid_figure=true
 
-28 of 31 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
+28 of 41 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
 
 ## PASS: sanity, figure at the top
 
@@ -50,11 +50,11 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ############
 ```
 
-## PASS: containment, variant: the object moves around inside
+## FAIL: containment, sand: the object moves around inside
 
 `(parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*))))`  
-should match; matches the sketch  
-A ball that moves in a random direction (universal* leaves) and should stay inside the walls.
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -90,11 +90,11 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ############
 ```
 
-## PASS: containment, variant: the object is a strip moving randomly
+## FAIL: containment, sand: the object is a strip moving randomly
 
 `(parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V)))`  
-should match; matches the sketch  
-Your variant, as written: a body with three children.
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
@@ -258,11 +258,11 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ############
 ```
 
-## PASS: containment, variant: U from strips, the object moves inside
+## FAIL: containment, sand: U from strips, the object moves inside
 
 `(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)`  
-should match; matches the sketch  
-As above, with a randomly moving object: does the strip keep it inside?
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -431,10 +431,11 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ############
 ```
 
-## PASS: containment, variant: strip U, the object moves inside
+## FAIL: containment, sand: strip U, the object moves inside
 
 `(serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H)`  
-should match; matches the sketch
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -668,11 +669,11 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ############
 ```
 
-## PASS: containment, new: a ball moving in the superposed basket
+## FAIL: containment, sand: a ball moving in the superposed basket
 
 `(parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*))))`  
-should match; matches the sketch  
-Solid figure should keep it off the walls and the floor.
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -708,11 +709,11 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ############
 ```
 
-## PASS: containment, new: a ball moving in the hollowed basket
+## FAIL: containment, sand: a ball moving in the hollowed basket
 
 `(parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*))))`  
-should match; matches the sketch  
-The ball's cells lie inside the hollow's, so it is drawn there; solid figure keeps it in the hollow.
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -748,11 +749,11 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
             ############
 ```
 
-## PASS: containment, new: a small ball moving in the superposed basket
+## FAIL: containment, sand: a small ball moving in the superposed basket
 
 `(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))`  
-should match; matches the sketch  
-The ball's body is the centre cell only, so it has room to move up into the unknown inside.
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -788,11 +789,11 @@ state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ############
 ```
 
-## PASS: containment, new: a ball moving in the closed box
+## FAIL: containment, sand: a ball moving in the closed box
 
 `(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))`  
-should match; matches the sketch  
-The ball's body is the hollow's cell and its figure the middle of it: strictly inside the hollow.
+contrast (should not match); matches the sketch  
+Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
@@ -820,6 +821,414 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
             ############
             ####....####
             ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: the object moves around inside
+
+`(field (parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*)))))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: the object is a strip moving randomly
+
+`(field (parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V))))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 6, more than max_depth = 5
+
+state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: U from strips, the object moves inside
+
+`(field (serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #.#   ####....####
+#o#   ###   ####....####
+###   ###   ####....####
+            ####....####
+            ####????####
+            ############
+            ############
+            ####????####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #.#   ####....####
+#o#   #?#   ####....####
+###   ###   ####....####
+            ####....####
+            ####????####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: strip U, the object moves inside
+
+`(field (serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ####????####
+            ############
+            ############
+            ####????####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   #?#   ####????####
+###   ###   ####????####
+            ####????####
+            ####????####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: a ball moving in the superposed basket
+
+`(field (parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*)))))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: a ball moving in the hollowed basket
+
+`(field (parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*)))))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #.#   ####....####
+#o#   ###   ####....####
+###   ###   ####....####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #.#   ####....####
+#o#   ###   ####....####
+###   ###   ####....####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: a small ball moving in the superposed basket
+
+`(field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*)))))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n10:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n10:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, anchored: a ball moving in the closed box
+
+`(field (parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*)))))`  
+should match; matches the sketch  
+The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
+
+Outside the search grammar: depth 7, more than max_depth = 5
+
+state {'n13:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+###   ###   ############
+#o#   #?#   ############
+###   ###   ############
+            ############
+            ####....####
+            ############
+            ############
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n13:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+###   ###   ############
+#o#   #?#   ############
+###   ###   ############
+            ############
+            ####....####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## FAIL: containment, rigid basket: a field with room, pushed whole by the ball inside
+
+`(serial_h void/V (field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H*))))) void/V)`  
+should match; does not match the sketch  
+A rigid unit with room to move: the edge of the ball pushes it whole, and by frame 15 it has left the middle either way. Walls stay intact: see the boards.
+
+Outside the search grammar: depth 8, more than max_depth = 5
+
+state {'n12:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
+```
+*****__*****   ....#XX#....   ........###??###........
+*****__*****   ....#XX#....   ........###??###........
+*****__*****   ....#XX#....   ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+```
+
+state {'n12:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
+```
+*****__*****   ....#XX#....   ........###??###........
+*****__*****   ....#XX#....   ........###??###........
+*****__*****   ....#XX#....   ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+```
+
+## FAIL: basket, a body filling its slot is an object with room, not a solid block
+
+`(parallel periphery/H bottom/V (template center/H (body universal/H)))`  
+should match; does not match the sketch  
+Soft edges: the size of the body is uncertain, so it is drawn at its core and leaves room around it.
+
+Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #X#   ############
+#o#   #X#   ############
+###   ###   ############
+            ############
+            ############
+            ############
             ############
             ############
             ############

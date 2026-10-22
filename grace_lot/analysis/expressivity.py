@@ -18,6 +18,7 @@ sketch. A case file is TOML:
     expect  = "match"                # "differ": a contrast, which passes when some check does NOT match
     states  = "all"                  # or one index into motion_combinations; default every joint state
     channel = 0                      # which output window
+    size    = 12                     # board size (cells per side)
     note    = "what the case is about"
     [case.boards]
     all = '''                        # "all": every checked frame; or one entry per frame: "0" = ..., "6" = ...
@@ -100,17 +101,17 @@ def program_of(src: str):
     return parse_program(src)
 
 
-def render(program: str, frames: int, states="all") -> list:
+def render(program: str, frames: int, states="all", size: int = SIZE) -> list:
     """[(joint state, (frames, channels, 12, 12) boards)] for every joint state of the unknown-motion units, or
     the one at index ``states``."""
     from grace_lot.lot_adapter.adapter import motion_combinations, rollout
     p = program_of(program)
-    combos = [c for c, _ in motion_combinations(p, SIZE)]
+    combos = [c for c, _ in motion_combinations(p, size)]
     if states != "all":
         combos = [combos[min(int(states), len(combos) - 1)]]
     out = []
     for c in combos:
-        v = rollout(p, frames, SIZE, c)
+        v = rollout(p, frames, size, c)
         out.append((c, v if v.ndim == 4 else v[:, None]))
     return out
 
@@ -126,7 +127,7 @@ def run_case(case: dict, grammar=None) -> dict:
         if grammar is not None:
             from grace_lot.analysis.playground import language_issues
             issues = language_issues(program_of(case["program"]), grammar)
-        rendered = render(case["program"], max(frames) + 1, case.get("states", "all"))
+        rendered = render(case["program"], max(frames) + 1, case.get("states", "all"), case.get("size", SIZE))
     except Exception as e:                                       # a program the language cannot even run
         return {**case, "ok": False, "matched": False, "error": f"{type(e).__name__}: {e}", "checks": [],
                 "issues": issues}
@@ -162,11 +163,11 @@ def report(results: List[dict], semantics: str = "the config's") -> str:
             marked = ["".join("X" if bad[i, j] else got[i, j] for j in range(len(sketch[0])))
                       for i in range(len(sketch))]
             full = ["".join(char(x) for x in row) for row in board]
-            h = max(len(sketch), SIZE)
+            h = max(len(sketch), len(board))
             pad = lambda rows, w: rows + [" " * w] * (h - len(rows))
-            cols = zip(pad(sketch, len(sketch[0])), pad(marked, len(sketch[0])), pad(full, SIZE))
+            cols = zip(pad(sketch, len(sketch[0])), pad(marked, len(sketch[0])), pad(full, len(board)))
             label = f"state {state}, " if state else ""
-            lines += [f"{label}frame {t}: sketch | engine at sketch resolution | engine 12 x 12", "```"]
+            lines += [f"{label}frame {t}: sketch | engine at sketch resolution | engine {len(board)} x {len(board)}", "```"]
             lines += [f"{a}   {b}   {c}" for a, b, c in cols] + ["```", ""]
     return "\n".join(lines)
 

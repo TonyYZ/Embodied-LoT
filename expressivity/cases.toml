@@ -39,10 +39,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "variant: the object moves around inside"
+name = "sand: the object moves around inside"
 program = "(parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*))))"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "A ball that moves in a random direction (universal* leaves) and should stay inside the walls."
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -52,10 +53,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "variant: the object is a strip moving randomly"
+name = "sand: the object is a strip moving randomly"
 program = "(parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V)))"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Your variant, as written: a body with three children."
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -90,10 +92,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "variant: U from strips, the object moves inside"
+name = "sand: U from strips, the object moves inside"
 program = "(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "As above, with a randomly moving object: does the strip keep it inside?"
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -171,9 +174,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "variant: strip U, the object moves inside"
+name = "sand: strip U, the object moves inside"
 program = "(serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H)"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -292,10 +297,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "new: a ball moving in the superposed basket"
+name = "sand: a ball moving in the superposed basket"
 program = "(parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*))))"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Solid figure should keep it off the walls and the floor."
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -305,10 +311,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "new: a ball moving in the hollowed basket"
+name = "sand: a ball moving in the hollowed basket"
 program = "(parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*))))"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The ball's cells lie inside the hollow's, so it is drawn there; solid figure keeps it in the hollow."
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -318,10 +325,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "new: a small ball moving in the superposed basket"
+name = "sand: a small ball moving in the superposed basket"
 program = "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
+expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The ball's body is the centre cell only, so it has room to move up into the unknown inside."
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 [case.boards]
 all = """
 #o#
@@ -331,13 +339,146 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "new: a ball moving in the closed box"
+name = "sand: a ball moving in the closed box"
 program = "(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
-note = "The ball's body is the hollow's cell and its figure the middle of it: strictly inside the hollow."
+expect = "differ"
+note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
 frames = [0, 3, 6, 9, 12, 15]
 [case.boards]
 all = """
 ###
+#o#
+###
+"""
+
+# --- grounds and rigid units (soft edges, pushing) -----------------------------------------------------------
+
+[[case]]
+concept = "containment"
+name = "anchored: the object moves around inside"
+program = "(field (parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*)))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: the object is a strip moving randomly"
+program = "(field (parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: U from strips, the object moves inside"
+program = "(field (serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: strip U, the object moves inside"
+program = "(field (serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: a ball moving in the superposed basket"
+program = "(field (parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*)))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: a ball moving in the hollowed basket"
+program = "(field (parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*)))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: a small ball moving in the superposed basket"
+program = "(field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*)))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored: a ball moving in the closed box"
+program = "(field (parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*)))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+[case.boards]
+all = """
+###
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "rigid basket: a field with room, pushed whole by the ball inside"
+program = "(serial_h void/V (field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H*))))) void/V)"
+frames = [15]
+size = 24
+note = "A rigid unit with room to move: the edge of the ball pushes it whole, and by frame 15 it has left the middle either way. Walls stay intact: see the boards."
+[case.boards]
+"15" = """
+*****__*****
+*****__*****
+*****__*****
+"""
+
+[[case]]
+concept = "basket"
+name = "a body filling its slot is an object with room, not a solid block"
+program = "(parallel periphery/H bottom/V (template center/H (body universal/H)))"
+note = "Soft edges: the size of the body is uncertain, so it is drawn at its core and leaves room around it."
+[case.boards]
+all = """
+#o#
 #o#
 ###
 """

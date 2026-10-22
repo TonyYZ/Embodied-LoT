@@ -226,12 +226,32 @@ MEASURE_TREES = True
 PURE_CLAIMS = False
 
 # Solid figure: a moving body cannot enter cells that the rest of its tree makes more likely figure than not (value
-# above 0.75); unknown and empty cells are passable. A blocked diagonal move keeps whichever axis is free. Objects
-# interact by blocking, not pushing: the motion leaves inside a body (an agent) move that body and nothing else.
+# above 0.75); unknown and empty cells are passable. A blocked diagonal move keeps whichever axis is free. The motion
+# leaves inside a body (an agent) move that body; it moves anything else only by contact: with SOFT_EDGES its edge
+# may overlap other substance, which it then pushes (_push_contacts): a rigid unit whole, free mass cell by cell.
 # Bodies in turned frames and free mass are not blocked yet. With False, bodies pass through everything and an
 # agent's leaves also push the mass and other bodies in their space (earlier runs).
 SOLID_FIGURE = False
 SOLID_THRESHOLD = 0.75
+
+# Soft edges: how big an agent (body) is inside its region is uncertain: it may be as small as its core, the centre
+# third of its region on both axes, or fill the region. Imagining, its content is drawn in the core (its smallest
+# extent, shape kept); observing, its content is checked there; moving (SOLID_FIGURE), its edge (the ring around the
+# core) may overlap other substance, which it pushes. A body whose region fills its frame has no room to vary. A
+# field is a rigid structure: its extent is what its content says. With False, a body fills its region exactly.
+SOFT_EDGES = False
+
+
+def _soft_edge(node, region: Region, frame: Tuple[int, int]) -> bool:
+    """SOFT_EDGES: is this an agent with room in its frame?"""
+    return SOFT_EDGES and getattr(node, "agency", False) and tuple(region) != (0, frame[0], 0, frame[1])
+
+
+def unit_core(region: Region) -> Region:
+    """SOFT_EDGES: the certain core of a unit's region, the centre third on both axes."""
+    r0, r1, _, _ = band_region(region, 1, 3, Orientation.VERTICAL)
+    _, _, c0, c1 = band_region(region, 1, 3, Orientation.HORIZONTAL)
+    return r0, r1, c0, c1
 _MOTION_KIND ={"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
 
@@ -1179,6 +1199,8 @@ class GroupNode(BodyNode):
             acts = [a for a in (k.evaluate(None) for k in kids) if a > 0]
             result = _mean(acts) if acts else 0.0
         else:
+            if SOFT_EDGES and self.agency and tuple(field.bounds) != (0.0, 1.0, 0.0, 1.0):   # check the core
+                field = field.subfield(*unit_core(field.region))
             result = _clamp(_mean([k.evaluate(field) for k in kids]))
         self.activation = result * _sg(self)
         return self.activation
@@ -1746,8 +1768,14 @@ class ConceptGraph:
         if st is None or not place_bodies or tuple(shape) != tuple(self.grid) or not st["off"].any():
             return self._paint(shape, root_id, place_bodies)
         fy, fn, _ = self._paint(shape, rid, True, layer="free")
-        by, bn, bv = self._paint(shape, rid, True, layer="bodies")
         sy, sn = _scatter(fy, st["off"]), _scatter(fn, st["off"])
+        if PURE_CLAIMS:                           # one composition: nested claims keep their order across layers
+            py, pn, bv = self._paint(shape, rid, True, mass_off=st["off"])
+            if PROBABILISTIC_MOTION:
+                vacated = ((fy < 1) | (fn < 1)) & ~((sy < 1) | (sn < 1))
+                bv = np.where(vacated, 0.0, bv)
+            return py, pn, bv
+        by, bn, bv = self._paint(shape, rid, True, layer="bodies")
         if PROBABILISTIC_MOTION:                  # what moved away leaves known emptiness, not "no claim"
             vacated = ((fy < 1) | (fn < 1)) & ~((sy < 1) | (sn < 1))
             bv = np.where(vacated, 0.0, bv)
@@ -2076,6 +2104,7 @@ class ConceptGraph:
                 drive[ax] -= step
             if SOLID_FIGURE and any(net) and (H, W) == tuple(self.grid):
                 net = self._solid_step(body, net)
+            moved = [self._clamped_shift(body, axis, net[axis], n) for axis, n in ((0, H), (1, W))]
             for axis, n in ((0, H), (1, W)):
                 size = max(1, round(body.extent[axis] * n))
                 if TREE_SIZED_BODIES:                    # move the window's start cell; keep it on the board
@@ -2087,6 +2116,8 @@ class ConceptGraph:
                 cell = min(max(cell, size // 2), n - size + size // 2)
                 body.position[axis] = cell / n
             body.velocity = [net[0] / H, net[1] / W]
+            if SOLID_FIGURE and SOFT_EDGES and any(moved) and (H, W) == tuple(self.grid):
+                self._push_contacts(body, moved)
 
     def _solid_step(self, body, net: list) -> list:
         """SOLID_FIGURE: the move ``net`` (cells), or the part of it along one axis, that keeps the body's figure out
@@ -2106,6 +2137,64 @@ class ConceptGraph:
                 return [dr, dc]
         return [0, 0]
 
+    def _push_contacts(self, body, d: list) -> None:
+        """SOLID_FIGURE with SOFT_EDGES: what a moved body's edge now overlaps is pushed by its move ``d``.
+
+        A rigid unit (a top-level field or body, carrying everything nested in it) moves whole, as far as the board
+        lets it: a unit that fills its frame cannot move, so it is a fixed ground. Free mass (substance in no unit)
+        is a pile: each particle under the edge moves on its own, so a push breaks it up.
+        """
+        H, W = self.grid
+        node = body.node if isinstance(body, GroupToken) else body
+        if not getattr(node, "agency", False):
+            return                                # only an agent's edge pushes
+        r0, r1, c0, c1 = body.window(H, W)
+        ring = np.zeros((H, W), dtype=bool)
+        ring[r0:r1, c0:c1] = True
+        q0, q1, p0, p1 = unit_core((r0, r1, c0, c1))
+        ring[q0:q1, p0:p1] = False
+        if not ring.any():
+            return
+        root = self.tree_index()[node.node_id]
+        mine = {n.node_id for n in walk(node)}
+        parents = self._parents()
+        for top in [g for g in self._nodes.values() if isinstance(g, GroupNode) and g.node_id not in mine
+                    and self.tree_index().get(g.node_id) == root
+                    and not any(isinstance(a, GroupNode) for a in self._ancestors(g, parents))]:
+            for tok in list(top.instances.values()):
+                if tok.position is None or tok.extent is None:
+                    continue
+                t0, t1, u0, u1 = tok.window(H, W)
+                stuff = self._solid_maps(top, only=({n.node_id for n in walk(top)} - mine))[1] > SOLID_THRESHOLD
+                inside = np.zeros((H, W), dtype=bool)
+                inside[t0:t1, u0:u1] = True
+                if (ring & stuff & inside).any():
+                    carried = top in self._ancestors(node, parents)          # pushing the unit it is inside
+                    for axis, n in ((0, H), (1, W)):
+                        size = max(1, round(tok.extent[axis] * n))
+                        start = round(tok.position[axis] * n - size / 2)
+                        shift = self._clamped_shift(tok, axis, d[axis], n)
+                        tok.position[axis] = (start + shift + size / 2) / n
+                        if carried:                   # both move together: the body keeps its place inside
+                            body.position[axis] -= shift / n
+        st = self._mass.get(root)
+        if st is None or not MOTION_KINDS:
+            return
+        fy, fn, _ = self._paint(self.grid, root, True, layer="free")
+        R, C = _grid_index((H, W))
+        where = (R + st["off"][..., 0], C + st["off"][..., 1])
+        hit = (fy < 0.5) & ring[where]                                   # substance now under the edge
+        st["off"][..., 0] = np.where(hit, np.clip(where[0] + d[0], 0, H - 1) - R, st["off"][..., 0])
+        st["off"][..., 1] = np.where(hit, np.clip(where[1] + d[1], 0, W - 1) - C, st["off"][..., 1])
+
+    @staticmethod
+    def _ancestors(node, parents) -> list:
+        out = []
+        while parents.get(node.node_id):
+            node = parents[node.node_id][0]
+            out.append(node)
+        return out
+
     @staticmethod
     def _clamped_shift(body, axis: int, d: int, n: int) -> int:
         """How many cells a move of ``d`` along ``axis`` actually shifts the body (it stays on the board)."""
@@ -2116,15 +2205,16 @@ class ConceptGraph:
         cell = round(body.position[axis] * n)
         return min(max(cell + d, size // 2), n - size + size // 2) - cell
 
-    def _solid_maps(self, node) -> Tuple[np.ndarray, np.ndarray]:
-        """The body's tree drawn without the body's subtree, and the body's subtree drawn alone (where it is)."""
+    def _solid_maps(self, node, only=None) -> Tuple[np.ndarray, np.ndarray]:
+        """The body's tree drawn without the body's subtree, and the body's subtree (or the leaves ``only``) drawn
+        alone (where it is)."""
         root = self.tree_index()[node.node_id]
         ids = {n.node_id for n in walk(node)}
         trails = dict(self._trails)               # probes must not extend any trail
         out = []
         try:
-            for skip, only in ((ids, None), (None, ids)):
-                self._paint_skip, self._paint_only = skip, only
+            for skip, keep in ((ids, None), (None, ids if only is None else only)):
+                self._paint_skip, self._paint_only = skip, keep
                 a, b, v = self._paint_root(self.grid, root, True)
                 out.append(_compose(a, _covered(a, b, v)))
         finally:
@@ -2336,7 +2426,8 @@ class ConceptGraph:
         return ReceptiveField(_compose(a, _covered(a, b, v)))
 
     def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str],
-               place_bodies: bool, layer: str = "all") -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+               place_bodies: bool, layer: str = "all",
+               mass_off: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint, and of the emptiness its
         moved bodies left behind (applied by ``_covered`` only where nothing else claims a cell).
 
@@ -2351,17 +2442,37 @@ class ConceptGraph:
               np.ones((H, W)),                                                # emptiness left behind,
               [] if PURE_CLAIMS else None, (0, 0)]       # claims (PURE_CLAIMS), offset from a moved body's home
         skip, only = getattr(self, "_paint_skip", None), getattr(self, "_paint_only", None)   # solidity probes
+        frames = [0]                             # turned frames entered (mass moves on the board only)
+
+        def at_home(cells):
+            """Cells moved back to where the enclosing body started."""
+            dr, dc = cv[7]
+            if (dr, dc) == (0, 0):
+                return cells
+            rs, cs = np.nonzero(cells)
+            keep = (rs + dr >= 0) & (rs + dr < cells.shape[0]) & (cs + dc >= 0) & (cs + dc < cells.shape[1])
+            out = np.zeros_like(cells)
+            out[rs[keep] + dr, cs[keep] + dc] = True
+            return out
 
         def claim(mask, value, w, leaf, home=None, moved=False) -> None:
             """Record a PURE_CLAIMS claim; its home cells (``home``, default its cells) moved back to where the
-            enclosing body started."""
-            home, (dr, dc) = (mask if home is None else home), cv[7]
-            moved = moved or (dr, dc) != (0, 0)
-            if (dr, dc) != (0, 0):
-                rs, cs = np.nonzero(home)
-                keep = (rs + dr >= 0) & (rs + dr < home.shape[0]) & (cs + dc >= 0) & (cs + dc < home.shape[1])
-                home = np.zeros_like(home)
-                home[rs[keep] + dr, cs[keep] + dc] = True
+            enclosing body started. Free mass (``mass_off``, outside bodies, on the board) is drawn where its
+            particles are now; a claim whose particles moved counts as moved."""
+            home = at_home(mask if home is None else home)
+            moved = moved or cv[7] != (0, 0)
+            if mass_off is not None and not cv[4] and frames[0] == 0:
+                R, C = _grid_index(mask.shape)
+                rows = np.clip(R + mass_off[..., 0], 0, mask.shape[0] - 1)
+                cols = np.clip(C + mass_off[..., 1], 0, mask.shape[1] - 1)
+                moved = moved or bool((mass_off[mask] != 0).any())
+                now = np.zeros_like(mask)
+                now[rows[mask], cols[mask]] = True
+                if not np.isscalar(value):
+                    v = np.full(mask.shape, 0.5)
+                    v[rows[mask], cols[mask]] = value[mask]
+                    value = v
+                mask = now
             cv[6].append((mask, value, w, home, leaf, moved))
 
         def yang_regions(node: Node, region: Region) -> List[Region]:
@@ -2400,12 +2511,14 @@ class ConceptGraph:
         def render_oriented(children: List[Node], slot: Region, v, weight: float, ikey: tuple = ()) -> None:
             """Draw ``children`` upright in their own frame, then show it in ``slot`` facing ``v``."""
             Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
+            frames[0] += 1
             saved = cv[:]
             cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4],   # bodies live in the frame
                      np.ones((Hc, Wc)), [] if PURE_CLAIMS else None, (0, 0)]
             render_plan(children, (0, Hc, 0, Wc), weight, ikey)
             frame_yang, frame_yin, frame_left, frame_claims = cv[0], cv[1], cv[5], cv[6]
             cv[:] = saved
+            frames[0] -= 1
             r0, r1, c0, c1 = slot
             cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
             cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
@@ -2517,11 +2630,13 @@ class ConceptGraph:
                 if cv[2] and tok is not None and tok.position is not None:
                     region = tok.rect(region, *cv[3])
 
+                soft = _soft_edge(node, home, cv[3])
+
                 def draw(r):
                     was_inside = cv[4]
                     cv[4] = True
-                    for child in content_children(node):
-                        render_node(child, r, weight * _sg(node), ikey)
+                    for child in content_children(node):          # an agent of uncertain extent: at its core
+                        render_node(child, unit_core(r) if soft else r, weight * _sg(node), ikey)
                     cv[4] = was_inside
                 draw_moved(draw, home, region, (node.node_id, ikey))
             elif isinstance(node, BodyNode):
