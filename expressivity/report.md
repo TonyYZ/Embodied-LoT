@@ -1,6 +1,6 @@
 # Expressivity suite
 
-9 of 15 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
+14 of 21 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
 
 ## PASS: sanity, figure at the top
 
@@ -782,6 +782,298 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ####????????
             ####????????
             ####????????
+```
+
+## PASS: container shape, U as strips: a base under side walls
+
+`(serial_v universal/H periphery/H periphery/H)`  
+should match; matches the sketch  
+No overlapping descriptions: each strip says what its own third looks like.
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#.#   #.#   ####....####
+#.#   #.#   ####....####
+###   ###   ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: container shape, U as strips, shallower: a base under one wall row
+
+`(serial_v universal/H periphery/H)`  
+should match; matches the sketch
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#.#   #.#   ####....####
+###   ###   ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: container shape, Π as strips
+
+`(serial_v periphery/H periphery/H universal/H)`  
+should match; matches the sketch
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+###   ###   ############
+#.#   #.#   ############
+#.#   #.#   ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
+```
+
+## PASS: container shape, ⊏ as strips (opening right)
+
+`(serial_h universal/V periphery/V periphery/V)`  
+should match; matches the sketch
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+###   ###   ############
+#..   #..   ############
+###   ###   ############
+            ############
+            ####........
+            ####........
+            ####........
+            ####........
+            ############
+            ############
+            ############
+            ############
+```
+
+## PASS: containment, variant: strip U with the object in the middle cell
+
+`(serial_v universal/H (serial_h universal/V (body center/V) universal/V) periphery/H)`  
+should match; matches the sketch  
+The middle row is wall, object, wall; the top row walls with ground between them.
+
+Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#.#   #.#   ####....####
+#o#   #?#   ####....####
+###   ###   ####....####
+            ####....####
+            ####....####
+            ############
+            ############
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+## FAIL: containment, variant: strip U, the object moves inside
+
+`(serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H)`  
+should match; does not match the sketch
+
+Outside the search grammar: depth 6, more than max_depth = 5
+
+state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #.#   ####....####
+#o#   #?#   ####....####
+###   ###   ####....####
+            ####....####
+            ####....####
+            ############
+            ############
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #X#   ####....####
+#o#   XX#   ####....####
+###   ###   ####....####
+            ####....####
+            ####....####
+            ###.....####
+            ##......####
+            #?......####
+            #####..#####
+            #####.######
+            #????#######
+            ############
+```
+
+state {'n7:universal': 'a'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #X#   ####....####
+#o#   XX#   ####....####
+###   XX#   ####....####
+            ####....####
+            ####....####
+            ###.....####
+            ##......####
+            #.......####
+            .......#####
+            ####..######
+            ####.#######
+            ???.########
+```
+
+state {'n7:universal': 'a'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #X#   ####....####
+#o#   XX#   ####....####
+###   XX#   ####....####
+            ####....####
+            ####....####
+            ###.....####
+            ##......####
+            #.......####
+            .......#####
+            ####..######
+            ####.#######
+            ???.########
+```
+
+state {'n7:universal': 'a'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #X#   ####....####
+#o#   XX#   ####....####
+###   XX#   ####....####
+            ####....####
+            ####....####
+            ###.....####
+            ##......####
+            #.......####
+            .......#####
+            ####..######
+            ####.#######
+            ???.########
+```
+
+state {'n7:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #X#   ####....####
+#o#   XX#   ####....####
+###   XX#   ####....####
+            ####....####
+            ####....####
+            ###.....####
+            ##......####
+            #.......####
+            .......#####
+            ####..######
+            ####.#######
+            ???.########
+```
+
+state {'n7:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #.#   ####....####
+#o#   #.X   ####....???#
+###   ###   ####...#####
+            ####...#####
+            ####......?#
+            ####......##
+            ####.....###
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n7:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #XX   ####......??
+#o#   #XX   ####....####
+###   ###   ####....####
+            ####........
+            ####.......#
+            ####......##
+            ####.....###
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n7:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #XX   ####.......?
+#o#   #XX   ####....####
+###   ###   ####....####
+            ####........
+            ####.......#
+            ####......##
+            ####.....###
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n7:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #XX   ####.......?
+#o#   #XX   ####....####
+###   ###   ####....####
+            ####........
+            ####.......#
+            ####......##
+            ####.....###
+            ####....####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n7:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #XX   ####.......?
+#o#   #XX   ####....####
+###   ###   ####....####
+            ####........
+            ####.......#
+            ####......##
+            ####.....###
+            ####....####
+            ############
+            ############
+            ############
+            ############
 ```
 
 ## PASS: containment, contrast: solid block

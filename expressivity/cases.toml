@@ -114,6 +114,74 @@ all = """
 """
 
 [[case]]
+concept = "container shape"
+name = "U as strips: a base under side walls"
+program = "(serial_v universal/H periphery/H periphery/H)"
+note = "No overlapping descriptions: each strip says what its own third looks like."
+[case.boards]
+all = """
+#.#
+#.#
+###
+"""
+
+[[case]]
+concept = "container shape"
+name = "U as strips, shallower: a base under one wall row"
+program = "(serial_v universal/H periphery/H)"
+[case.boards]
+all = """
+#.#
+###
+"""
+
+[[case]]
+concept = "container shape"
+name = "Π as strips"
+program = "(serial_v periphery/H periphery/H universal/H)"
+[case.boards]
+all = """
+###
+#.#
+#.#
+"""
+
+[[case]]
+concept = "container shape"
+name = "⊏ as strips (opening right)"
+program = "(serial_h universal/V periphery/V periphery/V)"
+[case.boards]
+all = """
+###
+#..
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "variant: strip U with the object in the middle cell"
+program = "(serial_v universal/H (serial_h universal/V (body center/V) universal/V) periphery/H)"
+note = "The middle row is wall, object, wall; the top row walls with ground between them."
+[case.boards]
+all = """
+#.#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "variant: strip U, the object moves inside"
+program = "(serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H)"
+frames = [0, 3, 6, 9, 12, 15]
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
 concept = "containment"
 name = "contrast: solid block"
 program = "(parallel bottom/V periphery/H universal/H)"
