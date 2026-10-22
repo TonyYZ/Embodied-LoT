@@ -1201,6 +1201,14 @@ class LatentPhaseTests(unittest.TestCase):
         self.assertNotAlmostEqual(score(obs, 1), score(rolled, 1), places=3)
 
 
+class PredictiveTests(unittest.TestCase):
+    def test_log_predictive_is_the_log_of_the_mean_density(self):
+        import numpy as np
+        from grace_lot.inference.predictive import log_predictive
+        s = np.log(np.array([[0.2, 1e-300], [0.6, 3e-300]]))           # (draws, videos); the tiny ones underflow-safe
+        np.testing.assert_allclose(log_predictive(s), np.log([0.4, 2e-300]), rtol=1e-12)
+
+
 class PlaygroundTests(unittest.TestCase):
     def test_examples_agree_with_the_engine(self):
         """The playground's phase-by-phase recording equals ConceptGraph.step(), and component rollouts equal

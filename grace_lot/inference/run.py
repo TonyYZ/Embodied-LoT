@@ -80,7 +80,9 @@ def observations_for(cfg: dict, videos) -> list:
     return [load_trajectory(cfg, v).fields for v in videos]
 
 
-def build(cfg: dict, observations):
+def build(cfg: dict, observations, noise: dict = None):
+    """Grammar, renderer, prior, likelihood and proposals. ``noise`` fixes the Gaussian likelihood's observation
+    noise (``s2``, ``s2d``) instead of estimating it from ``observations`` (scoring held-out videos)."""
     from grace_lot.lot_adapter.program import apply_semantics
     apply_semantics(cfg["lot"])
     inf, pre = cfg["inference"], cfg["preprocess"]
@@ -96,7 +98,7 @@ def build(cfg: dict, observations):
         lik = GaussianScanLikelihood(observations, pre["frames"], pre["field_size"], itf["scan_softness"],
                                      itf["lot_salience"], feature_background(cfg), inf.get("temperature"),
                                      inf.get("temporal_weight", 0.0), inf.get("cell_draws", 256),
-                                     inf.get("noise_floor", 0.1), features=itf.get("features", "max6"),
+                                     inf.get("noise_floor", 0.1), noise, features=itf.get("features", "max6"),
                                      phases=inf.get("phases", 1))
     elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
