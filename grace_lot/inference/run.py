@@ -99,7 +99,7 @@ def build(cfg: dict, observations, noise: dict = None):
                                      itf["lot_salience"], feature_background(cfg), inf.get("temperature"),
                                      inf.get("temporal_weight", 0.0), inf.get("cell_draws", 256),
                                      inf.get("noise_floor", 0.1), noise, features=itf.get("features", "max6"),
-                                     phases=inf.get("phases", 1))
+                                     phases=inf.get("phases", 1), shift_radius=inf.get("shift_radius", 0))
     elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         itf = cfg["interface"]

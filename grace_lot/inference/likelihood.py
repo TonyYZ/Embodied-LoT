@@ -300,6 +300,17 @@ def _digest(*arrays) -> bytes:
     return h.digest()
 
 
+def _shift_boards(v: np.ndarray, dy: int, dx: int) -> np.ndarray:
+    """Boards (..., H, W) moved by whole cells, down and right for positive dy, dx; cells moved in are unknown."""
+    if dy == 0 and dx == 0:
+        return v
+    H, W = v.shape[-2:]
+    out = np.full_like(v, 0.5)
+    out[..., max(dy, 0):H + min(dy, 0), max(dx, 0):W + min(dx, 0)] = \
+        v[..., max(-dy, 0):H + min(-dy, 0), max(-dx, 0):W + min(-dx, 0)]
+    return out
+
+
 class GaussianScanLikelihood:
     """A normalised Gaussian likelihood on detector activations (docs/probabilistic_semantics.md, 10-11).
 
@@ -326,9 +337,16 @@ class GaussianScanLikelihood:
 
     def __init__(self, observations, frames: int, size: int, softness: float, salience: float, background: dict,
                  temperature: float = None, temporal_weight: float = 0.0, draws: int = 256, noise_floor: float = 0.1,
-                 noise: dict = None, cache_size: int = 5000, features: str = "max6", phases: int = 1) -> None:
+                 noise: dict = None, cache_size: int = 5000, features: str = "max6", phases: int = 1,
+                 shift_radius: int = 0) -> None:
         from collections import OrderedDict
         self.features = features                                          # interface.features (scanner.field_features)
+        # Latent shift: where the actor sits in the frame relative to the program is unknown by up to
+        # ``shift_radius`` cells each way. The program's boards are scored at every whole-cell shift, all of a
+        # video's parts together, and the densities averaged (a uniform prior), like the latent phase; cells shifted
+        # in from outside are unknown (0.5). Shifted boards need their own features, not their own rollouts.
+        r = int(shift_radius)
+        self.shifts = [(dy, dx) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
         O = np.stack(observations).astype(np.float64)                   # (N, T, P, F)
         N, T, P, F = O.shape
         self.N, self.phases = N, int(phases)
@@ -358,9 +376,11 @@ class GaussianScanLikelihood:
         for states, weight in motion_combinations(p, self.size):
             v = rollout(p, self.frames, self.size, states)
             v = v if v.ndim == 4 else v[:, None]
-            per = [self._channel_moments(v[:, k]) for k in range(v.shape[1])]
-            out.append(dict(weight=weight, **{key: np.stack([c[key] for c in per], axis=1)
-                                              for key in ("mu", "var", "dmu", "dvar")}))
+            for dy, dx in self.shifts:          # each shift is a further combination, sharing the weight
+                u = _shift_boards(v, dy, dx)
+                per = [self._channel_moments(u[:, k]) for k in range(u.shape[1])]
+                out.append(dict(weight=weight / len(self.shifts), **{key: np.stack([c[key] for c in per], axis=1)
+                                                                     for key in ("mu", "var", "dmu", "dvar")}))
         return out
 
     def _channel_moments(self, c: np.ndarray) -> dict:

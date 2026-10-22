@@ -32,8 +32,8 @@ board (a 4 x 4 sketch covers 3 x 3 cells per character) and is checked against t
     #  figure (yang): mean >= 0.75        .  ground (yin): mean <= 0.25
     ?  in between: unknown, or a block that is part figure    *  anything
     _  not figure: ground or unknown (mean <= 0.5)
-    o  content with room around it: the cells of all o blocks together hold some figure (>= 0.75) and some
-       room, i.e. cells that are not figure (<= 0.5: ground or unknown)
+    o  content with room around it: the cells of all o blocks together hold some content (leaning figure, > 0.5) and some
+       room, i.e. cells that are not certainly figure (< 0.75: ground, unknown or uncertain)
 
 The report also says when a program lies outside the search grammar (``playground.language_issues``): the engine
 still runs it, but inference could never propose it.
@@ -80,7 +80,7 @@ def blocks(board: np.ndarray, rows: int, cols: int) -> list:
 
 def mismatches(sketch: List[str], board: np.ndarray) -> np.ndarray:
     """(rows, cols) True where the board's block disagrees with the sketch. The o blocks are judged together:
-    all of them are marked when their cells hold no figure (>= 0.75) or no room (<= 0.5)."""
+    all of them are marked when their cells hold no content (> 0.5) or no room (< 0.75)."""
     c = coarse(board, len(sketch), len(sketch[0]))
     want = np.array([list(r) for r in sketch])
     got = np.vectorize(char)(c)
@@ -89,7 +89,7 @@ def mismatches(sketch: List[str], board: np.ndarray) -> np.ndarray:
     if (want == "o").any():
         b = blocks(board, len(sketch), len(sketch[0]))
         cells = np.concatenate([b[i][j].ravel() for i, j in zip(*np.nonzero(want == "o"))])
-        if not ((cells >= FIGURE).any() and (cells <= 0.5).any()):
+        if not ((cells > 0.5).any() and (cells < FIGURE).any()):
             bad |= want == "o"
     return bad
 

@@ -234,10 +234,12 @@ PURE_CLAIMS = False
 SOLID_FIGURE = False
 SOLID_THRESHOLD = 0.75
 
-# Soft edges: how big an agent (body) is inside its region is uncertain: it may be as small as its core, the centre
-# third of its region on both axes, or fill the region. Imagining, its content is drawn in the core (its smallest
-# extent, shape kept); observing, its content is checked there; moving (SOLID_FIGURE), its edge (the ring around the
-# core) may overlap other substance, which it pushes. A body whose region fills its frame has no room to vary. A
+# Soft edges: how big an agent (body) is, and where it lies, inside its region is uncertain. Imagining (with
+# PURE_CLAIMS), it is drawn as the average over its placements (``_placements``: sizes 1, 2/3 and 1/3, flush or
+# on the thirds), so it is certain at its centre and fades towards its edge; without PURE_CLAIMS, or with units
+# nested in it, it is drawn in its core (the centre third of its region on both axes). Observing, its content is
+# checked in its core; moving (SOLID_FIGURE), its edge (the ring around the core) may overlap other substance, which
+# it pushes. A body whose region fills its frame has no room to vary. A
 # field is a rigid structure: its extent is what its content says. With False, a body fills its region exactly.
 SOFT_EDGES = False
 
@@ -278,22 +280,32 @@ def _covered(yang_complement: np.ndarray, yin_complement: np.ndarray, left: np.n
 
 
 def _compose_claims(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
-    """PURE_CLAIMS: yang and yin complements from claims ``(cells, value, strength, home cells, leaf)``, general first.
+    """PURE_CLAIMS: yang and yin complements of ``_claim_values``: they compose (``_compose``) to its value and
+    count as claimed (``_covered``) as strongly as claims cover the cell."""
+    if not claims:
+        return np.ones(shape), np.ones(shape)
+    v, claimed = _claim_values(claims, shape)
+    u = (1.0 - np.abs(2.0 * v - 1.0)) * claimed
+    return 1.0 - np.maximum(0.0, 2.0 * v - 1.0) - u, 1.0 - np.maximum(0.0, 1.0 - 2.0 * v) - u
+
+
+def _claim_values(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+    """PURE_CLAIMS: each cell's value, and how strongly claims cover it, from claims
+    ``(cells, value, strength, home cells, leaf, moved)``, general first; strength may vary by cell.
 
     A leaf's extent is the union of its claims' home cells (home: where a moved body started), over all the copies
     templates make of it: one description, wherever it is placed. In each cell, a claim's depth is the number of
     claims covering the cell whose leaf's extent strictly contains its own leaf's; a claim drawn by a body away from
     where it started is inside every claim that is not (a moved body is the most specific thing where it now is;
-    under SOLID_FIGURE it only enters passable cells). Depths are painted in order: each layer moves the cell towards the strength-weighted mean of its claims'
-    values (1 figure, 0 ground, 0.5 unknown) by their noisy-OR strength. Cells no claim covers stay unknown. The
-    complements returned compose (``_compose``) to that value and count as claimed (``_covered``) as strongly as
-    claims cover the cell.
+    under SOLID_FIGURE it only enters passable cells). Depths are painted in order: each layer moves the cell
+    towards the strength-weighted mean of its claims' values (1 figure, 0 ground, 0.5 unknown) by their noisy-OR
+    strength. Cells no claim covers stay unknown (0.5, claimed 0).
     """
     if not claims:
-        return np.ones(shape), np.ones(shape)
+        return np.full(shape, 0.5), np.zeros(shape)
     M = np.array([c[0] for c in claims])                                     # (n, H, W) cells
     V = np.array([np.broadcast_to(c[1], shape) for c in claims], dtype=float)
-    w = np.array([c[2] for c in claims], dtype=float)[:, None, None]
+    w = np.array([np.broadcast_to(c[2], shape) for c in claims], dtype=float)
     extent: Dict[str, np.ndarray] = {}
     for c in claims:
         extent[c[4]] = extent[c[4]] | c[3] if c[4] in extent else c[3]
@@ -310,9 +322,33 @@ def _compose_claims(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, n
         s = 1.0 - np.prod(1.0 - ws, axis=0)
         t = (ws * V).sum(axis=0) / np.maximum(total, 1e-12)
         v = np.where(total > 0, (1.0 - s) * v + s * t, v)
-    claimed = 1.0 - np.prod(1.0 - w * M, axis=0)
-    u = (1.0 - np.abs(2.0 * v - 1.0)) * claimed
-    return 1.0 - np.maximum(0.0, 2.0 * v - 1.0) - u, 1.0 - np.maximum(0.0, 1.0 - 2.0 * v) - u
+    return v, 1.0 - np.prod(1.0 - w * M, axis=0)
+
+
+def _placements(h: int, w: int) -> List[Tuple[int, int, int, int, float]]:
+    """SOFT_EDGES: where an agent of uncertain extent may lie in an h x w region: (rows, cols, row offset, col offset,
+    probability). Sizes 1, 2/3 and 1/3 of the region on both axes, 1/3 each; at 2/3 the four corners, at 1/3 the
+    3 x 3 thirds, each size's positions equally likely. Flush positions keep contact with the region's sides."""
+    out = []
+    if h < 1 or w < 1:                           # a region clipped away at the board's edge
+        return out
+    for frac, n in ((1.0, 1), (2.0 / 3.0, 2), (1.0 / 3.0, 3)):
+        hs, ws = min(h, max(1, round(h * frac))), min(w, max(1, round(w * frac)))
+        rows = sorted({round((h - hs) * k / (n - 1)) for k in range(n)}) if n > 1 else [0]
+        cols = sorted({round((w - ws) * k / (n - 1)) for k in range(n)}) if n > 1 else [0]
+        for dy in rows:
+            for dx in cols:
+                out.append((hs, ws, dy, dx, 1.0 / (3.0 * len(rows) * len(cols))))
+    return out
+
+
+def _shifted(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
+    """``a`` moved down by dy and right by dx (both >= 0), zero filled."""
+    if dy == 0 and dx == 0:
+        return a
+    out = np.zeros_like(a)
+    out[dy:, dx:] = a[:a.shape[0] - dy, :a.shape[1] - dx]
+    return out
 
 
 _UNKNOWN_MOTION = {TRIGRAM_PATTERNS["universal"]: "universal", TRIGRAM_PATTERNS["neutral"]: "neutral"}   # PROBABILISTIC_MOTION
@@ -1940,6 +1976,14 @@ class ConceptGraph:
         root = node
         while parents.get(root.node_id):
             root = parents[root.node_id][0]
+        meta = self.view_meta(node.node_id)
+        units = getattr(self, "_units", None) or self._tokens()
+        in_agent = lambda k: k < len(meta) and any(getattr(getattr(units.get(g), "node", None), "agency", False)
+                                                   for g in meta[k][1])
+        keyed_views = [(key, view) for key, view in keyed_views
+                       if not (SOLID_FIGURE and in_agent(int(key.split("#")[1])))]
+        if not keyed_views:
+            return                                # an agent's leaves move the agent (_drive_bodies), nothing else
         st = self._mass_state(root.node_id)
         H, W = self.grid
         fy, fn, _ = self._paint(self.grid, root.node_id, True, layer="free")
@@ -1948,7 +1992,6 @@ class ConceptGraph:
         where = (R + st["off"][..., 0], C + st["off"][..., 1])          # where each source cell's mass is now
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
-        meta = self.view_meta(node.node_id)
         for key, (_, chain, rect) in keyed_views:
             space = _view_mask(self.grid, chain, rect)
             rows, cols = np.nonzero(space)
@@ -1956,9 +1999,6 @@ class ConceptGraph:
                 continue
             k = int(key.split("#")[1])
             own = meta[k][1] if k < len(meta) else ()                     # a leaf never moves its own groups
-            units = getattr(self, "_units", None) or self._tokens()
-            if SOLID_FIGURE and any(getattr(getattr(units.get(g), "node", None), "agency", False) for g in own):
-                continue                          # an agent's leaves move the agent (_drive_bodies), nothing else
             bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
                       if self._pushable(b, own) and (space & cells).any()]
             was = self._inside.get(key, set())
@@ -2124,10 +2164,15 @@ class ConceptGraph:
         of cells the rest of its tree makes figure (above SOLID_THRESHOLD); no move if neither is free."""
         node = body.node if isinstance(body, GroupToken) else body
         others, own = self._solid_maps(node)
+        self._solid_others = others              # reused by _push_contacts for this move
         H, W = self.grid
         r0, r1, c0, c1 = body.window(H, W)
         mine = np.zeros((H, W), dtype=bool)
-        mine[r0:r1, c0:c1] = own[r0:r1, c0:c1] > SOLID_THRESHOLD
+        if SOFT_EDGES and getattr(node, "agency", False):      # an agent moves by its core: wherever it leans figure
+            q0, q1, p0, p1 = unit_core((r0, r1, c0, c1))
+            mine[q0:q1, p0:p1] = own[q0:q1, p0:p1] > 0.5
+        else:
+            mine[r0:r1, c0:c1] = own[r0:r1, c0:c1] > SOLID_THRESHOLD
         wall = others > SOLID_THRESHOLD
         for step in ((net[0], net[1]), (net[0], 0), (0, net[1])):
             if step == (0, 0):
@@ -2153,8 +2198,9 @@ class ConceptGraph:
         ring[r0:r1, c0:c1] = True
         q0, q1, p0, p1 = unit_core((r0, r1, c0, c1))
         ring[q0:q1, p0:p1] = False
-        if not ring.any():
-            return
+        others = getattr(self, "_solid_others", None)
+        if not ring.any() or (others is not None and not (ring & (others > 0.5)).any()):
+            return                                # the edge touches nothing: no contact to resolve
         root = self.tree_index()[node.node_id]
         mine = {n.node_id for n in walk(node)}
         parents = self._parents()
@@ -2177,9 +2223,9 @@ class ConceptGraph:
                         tok.position[axis] = (start + shift + size / 2) / n
                         if carried:                   # both move together: the body keeps its place inside
                             body.position[axis] -= shift / n
-        st = self._mass.get(root)
-        if st is None or not MOTION_KINDS:
+        if not MOTION_KINDS:
             return
+        st = self._mass_state(root)
         fy, fn, _ = self._paint(self.grid, root, True, layer="free")
         R, C = _grid_index((H, W))
         where = (R + st["off"][..., 0], C + st["off"][..., 1])
@@ -2575,6 +2621,50 @@ class ConceptGraph:
             vacated = (trail < 1) & (ny == 1) & (nn == 1)
             cv[5][vacated] *= trail[vacated]
 
+        def draw_averaged(kids, r: Region, weight: float, ikey: tuple, leaf: str) -> None:
+            """SOFT_EDGES with PURE_CLAIMS: the content drawn once per size at the region's corner, composed on its
+            own, then placed at each position (``_placements``) and averaged into one claim whose strength is the
+            chance some placement claims the cell."""
+            r0, r1, c0, c1 = r
+            shape = cv[0].shape
+            key = (leaf, r1 - r0, c1 - c0, shape, weight, ikey,
+                   tuple(n.gate for k in kids for n in walk(k)))        # its look depends on these, not on where
+            cache = self.__dict__.setdefault("_averaged", {})
+            ids = {n.node_id for k in kids for n in walk(k)}
+            if (skip is not None and ids <= skip) or (only is not None and not ids & only):
+                return                           # a probe that leaves the whole body out
+            usable = (skip is None or not ids & skip) and (only is None or ids <= only)   # a probe leaves none out
+            hit = cache.get(key) if usable else None
+            if hit is None:                      # at the origin: drawn once per size, then placed and averaged
+                Q, QV = np.zeros(shape), np.zeros(shape)
+                saved = cv[0], cv[1], cv[6], cv[7]
+                drawn = {}
+                for hs, ws, dy, dx, prob in _placements(r1 - r0, c1 - c0):
+                    if (hs, ws) not in drawn:
+                        cv[0], cv[1], cv[6], cv[7] = np.ones(shape), np.ones(shape), [], (0, 0)
+                        for child in kids:
+                            render_node(child, (0, hs, 0, ws), weight, ikey)
+                        v, c = _claim_values(cv[6], shape)
+                        e = np.where(c > 0, np.clip(0.5 + (v - 0.5) / np.maximum(c, 1e-12), 0.0, 1.0), 0.5)
+                        drawn[hs, ws] = (c, c * e)          # how strongly claimed, and the claimed value
+                    c, ce = drawn[hs, ws]
+                    Q += prob * _shifted(c, dy, dx)
+                    QV += prob * _shifted(ce, dy, dx)
+                cv[0], cv[1], cv[6], cv[7] = saved
+                hit = (Q, QV)
+                if usable:
+                    if len(cache) > 2000:
+                        cache.clear()
+                    cache[key] = hit
+            Q, QV = (_shifted(m, r0, c0) for m in hit)
+            mask = Q > 1e-9
+            if not mask.any():
+                return
+            V = np.where(mask, QV / np.maximum(Q, 1e-12), 0.5)
+            cv[0] *= 1.0 - Q * np.clip(2.0 * V - 1.0, 0.0, 1.0)
+            cv[1] *= 1.0 - Q * np.clip(1.0 - 2.0 * V, 0.0, 1.0)
+            claim(mask, V, Q, leaf)
+
         def render_node(node: Node, region: Region, weight: float, ikey: tuple = ()) -> None:
             if weight < 1e-9 or is_empty(region):
                 return
@@ -2631,12 +2721,17 @@ class ConceptGraph:
                     region = tok.rect(region, *cv[3])
 
                 soft = _soft_edge(node, home, cv[3])
+                averaged = soft and cv[6] is not None and not any(isinstance(n, GroupNode) for n in walk(node)
+                                                                  if n is not node)
 
                 def draw(r):
                     was_inside = cv[4]
                     cv[4] = True
-                    for child in content_children(node):          # an agent of uncertain extent: at its core
-                        render_node(child, unit_core(r) if soft else r, weight * _sg(node), ikey)
+                    if averaged:                     # an agent of uncertain extent: averaged over its placements
+                        draw_averaged(content_children(node), r, weight * _sg(node), ikey, node.node_id)
+                    else:                            # (with nested units: at its core)
+                        for child in content_children(node):
+                            render_node(child, unit_core(r) if soft else r, weight * _sg(node), ikey)
                     cv[4] = was_inside
                 draw_moved(draw, home, region, (node.node_id, ikey))
             elif isinstance(node, BodyNode):

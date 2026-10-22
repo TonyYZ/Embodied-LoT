@@ -670,3 +670,21 @@ variances are, if anything, too wide, which moves w up by about 1.35.
   (residual correlation 0.23-0.57), so 15 actors carry the evidence of about 2-4 independent ones. A systematic
   misfit is counted 15 times, which makes small structural differences look decisive.
 - **Candidates for the held-out selection:** w = 1/32 and 1/64, each with λ chosen on the validation actors.
+
+## Language changes behind flags, and their cost (22-23 Oct)
+
+Three semantics flags, all off by default (renders bit for bit unchanged when off; `expressivity/` has the cases
+and one report per version): `lot.pure_claims` (centre-axis patterns claim the substance, others only their
+figure; nested claims win), `lot.solid_figure` (moving bodies cannot enter substance; contact pushes), and
+`lot.soft_edges` (an agent's extent is uncertain: drawn as the average over 14 placements of sizes 1, 2/3 and
+1/3, flush or on the thirds; observed and moved by its core). Expressivity suite: 22/41 cases with the current
+language, 28/41 with pure claims and solid figure, 40/41 with all three. The one failure: a ball whose slot
+overlaps the floor of a hollowed basket; excluding placements inside solid substance would fix it.
+
+Cost: likelihood per fitted program 18 ms (new) vs 21 ms (current); rollouts of programs with moving bodies
+31 ms vs 15 ms per 32 frames (the solidity checks), after caching the averaged drawings.
+
+Latent shift (`inference.shift_radius`): scoring every video at 9 whole-cell shifts of the program's boards
+made the likelihood 5x slower (106 vs 22 ms per new program) and the held-out log predictive density of the
+lambda = 1.25 fit worse on every manner (1121.4 vs 1173.4; recognition 0.92 either way). The torso
+normalisation already aligns the actors; the option stays, off.
