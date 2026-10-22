@@ -1,12 +1,14 @@
-# Expressivity suite: concepts the language is meant to express, the program intended for each, and the boards it
-# should produce. Run:  python -m grace_lot.analysis.expressivity   (format: grace_lot/analysis/expressivity.py)
+# Expressivity suite: concepts the language is meant to express. Run:  python -m grace_lot.analysis.expressivity
+# (format: grace_lot/analysis/expressivity.py)
 #
-# Sketch characters: # figure, . ground, ? in between (unknown or part figure), * anything. Top row first; each
-# character covers one block of the 12 x 12 board, so a 4 x 4 sketch has 3 x 3 cells per character.
+# Sketch characters (top row first; each character covers one block of the 12 x 12 board):
+#   # figure   . ground   ? in between (unknown, or part figure)   * anything
+#   o content with room around it: all o blocks together hold some figure and some ground
 #
-# The cases below are the examples tested on 22 Oct 2026. Replace or extend them with your intended programs.
+# A concept is a prototype, variants that should still count (expect = "match", the default) and contrasts that
+# should not (expect = "differ"), all against the concept's sketch. Every motion state is checked.
 
-# --- sanity: the harness reads boards the right way up --------------------------------------------------------
+# --- sanity -----------------------------------------------------------------------------------------------------
 
 [[case]]
 concept = "sanity"
@@ -20,47 +22,186 @@ all = """
 ...
 """
 
-# --- containment ----------------------------------------------------------------------------------------------
+# --- containment: an object inside a U-shaped container, with room around it, never leaving ---------------------
+# Sketch (U): walls left, right and bottom; the inside holds the object with ground around it.
 
 [[case]]
 concept = "containment"
-name = "walls around a body, built from strips"
-program = "(serial_h universal/V (serial_v universal/H (body center/H) universal/H) universal/V)"
-note = "Container as flanking strips, content as the middle strip. Works (22 Oct)."
+name = "prototype: U container, object inside"
+program = "(parallel bottom/V periphery/H (template center/H (body universal/H)))"
+note = "The intended prototype: bottom and side walls, and a body placed in the central slot."
 [case.boards]
 all = """
-############
-############
-############
-############
-####.##.####
-####.##.####
-####.##.####
-####.##.####
-############
-############
-############
-############
+#o#
+#o#
+###
 """
 
 [[case]]
 concept = "containment"
-name = "periphery as container, center body as content"
-program = "(parallel periphery/H (body center/H))"
-note = """The intended reading: walls at both sides, a smaller body inside with ground around it. Fails (22 Oct):
-periphery (1, 0, 1) asserts its middle is ground, center asserts figure there, and the overlay is unknown."""
+name = "variant: the object moves around inside"
+program = "(parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "A ball that moves in a random direction (universal* leaves) and should stay inside the walls."
 [case.boards]
 all = """
-####.##.####
+#o#
+#o#
+###
 """
 
-# --- carrying, support, rhythm: to be written ------------------------------------------------------------------
-# [[case]]
-# concept = "carrying"
-# name = "..."
-# program = "..."
-# frames = [0, 4, 8]
-# [case.boards]
-# "0" = """..."""
-# "4" = """..."""
-# "8" = """..."""
+[[case]]
+concept = "containment"
+name = "variant: the object is a strip moving randomly"
+program = "(parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V)))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "Your variant, as written: a body with three children."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "variant: the container flipped upside down (Π)"
+program = "(template top/V* (parallel bottom/V periphery/H (template center/H (body universal/H))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "Your variant: the whole U as material in a top/V* template, which should turn it into a Π."
+[case.boards]
+all = """
+###
+#o#
+#o#
+"""
+
+[[case]]
+concept = "containment"
+name = "variant: U built from strips, object inside"
+program = "(serial_h universal/V (serial_v universal/H (body center/H) void/H) universal/V)"
+note = "Walls as flanking strips and a bottom strip; the object in the middle strip, ground above it."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "variant: U from strips, the object moves inside"
+program = "(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)"
+frames = [0, 3, 6, 9, 12, 15]
+note = "As above, with a randomly moving object: does the strip keep it inside?"
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "variant: container opening to the right (⊏)"
+program = "(parallel periphery/V bottom/H (template center/V (body universal/V)))"
+note = "Top and bottom walls, a left wall; the object in the middle."
+[case.boards]
+all = """
+###
+#oo
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "contrast: solid block"
+program = "(parallel bottom/V periphery/H universal/H)"
+expect = "differ"
+note = "Walls and inside all figure: the scanner sees periphery and center, but there is no object with room around it."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "contrast: empty container"
+program = "(parallel bottom/V periphery/H)"
+expect = "differ"
+note = "A U with nothing in it."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "contrast: object beside the container, not in it"
+program = "(serial_h (serial_h universal/V (serial_v universal/H void/H void/H) universal/V) (body center/H))"
+expect = "differ"
+note = "An empty U on the left, the object outside it on the right."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+# --- support: an object resting on a surface (a first draft) ---------------------------------------------------
+# Sketch: floor along the bottom, the object on it with room around, nothing above.
+
+[[case]]
+concept = "support"
+name = "prototype: object resting on a floor"
+program = "(serial_v universal/H (body center/H) void/H)"
+note = "Floor in the bottom strip, the object in the strip just above it, empty above."
+[case.boards]
+all = """
+...
+ooo
+###
+"""
+
+[[case]]
+concept = "support"
+name = "variant: object sliding along the floor"
+program = "(serial_v universal/H (body (parallel center/V universal/H*)) void/H)"
+frames = [0, 3, 6, 9, 12, 15]
+note = "It may move sideways but should stay on the floor."
+[case.boards]
+all = """
+...
+ooo
+###
+"""
+
+[[case]]
+concept = "support"
+name = "contrast: object floating above the floor"
+program = "(serial_v universal/H void/H (body center/H))"
+expect = "differ"
+note = "A gap between the floor and the object."
+[case.boards]
+all = """
+...
+ooo
+###
+"""
+
+[[case]]
+concept = "support"
+name = "contrast: object hanging below a ceiling"
+program = "(serial_v void/H (body center/H) universal/H)"
+expect = "differ"
+note = "The surface is above the object: suspension, not support."
+[case.boards]
+all = """
+...
+ooo
+###
+"""

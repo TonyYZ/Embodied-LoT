@@ -1211,11 +1211,17 @@ class ExpressivityTests(unittest.TestCase):
         self.assertTrue(mismatches(parse_sketch("###\n...\n..."), board)[1, 0])
         with self.assertRaises(ValueError):
             parse_sketch("##\n#")
+        self.assertFalse(mismatches(parse_sketch("o\no\no"), board).any())        # o: some figure and some ground
+        self.assertEqual(mismatches(parse_sketch("o\n*\n*"), board).tolist(),
+                         [[True], [False], [False]])                             # the top block alone: figure only
 
     def test_the_example_cases_run_on_the_engine(self):
         from grace_lot.analysis.expressivity import run_case
         r = run_case({"concept": "sanity", "name": "top", "program": "top/V", "boards": {"all": "#\n.\n."}})
         self.assertTrue(r["ok"], r)
+        r = run_case({"concept": "sanity", "name": "contrast", "program": "bottom/V", "expect": "differ",
+                      "boards": {"all": "#\n.\n."}})
+        self.assertTrue(r["ok"] and not r["matched"], r)                        # a contrast passes by not matching
 
 
 class PredictiveTests(unittest.TestCase):
