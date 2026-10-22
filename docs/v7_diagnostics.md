@@ -617,3 +617,29 @@ Yardstick, fixed beforehand: all 4 searches' best log posteriors within 3 nats.
 - **What the swap rates say about the posterior.** It is extremely sharp: changing τ by a few percent changes which
   programs are plausible. That makes search hard and is itself a modelling question: the Gaussian likelihood
   treats every actor, frame, part and feature as independent evidence, though they are strongly correlated.
+
+## Search fix, second attempt: population selection with the adaptive ladder
+
+As the first attempt, but with the adaptive ladder (12 replicas, τ = 1 to 0.05, spacing adapted during the burn-in;
+selection copies a ladder's spacing with its replicas). `results/grace_v7_parts/search_pop_adaptive`, 5.5-7.7 h
+per search.
+
+| Manner | Best (old run / fixed ladder / adaptive) | Gaps of the other 3 searches | Split R-hat |
+| --- | --- | --- | --- |
+| bowing | 911.8 / **966.1** / 952.4 | 7.3, 20.0, 21.5 | 1.35 |
+| jumping | 1033.2 / 1039.1 / **1105.1** | 29.5, 48.6, 69.3 | 1.19 |
+| swinging | 925.1 / **932.7** / 929.8 | 4.6, 5.4, 6.6 | 1.05 |
+| shuffling | 1628.5 / 1621.1 / **1652.0** | 15.0, 53.3, 56.9 | 1.19 |
+| scurrying | 1951.2 / **2159.6** / 2032.1 | 14.2, 48.7, 90.2 | 2.00 |
+
+- **Still 0 of 5 at 3 nats, but much closer:** the median gap of non-best searches falls from 127 (old run) and 69
+  (fixed ladder) to 21.5 nats. Swinging's four searches are within 6.6 nats.
+- **The ladder now mostly works:** swap rates 0.15-0.75 along the ladder for bowing, jumping, scurrying and
+  shuffling. Two flaws remain: the fixed hot end leaves one big last step (scurrying's last pair never swaps), and
+  swinging's ladder collapsed (9 replicas between 0.991 and 1, then 0.83 and 0.12, swap 0.08 between them).
+- **Search still varies between runs:** the fixed-ladder run found programs 14 nats (bowing) and 128 nats
+  (scurrying) above anything the four adaptive searches reached. Agreement within one run is not yet trustworthy.
+- **Swinging shows a plateau, not one peak.** Across both runs, 6 programs lie within 10 nats of the best; they
+  render 5 different behaviours (scan signatures), and the 2 that render identically differ in structure. Here
+  the likelihood does not separate several distinct behaviours, and the language adds redundant parses on top.
+  Whether that plateau is real ambiguity or a too-coarse likelihood is the next question.
