@@ -1201,6 +1201,24 @@ class LatentPhaseTests(unittest.TestCase):
         self.assertNotAlmostEqual(score(obs, 1), score(rolled, 1), places=3)
 
 
+class ExpressivityTests(unittest.TestCase):
+    def test_sketches_are_checked_block_by_block(self):
+        import numpy as np
+        from grace_lot.analysis.expressivity import mismatches, parse_sketch
+        board = np.zeros((12, 12)); board[:4] = 1.0; board[4:8, :6] = 1.0            # top band; left half of middle
+        self.assertFalse(mismatches(parse_sketch("##\n?*\n.."), board).any())     # 2 x 2 sketch: blocks of 6 x 6
+        self.assertEqual(mismatches(parse_sketch("###\n#..\n..."), board).tolist(),
+                         [[False] * 3, [False, False, False], [False] * 3])      # 3 x 3: the middle-left block is figure
+        self.assertTrue(mismatches(parse_sketch("###\n...\n..."), board)[1, 0])
+        with self.assertRaises(ValueError):
+            parse_sketch("##\n#")
+
+    def test_the_example_cases_run_on_the_engine(self):
+        from grace_lot.analysis.expressivity import run_case
+        r = run_case({"concept": "sanity", "name": "top", "program": "top/V", "boards": {"all": "#\n.\n."}})
+        self.assertTrue(r["ok"], r)
+
+
 class PredictiveTests(unittest.TestCase):
     def test_log_predictive_is_the_log_of_the_mean_density(self):
         import numpy as np

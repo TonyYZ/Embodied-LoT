@@ -1,0 +1,66 @@
+# Expressivity suite: concepts the language is meant to express, the program intended for each, and the boards it
+# should produce. Run:  python -m grace_lot.analysis.expressivity   (format: grace_lot/analysis/expressivity.py)
+#
+# Sketch characters: # figure, . ground, ? in between (unknown or part figure), * anything. Top row first; each
+# character covers one block of the 12 x 12 board, so a 4 x 4 sketch has 3 x 3 cells per character.
+#
+# The cases below are the examples tested on 22 Oct 2026. Replace or extend them with your intended programs.
+
+# --- sanity: the harness reads boards the right way up --------------------------------------------------------
+
+[[case]]
+concept = "sanity"
+name = "figure at the top"
+program = "top/V"
+note = "Checks orientation: the top row of a sketch is the top of the board."
+[case.boards]
+all = """
+###
+...
+...
+"""
+
+# --- containment ----------------------------------------------------------------------------------------------
+
+[[case]]
+concept = "containment"
+name = "walls around a body, built from strips"
+program = "(serial_h universal/V (serial_v universal/H (body center/H) universal/H) universal/V)"
+note = "Container as flanking strips, content as the middle strip. Works (22 Oct)."
+[case.boards]
+all = """
+############
+############
+############
+############
+####.##.####
+####.##.####
+####.##.####
+####.##.####
+############
+############
+############
+############
+"""
+
+[[case]]
+concept = "containment"
+name = "periphery as container, center body as content"
+program = "(parallel periphery/H (body center/H))"
+note = """The intended reading: walls at both sides, a smaller body inside with ground around it. Fails (22 Oct):
+periphery (1, 0, 1) asserts its middle is ground, center asserts figure there, and the overlay is unknown."""
+[case.boards]
+all = """
+####.##.####
+"""
+
+# --- carrying, support, rhythm: to be written ------------------------------------------------------------------
+# [[case]]
+# concept = "carrying"
+# name = "..."
+# program = "..."
+# frames = [0, 4, 8]
+# [case.boards]
+# "0" = """..."""
+# "4" = """..."""
+# "8" = """..."""
