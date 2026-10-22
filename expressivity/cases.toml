@@ -2,7 +2,7 @@
 # (format: grace_lot/analysis/expressivity.py)
 #
 # Sketch characters (top row first; each character covers one block of the 12 x 12 board):
-#   # figure   . ground   ? in between (unknown, or part figure)   * anything
+#   # figure   . ground   ? in between (unknown, or part figure)   * anything   _ not figure (ground or unknown)
 #   o content with room around it: all o blocks together hold some figure and some ground
 #
 # A concept is a prototype, variants that should still count (expect = "match", the default) and contrasts that
@@ -18,8 +18,8 @@ note = "Checks orientation: the top row of a sketch is the top of the board."
 [case.boards]
 all = """
 ###
-...
-...
+___
+___
 """
 
 # --- containment: an object inside a U-shaped container, with room around it, never leaving ---------------------
@@ -120,8 +120,8 @@ program = "(serial_v universal/H periphery/H periphery/H)"
 note = "No overlapping descriptions: each strip says what its own third looks like."
 [case.boards]
 all = """
-#.#
-#.#
+#_#
+#_#
 ###
 """
 
@@ -131,7 +131,7 @@ name = "U as strips, shallower: a base under one wall row"
 program = "(serial_v universal/H periphery/H)"
 [case.boards]
 all = """
-#.#
+#_#
 ###
 """
 
@@ -142,8 +142,8 @@ program = "(serial_v periphery/H periphery/H universal/H)"
 [case.boards]
 all = """
 ###
-#.#
-#.#
+#_#
+#_#
 """
 
 [[case]]
@@ -153,7 +153,7 @@ program = "(serial_h universal/V periphery/V periphery/V)"
 [case.boards]
 all = """
 ###
-#..
+#__
 ###
 """
 
@@ -161,10 +161,10 @@ all = """
 concept = "containment"
 name = "variant: strip U with the object in the middle cell"
 program = "(serial_v universal/H (serial_h universal/V (body center/V) universal/V) periphery/H)"
-note = "The middle row is wall, object, wall; the top row walls with ground between them."
+note = "The middle row is wall, object, wall; the top row walls with nothing between them."
 [case.boards]
 all = """
-#.#
+#_#
 #o#
 ###
 """
@@ -216,6 +216,128 @@ note = "An empty U on the left, the object outside it on the right."
 [case.boards]
 all = """
 #o#
+#o#
+###
+"""
+
+# --- baskets by superposition and by hollowing (designed for pure claims, nested claims winning, solid figure) ----
+
+[[case]]
+concept = "basket"
+name = "superposed: surrounded, with a bottom"
+program = "(parallel periphery/H bottom/V)"
+note = "Each pattern says only where material is: walls and a floor; the inside is not described (unknown)."
+[case.boards]
+all = """
+#?#
+#?#
+###
+"""
+
+[[case]]
+concept = "basket"
+name = "superposed with a lid (Π): swap bottom for top"
+program = "(parallel periphery/H top/V)"
+[case.boards]
+all = """
+###
+#?#
+#?#
+"""
+
+[[case]]
+concept = "basket"
+name = "superposed, open on the right (⊏)"
+program = "(parallel periphery/V bottom/H)"
+[case.boards]
+all = """
+###
+#??
+###
+"""
+
+[[case]]
+concept = "basket"
+name = "hollowed: a block with the upper middle made void"
+program = "(parallel universal/H (template center/H upper/V void/H))"
+note = "The void claim covers fewer cells than universal's, inside them, so it wins there: known empty inside."
+[case.boards]
+all = """
+#.#
+#.#
+###
+"""
+
+[[case]]
+concept = "basket"
+name = "hollowed: a closed box (only the centre made void)"
+program = "(parallel universal/H (template center/H center/V void/H))"
+[case.boards]
+all = """
+###
+#.#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "new: a ball in the superposed basket"
+program = "(parallel periphery/H bottom/V (template center/H (body center/V)))"
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "new: a ball moving in the superposed basket"
+program = "(parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "Solid figure should keep it off the walls and the floor."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "new: a ball moving in the hollowed basket"
+program = "(parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The ball's cells lie inside the hollow's, so it is drawn there; solid figure keeps it in the hollow."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "new: a small ball moving in the superposed basket"
+program = "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The ball's body is the centre cell only, so it has room to move up into the unknown inside."
+[case.boards]
+all = """
+#o#
+#o#
+###
+"""
+
+[[case]]
+concept = "containment"
+name = "new: a ball moving in the closed box"
+program = "(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
+note = "The ball's body is the hollow's cell and its figure the middle of it: strictly inside the hollow."
+frames = [0, 3, 6, 9, 12, 15]
+[case.boards]
+all = """
+###
 #o#
 ###
 """

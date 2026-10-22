@@ -76,7 +76,9 @@ def apply_semantics(lot_cfg: dict) -> None:
     ``lot.motion_away_from_figure`` (horizontal motion matches vertical; default true) and
     ``lot.orienting_templates`` (dynamic templates orient their content; default true) and
     ``lot.tree_sized_bodies`` (bodies have no parameters: size from the tree; default true) and
-    ``lot.motion_kinds`` (each motion trigram has its own kind of motion, moving mass too; default true).
+    ``lot.motion_kinds`` (each motion trigram has its own kind of motion, moving mass too; default true),
+    ``lot.pure_claims`` (centre-axis patterns claim the substance, others only their figure; nested claims win;
+    default false) and ``lot.solid_figure`` (moving bodies cannot enter the rest of their tree's figure; default false).
     """
     import embodied_lot
     mode = lot_cfg.get("imagined_evaluation", "full")
@@ -99,6 +101,8 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.GROUPING_NODES = bool(lot_cfg.get("grouping_nodes", True))
     embodied_lot.PROBABILISTIC_MOTION = bool(lot_cfg.get("probabilistic_motion", True))
     embodied_lot.MEASURE_TREES = bool(lot_cfg.get("measure_trees", True))
+    embodied_lot.PURE_CLAIMS = bool(lot_cfg.get("pure_claims", False))
+    embodied_lot.SOLID_FIGURE = bool(lot_cfg.get("solid_figure", False))
 
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
@@ -108,7 +112,8 @@ SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameb
                   "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
                   "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
                   "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False),
-                  "probabilistic_motion": (True, False), "measure_trees": (True, False)}
+                  "probabilistic_motion": (True, False), "measure_trees": (True, False),
+                  "pure_claims": (False, False), "solid_figure": (False, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:

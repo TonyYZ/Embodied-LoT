@@ -1,6 +1,7 @@
 """Expressivity suite: can the language say what it is meant to say?
 
     python -m grace_lot.analysis.expressivity [--cases expressivity/cases.toml] [--only containment]
+                                              [--lot pure_claims=true solid_figure=true] [--report ...]
 
 Each case names a concept (containment, carrying, support, rhythm, ...), the program intended to express it, and
 the boards it should produce, sketched in characters. A concept is pinned down by a prototype program, variants
@@ -29,7 +30,9 @@ board (a 4 x 4 sketch covers 3 x 3 cells per character) and is checked against t
 
     #  figure (yang): mean >= 0.75        .  ground (yin): mean <= 0.25
     ?  in between: unknown, or a block that is part figure    *  anything
-    o  content with room around it: the cells of all o blocks together hold some figure and some ground
+    _  not figure: ground or unknown (mean <= 0.5)
+    o  content with room around it: the cells of all o blocks together hold some figure (>= 0.75) and some
+       room, i.e. cells that are not figure (<= 0.5: ground or unknown)
 
 The report also says when a program lies outside the search grammar (``playground.language_issues``): the engine
 still runs it, but inference could never propose it.
@@ -59,7 +62,7 @@ def parse_sketch(text: str) -> List[str]:
     rows = [r.strip() for r in text.strip("\n").splitlines() if r.strip()]
     if not rows or len({len(r) for r in rows}) != 1:
         raise ValueError(f"a sketch needs rows of equal length:\n{text}")
-    if bad := set("".join(rows)) - set("#.?*o"):
+    if bad := set("".join(rows)) - set("#.?*o_"):
         raise ValueError(f"unknown sketch characters {sorted(bad)}")
     return rows
 
@@ -76,15 +79,16 @@ def blocks(board: np.ndarray, rows: int, cols: int) -> list:
 
 def mismatches(sketch: List[str], board: np.ndarray) -> np.ndarray:
     """(rows, cols) True where the board's block disagrees with the sketch. The o blocks are judged together:
-    all of them are marked when their cells hold no figure (>= 0.75) or no ground (<= 0.25)."""
+    all of them are marked when their cells hold no figure (>= 0.75) or no room (<= 0.5)."""
     c = coarse(board, len(sketch), len(sketch[0]))
     want = np.array([list(r) for r in sketch])
     got = np.vectorize(char)(c)
-    bad = (want != "*") & (want != "o") & (want != got)
+    bad = (want != "*") & (want != "o") & (want != "_") & (want != got)
+    bad |= (want == "_") & (c > 0.5 + 1e-9)
     if (want == "o").any():
         b = blocks(board, len(sketch), len(sketch[0]))
         cells = np.concatenate([b[i][j].ravel() for i, j in zip(*np.nonzero(want == "o"))])
-        if not ((cells >= FIGURE).any() and (cells <= GROUND).any()):
+        if not ((cells >= FIGURE).any() and (cells <= 0.5).any()):
             bad |= want == "o"
     return bad
 
@@ -134,8 +138,8 @@ def run_case(case: dict, grammar=None) -> dict:
             "issues": issues}
 
 
-def report(results: List[dict]) -> str:
-    lines = ["# Expressivity suite", "",
+def report(results: List[dict], semantics: str = "the config's") -> str:
+    lines = ["# Expressivity suite", "", f"Semantics: {semantics}", "",
              f"{sum(r['ok'] for r in results)} of {len(results)} cases pass. "
              "Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. "
              "In the middle column, `X` marks a block that disagrees with the sketch.", ""]
@@ -173,6 +177,7 @@ def main() -> None:
     ap.add_argument("--config", default="configs/grace_v7_parts.toml")
     ap.add_argument("--report", default="expressivity/report.md")
     ap.add_argument("--only", nargs="*", help="concepts to run")
+    ap.add_argument("--lot", nargs="*", default=[], help="semantics overrides, e.g. pure_claims=true")
     args = ap.parse_args()
     import sys
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")      # case names may use symbols (⊏, Π)
@@ -180,11 +185,14 @@ def main() -> None:
     from grace_lot.inference.grammar import Grammar
     from grace_lot.lot_adapter.program import apply_semantics
     lot = load_config(args.config)["lot"]
+    for item in args.lot:
+        key, value = item.split("=", 1)
+        lot[key] = {"true": True, "false": False}.get(value.lower(), value)
     apply_semantics(lot)
     grammar = Grammar.from_config(lot)
     cases = tomllib.loads(Path(args.cases).read_text(encoding="utf-8"))["case"]
     results = [run_case(c, grammar) for c in cases if not args.only or c["concept"] in args.only]
-    Path(args.report).write_text(report(results), encoding="utf-8")
+    Path(args.report).write_text(report(results, ", ".join(args.lot) or "the config's"), encoding="utf-8")
     for r in results:
         print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['concept']:12s} {r['name']}" + (f"  ({r['error']})" if r["error"] else "")
               + ("  [outside the search grammar]" if r["issues"] else ""))

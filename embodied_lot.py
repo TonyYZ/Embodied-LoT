@@ -215,7 +215,24 @@ PROBABILISTIC_MOTION = True
 # target to 1/3). Trees with an input window keep perceiving. Every other dashed source stays an observer.
 # With False, such a tree is an observer of its empty space (earlier runs).
 MEASURE_TREES = True
-_MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
+
+# Pure claims. The centre-axis patterns (void, neutral, universal: every band alike) claim the substance itself in
+# every band: absent, unknown, present. The other patterns contrast figure with ground and claim only their figure
+# bands; their ground bands say nothing. Overlapping claims are painted general first: a claim whose cells (where a
+# moved body started) lie strictly inside another claim's cells wins there; claims over the same cells, or cells
+# that only partly overlap, combine (disagreement reads as unknown). Observing
+# matches: void checks its bands are empty, neutral that they are unknown. With False, every band of every pattern
+# claims, all claims combine, void observes nothing and neutral reads a constant (earlier runs).
+PURE_CLAIMS = False
+
+# Solid figure: a moving body cannot enter cells that the rest of its tree makes more likely figure than not (value
+# above 0.75); unknown and empty cells are passable. A blocked diagonal move keeps whichever axis is free. Objects
+# interact by blocking, not pushing: the motion leaves inside a body (an agent) move that body and nothing else.
+# Bodies in turned frames and free mass are not blocked yet. With False, bodies pass through everything and an
+# agent's leaves also push the mass and other bodies in their space (earlier runs).
+SOLID_FIGURE = False
+SOLID_THRESHOLD = 0.75
+_MOTION_KIND ={"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
 
 
@@ -238,6 +255,44 @@ def _covered(yang_complement: np.ndarray, yin_complement: np.ndarray, left: np.n
         return yin_complement
     free = (yang_complement >= 1.0) & (yin_complement >= 1.0)
     return np.where(free, yin_complement * left, yin_complement)
+
+
+def _compose_claims(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+    """PURE_CLAIMS: yang and yin complements from claims ``(cells, value, strength, home cells, leaf)``, general first.
+
+    A leaf's extent is the union of its claims' home cells (home: where a moved body started), over all the copies
+    templates make of it: one description, wherever it is placed. In each cell, a claim's depth is the number of
+    claims covering the cell whose leaf's extent strictly contains its own leaf's; a claim drawn by a body away from
+    where it started is inside every claim that is not (a moved body is the most specific thing where it now is;
+    under SOLID_FIGURE it only enters passable cells). Depths are painted in order: each layer moves the cell towards the strength-weighted mean of its claims'
+    values (1 figure, 0 ground, 0.5 unknown) by their noisy-OR strength. Cells no claim covers stay unknown. The
+    complements returned compose (``_compose``) to that value and count as claimed (``_covered``) as strongly as
+    claims cover the cell.
+    """
+    if not claims:
+        return np.ones(shape), np.ones(shape)
+    M = np.array([c[0] for c in claims])                                     # (n, H, W) cells
+    V = np.array([np.broadcast_to(c[1], shape) for c in claims], dtype=float)
+    w = np.array([c[2] for c in claims], dtype=float)[:, None, None]
+    extent: Dict[str, np.ndarray] = {}
+    for c in claims:
+        extent[c[4]] = extent[c[4]] | c[3] if c[4] in extent else c[3]
+    P = np.array([extent[c[4]].ravel() for c in claims])                     # (n, H * W) the leaf's extent
+    outside = (P[:, None, :] & ~P[None, :, :]).any(-1)                       # [i, j]: some of i's cells not j's
+    moved = np.array([c[5] for c in claims])
+    first = moved[:, None] & ~moved[None, :]                                 # [i, j]: i moved, j did not
+    inside = ((~outside & outside.T) | first) & ~first.T                     # [i, j]: i is nested in j
+    depth = np.einsum("ij,jhw->ihw", inside.astype(int), M.astype(int))
+    v = np.full(shape, 0.5)
+    for d in np.unique(depth[M]):
+        ws = w * (M & (depth == d))
+        total = ws.sum(axis=0)
+        s = 1.0 - np.prod(1.0 - ws, axis=0)
+        t = (ws * V).sum(axis=0) / np.maximum(total, 1e-12)
+        v = np.where(total > 0, (1.0 - s) * v + s * t, v)
+    claimed = 1.0 - np.prod(1.0 - w * M, axis=0)
+    u = (1.0 - np.abs(2.0 * v - 1.0)) * claimed
+    return 1.0 - np.maximum(0.0, 2.0 * v - 1.0) - u, 1.0 - np.maximum(0.0, 1.0 - 2.0 * v) - u
 
 
 _UNKNOWN_MOTION = {TRIGRAM_PATTERNS["universal"]: "universal", TRIGRAM_PATTERNS["neutral"]: "neutral"}   # PROBABILISTIC_MOTION
@@ -749,6 +804,11 @@ class ObjectNode(Node):
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         if field is None:
             self.activation = self.gate
+        elif PURE_CLAIMS and len(set(self.pattern)) == 1:      # centre axis: the substance in every band
+            target = self.pattern[0]
+            sims = [1.0 - 2.0 * abs(obs - 0.5) if target == 0.5 else 1.0 - abs(obs - target)
+                    for obs in self._band_means(field)]
+            self.activation = self.gate * _mean(sims)
         elif all(v == 0.5 for v in self.pattern):
             self.activation = 0.5 * self.gate
         else:
@@ -1667,7 +1727,7 @@ class ConceptGraph:
                 tuple(id(n.field) for n in inputs),
                 UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
                 MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES,
-                PROBABILISTIC_MOTION, tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
+                PROBABILISTIC_MOTION, PURE_CLAIMS, tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
 
     def tree_index(self) -> Dict[str, str]:
         """Which root (tree) each node belongs to."""
@@ -1869,6 +1929,8 @@ class ConceptGraph:
             k = int(key.split("#")[1])
             own = meta[k][1] if k < len(meta) else ()                     # a leaf never moves its own groups
             units = getattr(self, "_units", None) or self._tokens()
+            if SOLID_FIGURE and any(getattr(getattr(units.get(g), "node", None), "agency", False) for g in own):
+                continue                          # an agent's leaves move the agent (_drive_bodies), nothing else
             bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
                       if self._pushable(b, own) and (space & cells).any()]
             was = self._inside.get(key, set())
@@ -2012,6 +2074,8 @@ class ConceptGraph:
                 step = max(-1, min(1, math.trunc(drive[ax])))
                 net[ax] += step
                 drive[ax] -= step
+            if SOLID_FIGURE and any(net) and (H, W) == tuple(self.grid):
+                net = self._solid_step(body, net)
             for axis, n in ((0, H), (1, W)):
                 size = max(1, round(body.extent[axis] * n))
                 if TREE_SIZED_BODIES:                    # move the window's start cell; keep it on the board
@@ -2023,6 +2087,50 @@ class ConceptGraph:
                 cell = min(max(cell, size // 2), n - size + size // 2)
                 body.position[axis] = cell / n
             body.velocity = [net[0] / H, net[1] / W]
+
+    def _solid_step(self, body, net: list) -> list:
+        """SOLID_FIGURE: the move ``net`` (cells), or the part of it along one axis, that keeps the body's figure out
+        of cells the rest of its tree makes figure (above SOLID_THRESHOLD); no move if neither is free."""
+        node = body.node if isinstance(body, GroupToken) else body
+        others, own = self._solid_maps(node)
+        H, W = self.grid
+        r0, r1, c0, c1 = body.window(H, W)
+        mine = np.zeros((H, W), dtype=bool)
+        mine[r0:r1, c0:c1] = own[r0:r1, c0:c1] > SOLID_THRESHOLD
+        wall = others > SOLID_THRESHOLD
+        for step in ((net[0], net[1]), (net[0], 0), (0, net[1])):
+            if step == (0, 0):
+                continue
+            dr, dc = (self._clamped_shift(body, axis, d, n) for axis, d, n in ((0, step[0], H), (1, step[1], W)))
+            if (dr, dc) != (0, 0) and not (np.roll(mine, (dr, dc), axis=(0, 1)) & wall).any():
+                return [dr, dc]
+        return [0, 0]
+
+    @staticmethod
+    def _clamped_shift(body, axis: int, d: int, n: int) -> int:
+        """How many cells a move of ``d`` along ``axis`` actually shifts the body (it stays on the board)."""
+        size = max(1, round(body.extent[axis] * n))
+        if TREE_SIZED_BODIES:
+            start = round(body.position[axis] * n - size / 2)
+            return min(max(start + d, 0), n - size) - start
+        cell = round(body.position[axis] * n)
+        return min(max(cell + d, size // 2), n - size + size // 2) - cell
+
+    def _solid_maps(self, node) -> Tuple[np.ndarray, np.ndarray]:
+        """The body's tree drawn without the body's subtree, and the body's subtree drawn alone (where it is)."""
+        root = self.tree_index()[node.node_id]
+        ids = {n.node_id for n in walk(node)}
+        trails = dict(self._trails)               # probes must not extend any trail
+        out = []
+        try:
+            for skip, only in ((ids, None), (None, ids)):
+                self._paint_skip, self._paint_only = skip, only
+                a, b, v = self._paint_root(self.grid, root, True)
+                out.append(_compose(a, _covered(a, b, v)))
+        finally:
+            self._paint_skip = self._paint_only = None
+            self._trails = trails
+        return out[0], out[1]
 
     def _pushable(self, unit_id: str, own: tuple) -> bool:
         """Can a leaf inside the groups ``own`` push this unit? Not one of its own groups, and not a nested
@@ -2240,7 +2348,21 @@ class ConceptGraph:
         # cv: [yang paint (and, in the earlier renderer, yin paint), yin paint, place bodies, frame size].
         # An oriented slot swaps in a canvas for the content's upright frame (render_oriented).
         cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W), False,   # ..., frame size, inside a body,
-              np.ones((H, W))]                                                # emptiness left behind
+              np.ones((H, W)),                                                # emptiness left behind,
+              [] if PURE_CLAIMS else None, (0, 0)]       # claims (PURE_CLAIMS), offset from a moved body's home
+        skip, only = getattr(self, "_paint_skip", None), getattr(self, "_paint_only", None)   # solidity probes
+
+        def claim(mask, value, w, leaf, home=None, moved=False) -> None:
+            """Record a PURE_CLAIMS claim; its home cells (``home``, default its cells) moved back to where the
+            enclosing body started."""
+            home, (dr, dc) = (mask if home is None else home), cv[7]
+            moved = moved or (dr, dc) != (0, 0)
+            if (dr, dc) != (0, 0):
+                rs, cs = np.nonzero(home)
+                keep = (rs + dr >= 0) & (rs + dr < home.shape[0]) & (cs + dc >= 0) & (cs + dc < home.shape[1])
+                home = np.zeros_like(home)
+                home[rs[keep] + dr, cs[keep] + dc] = True
+            cv[6].append((mask, value, w, home, leaf, moved))
 
         def yang_regions(node: Node, region: Region) -> List[Region]:
             if isinstance(node, ObjectNode):
@@ -2280,14 +2402,24 @@ class ConceptGraph:
             Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
             saved = cv[:]
             cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4],   # bodies live in the frame
-                     np.ones((Hc, Wc))]
+                     np.ones((Hc, Wc)), [] if PURE_CLAIMS else None, (0, 0)]
             render_plan(children, (0, Hc, 0, Wc), weight, ikey)
-            frame_yang, frame_yin, frame_left = cv[0], cv[1], cv[5]
+            frame_yang, frame_yin, frame_left, frame_claims = cv[0], cv[1], cv[5], cv[6]
             cv[:] = saved
             r0, r1, c0, c1 = slot
             cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
             cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
             cv[5][r0:r1, c0:c1] *= frame_left[rows, cols]
+            for mask, value, w, home, leaf, moved in frame_claims or ():     # into the slot, home cells too
+                m, h = np.zeros(cv[0].shape, dtype=bool), np.zeros(cv[0].shape, dtype=bool)
+                m[r0:r1, c0:c1], h[r0:r1, c0:c1] = mask[rows, cols], home[rows, cols]
+                if not m.any():
+                    continue
+                if not np.isscalar(value):
+                    full = np.full(cv[0].shape, 0.5)
+                    full[r0:r1, c0:c1] = value[rows, cols]
+                    value = full
+                claim(m, value, w, leaf, h, moved)
 
         def draw_moved(draw, home: Region, region: Region, key: tuple) -> None:
             """``draw(region)`` paints a body's content where it is. Under PROBABILISTIC_MOTION, once a body has
@@ -2297,6 +2429,14 @@ class ConceptGraph:
             ``reset_gates()``."""
             key = (H, W, out_root.node_id, layer, cv[0].shape) + key
             trail = self._trails.get(key)
+            if cv[6] is not None:                # claims keep the priority of where the body started
+                plain, dr0, dc0 = draw, home[0] - region[0], home[2] - region[2]
+
+                def draw(r):
+                    old = cv[7]
+                    cv[7] = (old[0] + dr0, old[1] + dc0)
+                    plain(r)
+                    cv[7] = old
             if not PROBABILISTIC_MOTION or (region == home and trail is None):
                 draw(region)
                 return
@@ -2304,18 +2444,21 @@ class ConceptGraph:
             def alone(r):                        # the content's paint on its own, at r
                 saved = cv[:]
                 cv[0], cv[1], cv[5] = np.ones_like(saved[0]), np.ones_like(saved[1]), np.ones_like(saved[5])
+                cv[6] = [] if saved[6] is not None else None
                 draw(r)
-                out = cv[0], cv[1], cv[5]
+                out = cv[0], cv[1], cv[5], cv[6]
                 cv[:] = saved
                 return out
             if trail is None:
-                hy, hn, _ = alone(home)
+                hy, hn, _, _ = alone(home)
                 trail = hy * hn
-            ny, nn, nv = alone(region)
+            ny, nn, nv, nc = alone(region)
             trail = self._trails[key] = np.minimum(trail, ny * nn)
             cv[0] *= ny
             cv[1] *= nn
             cv[5] *= nv                          # trails of bodies inside it
+            if nc:
+                cv[6].extend(nc)
             vacated = (trail < 1) & (ny == 1) & (nn == 1)
             cv[5][vacated] *= trail[vacated]
 
@@ -2331,6 +2474,10 @@ class ConceptGraph:
                 f = node.field[np.arange(r1 - r0) * node.field.shape[0] // (r1 - r0)][
                     :, np.arange(c1 - c0) * node.field.shape[1] // (c1 - c0)]
                 w = _clamp(weight * node.gate)
+                if cv[6] is not None and w > 0:
+                    m, value = np.zeros(cv[0].shape, dtype=bool), np.full(cv[0].shape, 0.5)
+                    m[r0:r1, c0:c1], value[r0:r1, c0:c1] = True, f
+                    claim(m, value, w, node.node_id)
                 if UNKNOWN_BACKGROUND:
                     cv[0][r0:r1, c0:c1] *= 1.0 - w * np.clip(2 * f - 1, 0, 1)
                     cv[1][r0:r1, c0:c1] *= 1.0 - w * np.clip(1 - 2 * f, 0, 1)
@@ -2342,6 +2489,20 @@ class ConceptGraph:
                     return                       # a motion trigram specifies motion, not a static figure
                 if layer != "all" and cv[4] != (layer == "bodies"):
                     return                       # the other layer (mass vs bodies)
+                if (skip and node.node_id in skip) or (only is not None and node.node_id not in only):
+                    return                       # a solidity probe leaves this leaf out
+                if cv[6] is not None:            # PURE_CLAIMS: centre axis claims every band, others their figure
+                    pure, w = len(set(node.pattern)) == 1, _clamp(weight * node.gate)
+                    mask = np.zeros(cv[0].shape, dtype=bool)
+                    for i, bit in enumerate(node.pattern):
+                        if pure or bit > 0.5:
+                            r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
+                            mask[r0:r1, c0:c1] = True
+                            cv[0][r0:r1, c0:c1] *= 1.0 - w * _clamp(2 * bit - 1)
+                            cv[1][r0:r1, c0:c1] *= 1.0 - w * _clamp(1 - 2 * bit)
+                    if w > 0 and mask.any():
+                        claim(mask, float(node.pattern[0]) if pure else 1.0, w, node.node_id)
+                    return
                 for i, bit in enumerate(node.pattern):
                     r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
                     w = _clamp(weight * node.gate)
@@ -2384,6 +2545,9 @@ class ConceptGraph:
                     render_node(child, region, weight * _sg(node), ikey)
 
         render_node(out_root, (0, H, 0, W), 1.0)
+        if cv[6] is not None:
+            yang, yin = _compose_claims(cv[6], (H, W))
+            return yang, yin, cv[5]
         return cv[0], cv[1], cv[5]
 
     def derived_fields(self, shape: Tuple[int, int] = (9, 9)) -> Dict[str, ReceptiveField]:

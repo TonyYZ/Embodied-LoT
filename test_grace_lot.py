@@ -1224,6 +1224,50 @@ class ExpressivityTests(unittest.TestCase):
         self.assertTrue(r["ok"] and not r["matched"], r)                        # a contrast passes by not matching
 
 
+class PureClaimsTests(unittest.TestCase):
+    """lot.pure_claims and lot.solid_figure (embodied_lot.PURE_CLAIMS, SOLID_FIGURE)."""
+
+    def setUp(self):
+        import embodied_lot
+        self.saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        embodied_lot.PURE_CLAIMS = embodied_lot.SOLID_FIGURE = True
+
+    def tearDown(self):
+        import embodied_lot
+        vars(embodied_lot).update(self.saved)
+
+    def board(self, src, frame=0, state=0):
+        from grace_lot.analysis.expressivity import render
+        return render(src, frame + 1, state)[0][1][frame, 0]
+
+    def test_mixed_patterns_add_figure_and_leave_the_rest_unknown(self):
+        b = self.board("(parallel periphery/H bottom/V)")
+        self.assertTrue((b[:, :4] == 1).all() and (b[:, 8:] == 1).all() and (b[8:] == 1).all())   # walls, floor
+        self.assertTrue((b[:8, 4:8] == 0.5).all())                                                # inside: unknown
+
+    def test_a_nested_claim_wins_and_a_copied_leaf_is_one_claim(self):
+        b = self.board("(parallel universal/H (template center/H upper/V void/H))")
+        self.assertTrue((b[:8, 4:8] == 0).all() and (b[8:] == 1).all())       # hollowed: known empty inside
+        b = self.board("(parallel universal/H (template center/H upper/V void/H) (template center/H (body center/V)))")
+        self.assertTrue((b[4:8, 4:8] == 1).all() and (b[:4, 4:8] == 0).all())  # a ball inside the hollow, drawn
+
+    def test_void_and_neutral_observe_every_band(self):
+        import numpy as np
+        from embodied_lot import ObjectNode, ReceptiveField, TRIGRAM_PATTERNS
+        empty, unknown, full = (ReceptiveField(np.full((12, 12), v)) for v in (0.0, 0.5, 1.0))
+        void, neutral = ObjectNode("v", TRIGRAM_PATTERNS["void"]), ObjectNode("n", TRIGRAM_PATTERNS["neutral"])
+        self.assertEqual((void.evaluate(empty), void.evaluate(full)), (1.0, 0.0))
+        self.assertEqual((neutral.evaluate(unknown), neutral.evaluate(full)), (1.0, 0.0))
+
+    def test_a_moving_ball_stays_in_the_basket(self):
+        from grace_lot.analysis.expressivity import render
+        src = "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
+        for _, v in render(src, 16):
+            walls = v[:, 0][:, :, :4], v[:, 0][:, :, 8:], v[:, 0][:, 8:]
+            self.assertTrue(all((w == 1).all() for w in walls))                 # never broken or entered
+            self.assertTrue(((v[:, 0][:, :8, 4:8]) == 1).any(axis=(1, 2)).all())  # the ball is always inside
+
+
 class PredictiveTests(unittest.TestCase):
     def test_log_predictive_is_the_log_of_the_mean_density(self):
         import numpy as np
