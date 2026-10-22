@@ -26,7 +26,7 @@ from scipy.special import logsumexp
 
 from grace_lot.config import load_config
 from grace_lot.grace.dataset import split_videos
-from grace_lot.lot_adapter.program import apply_semantics, parse_program
+from grace_lot.lot_adapter.program import apply_semantics, parse_program, saved_lot
 
 
 def log_predictive(scores: np.ndarray) -> np.ndarray:
@@ -71,7 +71,9 @@ def main() -> None:
     args = ap.parse_args()
     for r in map(Path, args.runs):
         cfg = load_config(args.config)
-        cfg["inference"] = json.loads((r / "config.json").read_text())["inference"]     # the run's own settings
+        run_cfg = json.loads((r / "config.json").read_text())
+        cfg["inference"] = run_cfg["inference"]                      # the run's own settings and language
+        cfg["lot"] = saved_lot(run_cfg["lot"])
         apply_semantics(cfg["lot"])
         res = evaluate(cfg, r, args.draws)
         (r / "predictive.json").write_text(json.dumps(res, indent=1))
