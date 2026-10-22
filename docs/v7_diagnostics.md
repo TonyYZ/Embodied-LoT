@@ -643,3 +643,30 @@ per search.
   render 5 different behaviours (scan signatures), and the 2 that render identically differ in structure. Here
   the likelihood does not separate several distinct behaviours, and the language adds redundant parses on top.
   Whether that plateau is real ambiguity or a too-coarse likelihood is the next question.
+
+## How much does the likelihood overcount its evidence?
+
+The Gaussian likelihood treats every actor x frame x part x detector term (levels and frame-to-frame changes) as
+independent. Estimated from the standardised residuals z = (o - mu) / sqrt(var + s2) of each manner's best
+program (adaptive population run; each video at its best state combination and phase), model side only:
+
+| Manner | Frames: τ_int | Channels: effective of 48 | Actors: residual correlation, effective of 15 | Implied w |
+| --- | --- | --- | --- | --- |
+| bowing | 1.76 | 6.2 | 0.57, 1.7 | 1/237 - 1/118 |
+| jumping | 1.31 | 8.3 | 0.24, 3.4 | 1/66 - 1/33 |
+| swinging | 1.00 | 13.9 | 0.26, 3.3 | 1/31 - 1/15 |
+| shuffling | 1.53 | 13.1 | 0.23, 3.6 | 1/46 - 1/23 |
+| scurrying | 2.15 | 14.4 | 0.42, 2.2 | 1/96 - 1/48 |
+
+τ_int: integrated autocorrelation time along frames; channels: participation ratio of the residual correlation
+matrix over part x detector channels; actors: design effect N / (1 + (N - 1) ρ̄) from the mean pairwise
+correlation of whole residual patterns. Implied w = effective / nominal terms per video, the range for changes
+counting nothing (redundant with levels) up to as much as levels. Mean z² is 0.54-0.86 (median 0.74): the
+variances are, if anything, too wide, which moves w up by about 1.35.
+
+- **The current w = 1/16 overcounts by roughly 2-4x** (median implied 1/66 - 1/33, about 1/50 - 1/25 after the
+  variance correction), and much more for bowing.
+- **The biggest source is the actors, not frames or detectors:** the best program's misfit is largely shared
+  (residual correlation 0.23-0.57), so 15 actors carry the evidence of about 2-4 independent ones. A systematic
+  misfit is counted 15 times, which makes small structural differences look decisive.
+- **Candidates for the held-out selection:** w = 1/32 and 1/64, each with λ chosen on the validation actors.
