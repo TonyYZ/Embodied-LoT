@@ -656,6 +656,121 @@ note = "The same body as a sibling of the field is independent: one body rises a
 *?*
 """
 
+# --- agency vs place: conveyors and carts (static_fields) ------------------------------------------------------
+# body: carried, its own motion leaves propel it. field: anchored, its motion leaves act on what is in its region.
+
+[[case]]
+concept = "conveyor"
+name = "a conveyor: a field holding only a motion leaf carries sand through its band"
+program = "(parallel (template center/V (field bottom/H*)) (template center/V center/H universal/H))"
+frames = [0, 11]
+note = "The field claims no substance, so it is no source; its motion leaf moves what lies in its region."
+[case.boards]
+"0" = """
+************
+****####****
+************
+"""
+"11" = """
+************
+****_______#
+************
+"""
+
+[[case]]
+concept = "conveyor"
+name = "contrast: a conveyor in another band leaves the sand where it is"
+program = "(parallel (template bottom/V (field bottom/H*)) (template center/V center/H universal/H))"
+frames = [11]
+expect = "differ"
+[case.boards]
+"11" = """
+************
+****_______#
+************
+"""
+
+[[case]]
+concept = "conveyor"
+name = "a passive cart with a conveyor: the cart stays, the sand on it is carried off"
+program = "(parallel (template center/H center/V (body (parallel bottom/V (field bottom/H*)))) (template center/H center/V center/V universal/H))"
+frames = [0, 11]
+note = "The motion leaf belongs to its innermost unit, the field, so it acts on the sand and does not propel the cart."
+[case.boards]
+"0" = """
+************
+************
+************
+************
+************
+****####****
+****####****
+****####****
+************
+************
+************
+************
+"""
+"11" = """
+************
+************
+************
+************
+************
+****____####
+****____####
+****####****
+************
+************
+************
+************
+"""
+
+[[case]]
+concept = "conveyor"
+name = "a solid cart with a conveyor stays put"
+program = "(parallel (template center/H center/V (body (parallel universal/H (field bottom/H*)))))"
+frames = [11]
+note = "A body with no motion leaves of its own is moved only by pushes."
+[case.boards]
+"11" = """
+************
+************
+************
+************
+****####****
+****####****
+****####****
+****####****
+************
+************
+************
+************
+"""
+
+[[case]]
+concept = "conveyor"
+name = "contrast: the same motion leaf directly in the body propels the cart"
+program = "(parallel (template center/H center/V (body (parallel universal/H bottom/H*))))"
+frames = [11]
+expect = "differ"
+note = "Directly in the body, the motion leaf belongs to the body: a self-propelled cart drives off to the right."
+[case.boards]
+"11" = """
+************
+************
+************
+************
+****####****
+****####****
+****####****
+****####****
+************
+************
+************
+************
+"""
+
 # --- support: an object resting on a surface (a first draft) ---------------------------------------------------
 # Sketch: floor along the bottom, the object on it with room around, nothing above.
 

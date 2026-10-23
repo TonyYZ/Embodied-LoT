@@ -1330,6 +1330,15 @@ class StaticFieldsTests(unittest.TestCase):
         line = self.boards(held)[11]
         self.assertTrue((line[1:11, 5:7] > 0.75).all())                    # the line, from the field to the top
 
+    def test_a_conveyor_in_a_cart_moves_the_load_not_the_cart(self):
+        """A motion leaf belongs to its innermost unit: in a field inside a body it acts on the field's region."""
+        cart = self.boards("(parallel (template center/H center/V (body (parallel bottom/V (field bottom/H*)))) "
+                           "(template center/H center/V center/V universal/H))")
+        self.assertTrue((cart[11][7, 4:8] > 0.75).all())                    # the cart's floor stays
+        self.assertTrue((cart[11][5:7, 4:8] < 0.25).all() and (cart[11][5:7, 8:] > 0.75).all())  # the sand left
+        driven = self.boards("(parallel (template center/H center/V (body (parallel universal/H bottom/H*))))")
+        self.assertTrue((driven[11][4:8, 4:6] < 0.5).all())                  # directly in the body: it drives off
+
     def test_contraction_piles_up_at_the_centre(self):
         v = self.boards("(parallel (template center/H center/V universal/H) periphery/V*)")
         self.assertTrue((v[11][5:7, 4:8] > 0.75).all() and (v[11][[4, 7], 4:8] < 0.25).all())

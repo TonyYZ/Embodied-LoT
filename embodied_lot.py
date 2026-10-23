@@ -2021,8 +2021,8 @@ class ConceptGraph:
             root = parents[root.node_id][0]
         meta = self.view_meta(node.node_id)
         units = getattr(self, "_units", None) or self._tokens()
-        in_agent = lambda k: k < len(meta) and any(getattr(getattr(units.get(g), "node", None), "agency", False)
-                                                   for g in meta[k][1])
+        in_agent = lambda k: (k < len(meta) and bool(meta[k][1])               # its innermost unit is an agent
+                              and getattr(getattr(units.get(meta[k][1][-1]), "node", None), "agency", False))
         keyed_views = [(key, view) for key, view in keyed_views
                        if not (SOLID_FIGURE and in_agent(int(key.split("#")[1])))]
         if not keyed_views:
