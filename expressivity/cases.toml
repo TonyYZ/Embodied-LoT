@@ -771,6 +771,61 @@ note = "Directly in the body, the motion leaf belongs to the body: a self-propel
 ************
 """
 
+# --- carried vs anchored fields under outside motion (static_fields) ---------------------------------------------
+
+[[case]]
+concept = "carried field"
+name = "a field carried by a body, pushed from outside, moves along and sows nothing"
+program = "(parallel (template center/V (template center/H (body (field universal/H)))) bottom/H*)"
+frames = [11]
+note = "The field is anchored relative to its body: the outside motion moves the body, field and all, leaving known emptiness."
+[case.boards]
+"11" = """
+************
+****____####
+************
+"""
+
+[[case]]
+concept = "carried field"
+name = "contrast: an anchored field, pushed, re-sows its region and a band grows"
+program = "(parallel (template center/V (template center/H (field universal/H))) bottom/H*)"
+frames = [11]
+expect = "differ"
+note = "The substance is pushed out of the field's fixed region and the field re-asserts it every tick."
+[case.boards]
+"11" = """
+************
+****____####
+************
+"""
+
+[[case]]
+concept = "carried field"
+name = "a carried source: a field with its own motion on a pushed cart sows along its path"
+program = "(parallel (template center/V (template center/H (body (field (parallel universal/H top/V*))))) bottom/H*)"
+frames = [11]
+note = "Only the field's own motion carries its substance out; on the moving cart that leaves a trail below it."
+[case.boards]
+"11" = """
+***
+***
+**o
+"""
+
+[[case]]
+concept = "carried field"
+name = "contrast: without its own motion the carried field leaves nothing below"
+program = "(parallel (template center/V (template center/H (body (field universal/H)))) bottom/H*)"
+frames = [11]
+expect = "differ"
+[case.boards]
+"11" = """
+***
+***
+**o
+"""
+
 # --- support: an object resting on a surface (a first draft) ---------------------------------------------------
 # Sketch: floor along the bottom, the object on it with room around, nothing above.
 

@@ -2108,7 +2108,9 @@ class ConceptGraph:
         S = self._substance(root_id)
         H, W = self.grid
         R, C = _grid_index((H, W))
-        stuff = ((S["s"] > 0) & (S["v"] > 0.5)) | (S["F"] & (S["fe"] > 0.5))
+        none = np.zeros((H, W), dtype=bool)
+        src = S.get("src", {})
+        loose = (S["s"] > 0) & (S["v"] > 0.5)
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
         for key, (_, chain, rect) in keyed_views:
@@ -2118,6 +2120,8 @@ class ConceptGraph:
                 continue
             k = int(key.split("#")[1])
             own = meta[k][1] if k < len(meta) else ()
+            mine = getattr(getattr(units.get(own[-1]), "node", None), "node_id", None) if own else None
+            stuff = loose | src.get(None, none) | src.get(mine, none)    # a carried field: only its own motion
             bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
                       if self._pushable(b, own) and (space & cells).any()
                       and not isinstance(getattr(units[b], "node", None), FieldNode)]       # fields do not move
@@ -2973,12 +2977,49 @@ class ConceptGraph:
             self._paint_only, self._trails = None, trails
         F = c > 0
         S["fe"], S["fc"], S["F"] = _claimed_value(v, c), c, F
+        S["src"] = self._field_sources(root_id)
         S["v"][F], S["s"][F], S["moved"][F] = 0.5, 0.0, False
         for key in S["marks"]:                       # what the reset replaced is no longer ordered or marked
             S["marks"][key] &= ~F
         for o in S["orders"]:
             o[0] = o[0] & ~F
         S["orders"] = [o for o in S["orders"] if o[0].any()]
+
+    def _field_units(self, root_id: str) -> list:
+        """STATIC_FIELDS: a tree's fields as (field, its own nodes, carried by a body?, holds a motion leaf?)."""
+        def build():
+            tree, parents, out = self.tree_index(), self._parents(), {}
+            for f in [g for g in self._nodes.values() if isinstance(g, FieldNode)]:
+                own, stack = set(), [f]
+                while stack:
+                    n = stack.pop()
+                    own.add(n.node_id)
+                    stack.extend(c for c in getattr(n, "children", ())
+                                 if not getattr(c, "agency", False) and not isinstance(c, FieldNode))
+                carried = any(getattr(a, "agency", False) for a in self._ancestors(f, parents))
+                moving = any(isinstance(self._nodes[i], ObjectNode) and self._nodes[i].is_dynamic for i in own)
+                out.setdefault(tree.get(f.node_id), []).append((f, frozenset(own), carried, moving))
+            return out
+        return self._meta("field_units", build).get(root_id, [])
+
+    def _field_sources(self, root_id: str) -> dict:
+        """STATIC_FIELDS: the substance cells that motion may carry out of fields. An anchored field's (key None):
+        any motion moving its region carries copies away, so it re-sows. A field carried by a body: only its own
+        motion leaves (key: the field's id); motion from outside moves the body, field and all, and sows nothing."""
+        units = self._field_units(root_id)
+        groups = {None: frozenset().union(*[own for _, own, carried, _ in units if not carried] or [frozenset()])}
+        groups.update({f.node_id: own for f, own, carried, moving in units if carried and moving})
+        out = {}
+        for key, ids in groups.items():
+            if not ids:
+                continue
+            trails, self._paint_only = dict(self._trails), ids
+            try:
+                v, c = self._paint(self.grid, root_id, True, values=True)
+            finally:
+                self._paint_only, self._trails = None, trails
+            out[key] = (c > 0) & (_claimed_value(v, c) > 0.5)
+        return out
 
     def _field_leaves(self, root_id: str) -> frozenset:
         """STATIC_FIELDS: the nodes of a tree's fields, not of the bodies they hold (their claims are the boundary

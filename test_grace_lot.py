@@ -1339,6 +1339,25 @@ class StaticFieldsTests(unittest.TestCase):
         driven = self.boards("(parallel (template center/H center/V (body (parallel universal/H bottom/H*))))")
         self.assertTrue((driven[11][4:8, 4:6] < 0.5).all())                  # directly in the body: it drives off
 
+    def test_outside_motion_moves_a_carried_field_and_never_its_substance(self):
+        """A field anchored to its body moves with it; only an anchored field's substance is carried off."""
+        from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.program import compile_program
+        for src, sows in (("(parallel (template center/V (template center/H (body (field universal/H)))) bottom/H*)", False),
+                          ("(parallel (template center/V (template center/H (field universal/H))) bottom/H*)", True)):
+            g = compile_program(program_of(src))
+            g.grid = (12, 12)
+            g.reset_gates()
+            g.assign_roles()
+            g._render_all()
+            ordered = 0
+            for _ in range(6):
+                g.step()
+                S = next(iter(g._sub.values()))
+                ordered += sum(int((o[0] & S["F"]).sum()) for o in S["orders"])
+                ordered += int(((S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]).sum())
+            self.assertEqual(ordered > 0, sows, src)
+
     def test_contraction_piles_up_at_the_centre(self):
         v = self.boards("(parallel (template center/H center/V universal/H) periphery/V*)")
         self.assertTrue((v[11][5:7, 4:8] > 0.75).all() and (v[11][[4, 7], 4:8] < 0.25).all())
