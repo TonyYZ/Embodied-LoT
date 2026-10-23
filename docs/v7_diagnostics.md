@@ -688,3 +688,20 @@ Latent shift (`inference.shift_radius`): scoring every video at 9 whole-cell shi
 made the likelihood 5x slower (106 vs 22 ms per new program) and the held-out log predictive density of the
 lambda = 1.25 fit worse on every manner (1121.4 vs 1173.4; recognition 0.92 either way). The torso
 normalisation already aligns the actors; the option stays, off.
+
+## Choosing lambda at w = 1/32 on the validation actors
+
+Five manners, population search (4 searches x 4 ladders, adaptive 12-replica ladder, 60,000 iterations, 30,000
+burn-in), current language; held-out log predictive density of the 5 validation actors per manner
+(`grace_lot/inference/predictive.py`, 1,000 posterior draws; higher is better), and recognition among the 5.
+
+| lambda | Held-out density | Recognition | bowing | jumping | scurrying | shuffling | swinging |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1.5 | 1115.1 | 0.72 | 164.6 | 179.6 | 359.9 | 261.3 | 149.7 |
+| 1.25 | 1172.6 | 0.92 | 176.6 | 184.7 | 369.6 | 282.4 | 159.2 |
+| **1.0** | **1212.6** | 0.92 | 181.9 | 196.7 | 382.1 | 287.2 | 164.8 |
+
+lambda = 1.0 is best on every manner and is chosen. It sits at the edge of the usable range: below about 1 the
+description-length prior cannot be normalised and programs pile up at the 24-node cap (lambda = 0.75: 92% of
+prior samples at the cap). The data favour the weakest proper prior, which suggests the size prior's form (one
+lambda for both properness and simplicity) is a constraint worth revisiting.
