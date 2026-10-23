@@ -1259,6 +1259,14 @@ class PureClaimsTests(unittest.TestCase):
         self.assertEqual((void.evaluate(empty), void.evaluate(full)), (1.0, 0.0))
         self.assertEqual((neutral.evaluate(unknown), neutral.evaluate(full)), (1.0, 0.0))
 
+    def test_an_averaged_agent_in_a_turned_frame(self):
+        """soft_edges: an agent inside a dynamic template is averaged in the turned frame, then placed in its slot."""
+        import embodied_lot
+        embodied_lot.SOFT_EDGES = True
+        b = self.board("(parallel periphery/H bottom/V (template top/V* (template center/H (body universal/H))))")
+        self.assertEqual(b.shape, (12, 12))
+        self.assertTrue(0.5 < b[:8, 4:8].max() < 1.0)                         # an uncertain object, not a block
+
     def test_a_moving_ball_stays_in_the_basket(self):
         from grace_lot.analysis.expressivity import render
         src = "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"

@@ -2578,6 +2578,10 @@ class ConceptGraph:
                     full = np.full(cv[0].shape, 0.5)
                     full[r0:r1, c0:c1] = value[rows, cols]
                     value = full
+                if not np.isscalar(w):           # a strength that varies by cell (an averaged agent)
+                    full = np.zeros(cv[0].shape)
+                    full[r0:r1, c0:c1] = w[rows, cols]
+                    w = full
                 claim(m, value, w, leaf, h, moved)
 
         def draw_moved(draw, home: Region, region: Region, key: tuple) -> None:
