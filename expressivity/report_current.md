@@ -2,7 +2,7 @@
 
 Semantics: the config's
 
-22 of 41 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
+27 of 47 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
 
 ## PASS: sanity, figure at the top
 
@@ -2477,10 +2477,10 @@ state {'n9:universal': 'b'}, frame 15: sketch | engine at sketch resolution | en
             ####????????
 ```
 
-## FAIL: containment, anchored: U from strips, the object moves inside
+## PASS: containment, anchored: the empty strip of a field is a drain, so the ball entering it vanishes
 
 `(field (serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V))`  
-should match; does not match the sketch  
+contrast (should not match); does not match the sketch  
 The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
 
 Outside the search grammar: depth 7, more than max_depth = 5
@@ -3045,10 +3045,10 @@ state {'n9:universal': 'b'}, frame 15: sketch | engine at sketch resolution | en
             ####????????
 ```
 
-## FAIL: containment, anchored: a ball moving in the hollowed basket
+## PASS: containment, anchored: a hollow made by a field is a drain, so the ball in it vanishes
 
 `(field (parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*)))))`  
-should match; does not match the sketch  
+contrast (should not match); does not match the sketch  
 The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
 
 Outside the search grammar: depth 7, more than max_depth = 5
@@ -3445,10 +3445,10 @@ state {'n10:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
             ####????####
 ```
 
-## FAIL: containment, anchored: a ball moving in the closed box
+## PASS: containment, anchored: the closed box hollowed inside a field is a drain, so the ball vanishes
 
 `(field (parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*)))))`  
-should match; does not match the sketch  
+contrast (should not match); does not match the sketch  
 The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold.
 
 Outside the search grammar: depth 7, more than max_depth = 5
@@ -3645,11 +3645,11 @@ state {'n13:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
             ############
 ```
 
-## FAIL: containment, rigid basket: a field with room, pushed whole by the ball inside
+## PASS: containment, a bare field holds: the ball inside cannot push it (static fields)
 
 `(serial_h void/V (field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H*))))) void/V)`  
-should match; does not match the sketch  
-A rigid unit with room to move: the edge of the ball pushes it whole, and by frame 15 it has left the middle either way. Walls stay intact: see the boards.
+contrast (should not match); does not match the sketch  
+A field is a boundary condition and never moves; to push a box whole, carry the field in a body (next cases). Earlier semantics pushed it.
 
 Outside the search grammar: depth 8, more than max_depth = 5
 
@@ -3731,6 +3731,218 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ####????####
             ####????####
             ####????####
+```
+
+## FAIL: growth, a plant: a seed field under upward motion grows a column
+
+`(parallel (template bottom/V center/H (field universal/H)) bottom/V*)`  
+should match; does not match the sketch  
+The field is a source: motion carries its substance up, the field refills, so the column lengthens.
+
+Outside the search grammar: .1.0.2: a field at depth 4; at depth 4 and below only leaves (max_depth = 5)
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+*_*   ???   ????????????
+*_*   ???   ????????????
+*_*   ???   ????????????
+*_*   ???   ????????????
+*#*   ?#?   ????????????
+*#*   ?#?   ????????????
+            ????????????
+            ????????????
+            ????####????
+            ????####????
+            ????####????
+            ????####????
+```
+
+frame 11: sketch | engine at sketch resolution | engine 12 x 12
+```
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+*#*   ?#?   ????????????
+*#*   ?#?   ????????????
+*#*   ?X?   ????####????
+*#*   ?X?   ????####????
+*#*   ?X?   ????####????
+*#*   ?X?   ????####????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+```
+
+## PASS: growth, contrast: the same seed as bare leaves only moves up, it does not grow
+
+`(parallel (template bottom/V center/H universal/H) bottom/V*)`  
+contrast (should not match); does not match the sketch  
+Bare leaves are an initial condition: the block rises and leaves known emptiness behind.
+
+frame 11: sketch | engine at sketch resolution | engine 12 x 12
+```
+*#*   ?#?   ????####????
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+*#*   ?X?   ????????????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+```
+
+## FAIL: drain, a void field swallows a body that moves into it
+
+`(parallel (template top/V center/H (field void/H)) (template bottom/V center/H (body (parallel universal/H bottom/V*))))`  
+should match; does not match the sketch  
+The field is a drain: what enters its region is empty again on the next tick, and the body never shows there.
+
+Outside the search grammar: depth 6, more than max_depth = 5
+
+frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+*.*   ?.?   ????....????
+***   ???   ????....????
+*o*   ?X?   ????....????
+            ????....????
+            ????????????
+            ????????????
+            ????????????
+            ????????????
+            ????####????
+            ????####????
+            ????####????
+            ????####????
+```
+
+frame 11: sketch | engine at sketch resolution | engine 12 x 12
+```
+*.*   ?X?   ????????????
+***   ?.?   ????????????
+***   ?.?   ????????????
+            ????????????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
+```
+
+## FAIL: growth, a fountain: a field with motion inside emits up to its own height
+
+`(parallel (template bottom/V center/H (field (parallel universal/H bottom/V*))) void/V)`  
+should match; does not match the sketch  
+The field's own motion leaf carries its substance out, as far as the field is tall.
+
+Outside the search grammar: depth 6, more than max_depth = 5
+
+frame 11: sketch | engine at sketch resolution | engine 12 x 12
+```
+_._   ...   ............
+_#_   .X.   ............
+_#_   .#.   ............
+            ............
+            ............
+            ............
+            ............
+            ............
+            ....####....
+            ....####....
+            ....####....
+            ....####....
+```
+
+## FAIL: containment, a carried field: a rigid box (body around a field) is pushed whole by the ball inside
+
+`(serial_h void/V (body (field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H*)))))) void/V)`  
+should match; does not match the sketch  
+A body carrying a field is the old rigid field: the ball's edge pushes it whole; by frame 15 it has left the middle.
+
+Outside the search grammar: depth 9, more than max_depth = 5
+
+state {'n13:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
+```
+*****__*****   ....?..?....   ........???..???........
+*****__*****   ?...?..?....   ........???..???........
+*****__*****   ....#XX#....   ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ??......???..???........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+```
+
+state {'n13:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
+```
+*****__*****   ....?..?....   ........???..???........
+*****__*****   ....?..?...?   ........???..???........
+*****__*****   ....#XX#....   ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???........
+                              ........???..???......??
+                              ........???..???......??
+                              ........???..???......??
+                              ........???..???......??
+                              ........???..???......??
+                              ........???..???......??
+                              ........???..???......??
+                              ........???..???......??
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+                              ........###??###........
+```
+
+## FAIL: contraction, periphery motion piles a block up at its centre and stops
+
+`(parallel (template center/H center/V universal/H) periphery/V*)`  
+should match; does not match the sketch  
+In: each row moves only as far as the centre, so the halves pile up instead of passing through each other.
+
+frame 11: sketch | engine at sketch resolution | engine 12 x 12
+```
+************   ????????????   ????????????
+************   ????????????   ????????????
+************   ????????????   ????????????
+************   ????####????   ????####????
+****____****   ????XXXX????   ????####????
+****####****   ????XXXX????   ????....????
+****####****   ????XXXX????   ????....????
+****____****   ????XXXX????   ????####????
+************   ????####????   ????####????
+************   ????????????   ????????????
+************   ????????????   ????????????
+************   ????????????   ????????????
 ```
 
 ## PASS: support, prototype: object resting on a floor

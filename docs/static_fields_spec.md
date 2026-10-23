@@ -1,7 +1,12 @@
 # Spec: fields as sources, bodies as carriers (draft for review, 23 Oct 2026)
 
-Status: proposal. Nothing here is implemented. It would sit behind a new flag, `lot.static_fields`, on top of
-`pure_claims`, `solid_figure` and `soft_edges`.
+Status: implemented (23 Oct 2026) behind `lot.static_fields`, on top of `pure_claims`, `solid_figure` and
+`soft_edges`; all proposed decisions accepted (1a: contact cannot move a field's substance). Expressivity suite:
+47/47 with the four flags. Changes made while implementing: a field's claims outrank everything they cover,
+bodies included (so a void field hides a body that enters it, and a hollow made by a field is a drain); emitted
+copies carry the emitting leaf's mark, and a reset removes its region from orders; a fountain emits as far as
+its motion leaf's own region is long. Cost: likelihood 13 ms per fitted program (current language 23 ms);
+rollouts of moving programs 20 ms per 32 frames (current 14 ms).
 
 ## 1. The idea: three roles for substance
 

@@ -1276,6 +1276,41 @@ class PureClaimsTests(unittest.TestCase):
             self.assertTrue(((v[:, 0][:, :8, 4:8]) == 1).any(axis=(1, 2)).all())  # the ball is always inside
 
 
+class StaticFieldsTests(unittest.TestCase):
+    """lot.static_fields: fields are sources and drains, bodies carry, bare leaves are an initial condition."""
+
+    def setUp(self):
+        import embodied_lot
+        self.saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        embodied_lot.PURE_CLAIMS = embodied_lot.SOLID_FIGURE = embodied_lot.SOFT_EDGES = True
+        embodied_lot.STATIC_FIELDS = True
+
+    def tearDown(self):
+        import embodied_lot
+        vars(embodied_lot).update(self.saved)
+
+    def boards(self, src, frames=12):
+        from grace_lot.analysis.expressivity import render
+        return render(src, frames, 0)[0][1][:, 0]
+
+    def test_a_source_field_grows_and_a_bare_seed_only_moves(self):
+        grow = self.boards("(parallel (template bottom/V center/H (field universal/H)) bottom/V*)")
+        move = self.boards("(parallel (template bottom/V center/H universal/H) bottom/V*)")
+        self.assertTrue((grow[11][:, 4:8] > 0.75).all())                    # a full column from seed to top
+        self.assertTrue((grow[0][:8, 4:8] == 0.5).all())                    # nothing above the seed at first
+        self.assertTrue((move[11][8:, 4:8] < 0.25).any())                    # the bare block left its place
+
+    def test_a_drain_hides_a_body_that_enters_it(self):
+        v = self.boards("(parallel (template top/V center/H (field void/H)) (template bottom/V center/H "
+                        "(body (parallel universal/H bottom/V*))))")
+        self.assertTrue((v[11][:4, 4:8] < 0.25).all())                       # the drain stays empty
+        self.assertTrue((v[0][8:, 4:8] > 0.5).any())                          # the body was there at first
+
+    def test_contraction_piles_up_at_the_centre(self):
+        v = self.boards("(parallel (template center/H center/V universal/H) periphery/V*)")
+        self.assertTrue((v[11][5:7, 4:8] > 0.75).all() and (v[11][[4, 7], 4:8] < 0.25).all())
+
+
 class PredictiveTests(unittest.TestCase):
     def test_log_predictive_is_the_log_of_the_mean_density(self):
         import numpy as np

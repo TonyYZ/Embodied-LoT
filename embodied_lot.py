@@ -244,9 +244,26 @@ SOLID_THRESHOLD = 0.75
 SOFT_EDGES = False
 
 
+# Static fields (docs/static_fields_spec.md; needs PURE_CLAIMS). Three roles for substance: bare leaves are the
+# initial condition (drawn once into a substance grid, then moved by motion like sand); a field is a boundary
+# condition (its region is re-asserted every tick: substance where it claims figure, removed where it claims void,
+# so it is a source or a drain, and never moves itself); a body carries its claims (moved by its own motion and by
+# pushes; a body around a field is the old rigid field). Each tree's substance grid holds a value and a strength per
+# cell; motion moves cell contents, contents arriving together pile up, cells left behind read known empty. Each
+# tick: issue orders, move bodies, move substance, reset fields, draw. Contact moves substance outside fields only.
+# With False, fields are rigid units that move, and bare leaves are drawn every tick (earlier runs).
+STATIC_FIELDS = False
+
+
+def _soft_body(node) -> bool:
+    """SOFT_EDGES: an agent whose extent is uncertain (not one carrying a field: STATIC_FIELDS)."""
+    return (SOFT_EDGES and getattr(node, "agency", False)
+            and not (STATIC_FIELDS and any(isinstance(n, GroupNode) for n in walk(node) if n is not node)))
+
+
 def _soft_edge(node, region: Region, frame: Tuple[int, int]) -> bool:
-    """SOFT_EDGES: is this an agent with room in its frame?"""
-    return SOFT_EDGES and getattr(node, "agency", False) and tuple(region) != (0, frame[0], 0, frame[1])
+    """SOFT_EDGES: is this an agent of uncertain extent with room in its frame?"""
+    return _soft_body(node) and tuple(region) != (0, frame[0], 0, frame[1])
 
 
 def unit_core(region: Region) -> Region:
@@ -279,17 +296,17 @@ def _covered(yang_complement: np.ndarray, yin_complement: np.ndarray, left: np.n
     return np.where(free, yin_complement * left, yin_complement)
 
 
-def _compose_claims(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+def _compose_claims(claims: list, shape: Tuple[int, int], boundary=frozenset()) -> Tuple[np.ndarray, np.ndarray]:
     """PURE_CLAIMS: yang and yin complements of ``_claim_values``: they compose (``_compose``) to its value and
     count as claimed (``_covered``) as strongly as claims cover the cell."""
     if not claims:
         return np.ones(shape), np.ones(shape)
-    v, claimed = _claim_values(claims, shape)
+    v, claimed = _claim_values(claims, shape, boundary)
     u = (1.0 - np.abs(2.0 * v - 1.0)) * claimed
     return 1.0 - np.maximum(0.0, 2.0 * v - 1.0) - u, 1.0 - np.maximum(0.0, 1.0 - 2.0 * v) - u
 
 
-def _claim_values(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
+def _claim_values(claims: list, shape: Tuple[int, int], boundary=frozenset()) -> Tuple[np.ndarray, np.ndarray]:
     """PURE_CLAIMS: each cell's value, and how strongly claims cover it, from claims
     ``(cells, value, strength, home cells, leaf, moved)``, general first; strength may vary by cell.
 
@@ -314,6 +331,10 @@ def _claim_values(claims: list, shape: Tuple[int, int]) -> Tuple[np.ndarray, np.
     moved = np.array([c[5] for c in claims])
     first = moved[:, None] & ~moved[None, :]                                 # [i, j]: i moved, j did not
     inside = ((~outside & outside.T) | first) & ~first.T                     # [i, j]: i is nested in j
+    if boundary:                                 # STATIC_FIELDS: a field's claims outrank everything they cover
+        b = np.array([c[4] in boundary for c in claims])
+        over = b[:, None] & ~b[None, :]
+        inside = (inside | over) & ~over.T
     depth = np.einsum("ij,jhw->ihw", inside.astype(int), M.astype(int))
     v = np.full(shape, 0.5)
     for d in np.unique(depth[M]):
@@ -342,12 +363,18 @@ def _placements(h: int, w: int) -> List[Tuple[int, int, int, int, float]]:
     return out
 
 
+def _claimed_value(v: np.ndarray, c: np.ndarray) -> np.ndarray:
+    """The value claims make where they cover a cell (``_claim_values`` blends it with unknown by their strength)."""
+    return np.where(c > 0, np.clip(0.5 + (v - 0.5) / np.maximum(c, 1e-12), 0.0, 1.0), 0.5)
+
+
 def _shifted(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
     """``a`` moved down by dy and right by dx (both >= 0), zero filled."""
     if dy == 0 and dx == 0:
         return a
     out = np.zeros_like(a)
-    out[dy:, dx:] = a[:a.shape[0] - dy, :a.shape[1] - dx]
+    if dy < a.shape[0] and dx < a.shape[1]:          # moved wholly off the board: nothing left
+        out[dy:, dx:] = a[:a.shape[0] - dy, :a.shape[1] - dx]
     return out
 
 
@@ -1235,7 +1262,7 @@ class GroupNode(BodyNode):
             acts = [a for a in (k.evaluate(None) for k in kids) if a > 0]
             result = _mean(acts) if acts else 0.0
         else:
-            if SOFT_EDGES and self.agency and tuple(field.bounds) != (0.0, 1.0, 0.0, 1.0):   # check the core
+            if _soft_body(self) and tuple(field.bounds) != (0.0, 1.0, 0.0, 1.0):   # check the core
                 field = field.subfield(*unit_core(field.region))
             result = _clamp(_mean([k.evaluate(field) for k in kids]))
         self.activation = result * _sg(self)
@@ -1459,6 +1486,7 @@ class ConceptGraph:
             for tok in self._group_tokens():
                 tok.orders, tok.jitter, tok.drive = [], [0.0, 0.0], [0.0, 0.0]
             self._mass, self._tick, self._spaces = {}, 0, {}
+            self._sub = {}                          # STATIC_FIELDS: each tree's substance grid
             self._prev_act = {}
             self._inside = {}
             self._imagery = None
@@ -1785,7 +1813,8 @@ class ConceptGraph:
                 tuple(id(n.field) for n in inputs),
                 UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
                 MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES,
-                PROBABILISTIC_MOTION, PURE_CLAIMS, tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
+                PROBABILISTIC_MOTION, PURE_CLAIMS, STATIC_FIELDS, self._substance_key(root_id),
+                tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
 
     def tree_index(self) -> Dict[str, str]:
         """Which root (tree) each node belongs to."""
@@ -1984,6 +2013,8 @@ class ConceptGraph:
                        if not (SOLID_FIGURE and in_agent(int(key.split("#")[1])))]
         if not keyed_views:
             return                                # an agent's leaves move the agent (_drive_bodies), nothing else
+        if STATIC_FIELDS and PURE_CLAIMS:
+            return self._issue_substance(node, kind, a, keyed_views, bodies_at, root.node_id, meta, units)
         st = self._mass_state(root.node_id)
         H, W = self.grid
         fy, fn, _ = self._paint(self.grid, root.node_id, True, layer="free")
@@ -2055,6 +2086,79 @@ class ConceptGraph:
                             go = side if kind == "out" else -side
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
 
+    def _issue_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
+        """STATIC_FIELDS: ``_issue_kinds`` on the substance grid. The substance in a view's space that this leaf has
+        not ordered yet (its marks, which follow the content and are dropped when it leaves the space) gets orders;
+        a field's cells are unmarked at every reset, so motion keeps carrying fresh copies of their substance away.
+        "In" moves each row (or column) only as far as the centre, so the halves pile up there."""
+        S = self._substance(root_id)
+        H, W = self.grid
+        R, C = _grid_index((H, W))
+        stuff = ((S["s"] > 0) & (S["v"] > 0.5)) | (S["F"] & (S["fe"] > 0.5))
+        motion = BodyNode._template_motion(node)
+        axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
+        for key, (_, chain, rect) in keyed_views:
+            space = _view_mask(self.grid, chain, rect)
+            rows, cols = np.nonzero(space)
+            if not rows.size:
+                continue
+            k = int(key.split("#")[1])
+            own = meta[k][1] if k < len(meta) else ()
+            bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
+                      if self._pushable(b, own) and (space & cells).any()
+                      and not isinstance(getattr(units[b], "node", None), FieldNode)]       # fields do not move
+            was = self._inside.get(key, set())
+            self._inside[key] = {b.node_id for b in bodies}
+            fresh = [b for b in bodies if b.node_id not in was]
+            marks = S["marks"].get(key, np.zeros((H, W), dtype=bool)) & space
+            fresh_m = stuff & space & ~marks
+            S["marks"][key] = marks | fresh_m        # emitted copies carry the mark; the reset unmarks field cells
+            if kind in ("bulk", "gradient"):
+                norm = float(np.hypot(*motion))
+                if norm < 1e-12:
+                    continue
+                d = _view_turn(chain, (motion[0] / norm, motion[1] / norm))
+            else:
+                d = _view_turn(chain, axis_vec)
+            for axis, comp in enumerate(d):
+                if abs(comp) < 1e-9 or kind == "random":
+                    continue
+                lo, hi = (rows.min(), rows.max()) if axis == 0 else (cols.min(), cols.max())
+                span, centre = int(hi - lo + 1), (lo + hi + 1) / 2.0
+                coord = (R, C)[axis]
+                sign = 1 if comp > 0 else -1
+                rate = a * abs(comp)
+                if kind == "bulk":
+                    if fresh_m.any():
+                        S["orders"].append([fresh_m.copy(), axis, sign, span, rate, 0.0, 0.0])
+                    for b in fresh:
+                        self._push_body(b, bodies_at, axis, sign * rate, node_id=node.node_id)
+                elif kind == "gradient":                                # layers from the leading edge
+                    levels = sorted(set(coord[fresh_m].tolist()), reverse=sign > 0)
+                    for j, v in enumerate(levels):
+                        S["orders"].append([fresh_m & (coord == v), axis, sign, span, rate, 0.0, j / a])
+                    lead = lambda b: -sign * float(np.nonzero(bodies_at[b.node_id][2])[axis].mean())
+                    for j, b in enumerate(sorted(fresh, key=lead)):
+                        self._push_body(b, bodies_at, axis, sign * rate, node_id=node.node_id, delay=j / a)
+                else:                                                   # out / in: the two halves
+                    for half in (-1, 1):
+                        part = fresh_m & (np.sign(coord + 0.5 - centre) == half)
+                        go = half if kind == "out" else -half
+                        if not part.any():
+                            continue
+                        if kind == "out":
+                            S["orders"].append([part, axis, go, max(1, round(span / 4)), rate, 0.0, 0.0])
+                            continue
+                        for v in sorted(set(coord[part].tolist())):      # in: as far as the centre, no further
+                            dist = int(round(abs(v + 0.5 - centre) - 0.5))
+                            if dist > 0:
+                                S["orders"].append([part & (coord == v), axis, go, dist, rate, 0.0, 0.0])
+                    for b in fresh:
+                        side = np.sign(float(np.nonzero(bodies_at[b.node_id][2])[axis].mean()) + 0.5 - centre)
+                        if side:
+                            go = side if kind == "out" else -side
+                            self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
+
     def _push_body(self, body, bodies_at, axis: int, signed_rate: float, node_id: str = "",
                    delay: float = 0.0, half: bool = False, jitter: bool = False) -> None:
         """Order (or jitter) a body along a board axis, expressed in the body's own frame."""
@@ -2097,6 +2201,10 @@ class ConceptGraph:
             st["off"][..., 0] = np.clip(R + st["off"][..., 0], 0, H - 1) - R
             st["off"][..., 1] = np.clip(C + st["off"][..., 1], 0, W - 1) - C
 
+    def _substance_key(self, root_id: str):
+        S = getattr(self, "_sub", {}).get(root_id)
+        return None if S is None else (S["v"].tobytes(), S["s"].tobytes(), S["moved"].tobytes())
+
     def motion_state(self) -> tuple:
         """Everything about mass that can change a later frame (for periodicity checks)."""
         out = tuple((rid, st["off"].tobytes(), np.round(st["jit"], 6).tobytes(),
@@ -2110,7 +2218,11 @@ class ConceptGraph:
         groups = tuple((t.node_id, None if t.position is None else tuple(round(v, 9) for v in t.position),
                         tuple(tuple(o) for o in t.orders), tuple(round(v, 6) for v in t.jitter + t.drive))
                        for t in self._group_tokens())
-        return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ())
+        subs = tuple((rid, self._substance_key(rid), tuple(sorted((k, m.tobytes()) for k, m in S["marks"].items())),
+                      tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
+                            for o in S["orders"]))
+                     for rid, S in sorted(getattr(self, "_sub", {}).items()))
+        return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ()) + ((subs,) if subs else ())
 
     def _move_bodies_gameboard(self, views=None) -> None:
         """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
@@ -2121,6 +2233,8 @@ class ConceptGraph:
         for body in self._tokens().values():
             if body.position is None:
                 continue
+            if STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(body, "node", None), FieldNode):
+                continue                              # a field never moves itself (a body around it can)
             H, W = homes[body.node_id][1] if body.node_id in homes else self.grid
             net = [0, 0]
             for order in body.orders:
@@ -2168,7 +2282,7 @@ class ConceptGraph:
         H, W = self.grid
         r0, r1, c0, c1 = body.window(H, W)
         mine = np.zeros((H, W), dtype=bool)
-        if SOFT_EDGES and getattr(node, "agency", False):      # an agent moves by its core: wherever it leans figure
+        if _soft_body(node):                                   # an agent moves by its core: wherever it leans figure
             q0, q1, p0, p1 = unit_core((r0, r1, c0, c1))
             mine[q0:q1, p0:p1] = own[q0:q1, p0:p1] > 0.5
         else:
@@ -2206,6 +2320,7 @@ class ConceptGraph:
         parents = self._parents()
         for top in [g for g in self._nodes.values() if isinstance(g, GroupNode) and g.node_id not in mine
                     and self.tree_index().get(g.node_id) == root
+                    and not (STATIC_FIELDS and PURE_CLAIMS and isinstance(g, FieldNode))      # fields hold
                     and not any(isinstance(a, GroupNode) for a in self._ancestors(g, parents))]:
             for tok in list(top.instances.values()):
                 if tok.position is None or tok.extent is None:
@@ -2224,6 +2339,12 @@ class ConceptGraph:
                         if carried:                   # both move together: the body keeps its place inside
                             body.position[axis] -= shift / n
         if not MOTION_KINDS:
+            return
+        if STATIC_FIELDS and PURE_CLAIMS:            # contact moves substance outside fields
+            S = self._substance(root)
+            cells = ring & (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]
+            if cells.any():
+                self._shift_substance(S, cells, d[0], d[1])
             return
         st = self._mass_state(root)
         fy, fn, _ = self._paint(self.grid, root, True, layer="free")
@@ -2367,7 +2488,11 @@ class ConceptGraph:
             self._drive_bodies(views)
         self._propagate_delayed()
         self._move_bodies_gameboard(views)
-        if MOTION_KINDS:
+        if STATIC_FIELDS and PURE_CLAIMS:
+            for rid in list(getattr(self, "_sub", {})):
+                self._move_substance(rid)
+                self._reset_fields(rid)
+        elif MOTION_KINDS:
             self._move_mass()
         self._spaces, self._imagery = self._render_all()
         self._tick += 1
@@ -2473,7 +2598,7 @@ class ConceptGraph:
 
     def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str],
                place_bodies: bool, layer: str = "all",
-               mass_off: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+               mass_off: Optional[np.ndarray] = None, values: bool = False):
         """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint, and of the emptiness its
         moved bodies left behind (applied by ``_covered`` only where nothing else claims a cell).
 
@@ -2637,6 +2762,8 @@ class ConceptGraph:
             ids = {n.node_id for k in kids for n in walk(k)}
             if (skip is not None and ids <= skip) or (only is not None and not ids & only):
                 return                           # a probe that leaves the whole body out
+            if STATIC_FIELDS and getattr(self, "_seeding", False):
+                return                           # a body's content is never part of the substance grid
             usable = (skip is None or not ids & skip) and (only is None or ids <= only)   # a probe leaves none out
             hit = cache.get(key) if usable else None
             if hit is None:                      # at the origin: drawn once per size, then placed and averaged
@@ -2698,6 +2825,8 @@ class ConceptGraph:
                     return                       # the other layer (mass vs bodies)
                 if (skip and node.node_id in skip) or (only is not None and node.node_id not in only):
                     return                       # a solidity probe leaves this leaf out
+                if STATIC_FIELDS and cv[6] is not None and getattr(self, "_seeding", False) == bool(cv[4]):
+                    return                       # bare leaves are drawn once, into the substance grid
                 if cv[6] is not None:            # PURE_CLAIMS: centre axis claims every band, others their figure
                     pure, w = len(set(node.pattern)) == 1, _clamp(weight * node.gate)
                     mask = np.zeros(cv[0].shape, dtype=bool)
@@ -2760,9 +2889,132 @@ class ConceptGraph:
 
         render_node(out_root, (0, H, 0, W), 1.0)
         if cv[6] is not None:
-            yang, yin = _compose_claims(cv[6], (H, W))
+            if (STATIC_FIELDS and only is None and layer == "all" and not getattr(self, "_seeding", False)
+                    and (H, W) == tuple(self.grid)):
+                S = self._substance(out_root.node_id)               # the substance grid, as two claims
+                for moved in (False, True):
+                    cells = (S["s"] > 0) & (S["moved"] == moved)
+                    if cells.any():
+                        cv[6].append((cells, S["v"], S["s"], cells, "S*" if moved else "S", moved))
+            boundary = self._field_leaves(out_root.node_id) if STATIC_FIELDS else frozenset()
+            if values:
+                return _claim_values(cv[6], (H, W), boundary)
+            yang, yin = _compose_claims(cv[6], (H, W), boundary)
             return yang, yin, cv[5]
         return cv[0], cv[1], cv[5]
+
+    # -- STATIC_FIELDS: the substance grid ---------------------------------------------------------------------
+
+    def _substance(self, root_id: str) -> dict:
+        """A tree's substance grid, seeded on first use from its bare leaves (the initial condition): per cell a
+        claimed value ``v`` (1 figure, 0 ground, 0.5 unknown), its strength ``s``, whether it arrived by motion
+        (``moved``); the motion orders on it; each motion leaf's marks (content it has ordered); and the fields'
+        claims, re-asserted every tick (``fe`` value, ``fc`` strength, ``F`` cells)."""
+        subs = self.__dict__.setdefault("_sub", {})
+        S = subs.get(root_id)
+        if S is None:
+            H, W = self.grid
+            trails, self._seeding = dict(self._trails), True
+            try:
+                v, c = self._paint(self.grid, root_id, True, values=True)
+            finally:
+                self._seeding, self._trails = False, trails
+            S = subs[root_id] = dict(v=_claimed_value(v, c), s=c, moved=np.zeros((H, W), dtype=bool), orders=[],
+                                     marks={}, fe=np.full((H, W), 0.5), fc=np.zeros((H, W)),
+                                     F=np.zeros((H, W), dtype=bool))
+            self._reset_fields(root_id)
+        return S
+
+    def _reset_fields(self, root_id: str) -> None:
+        """Every field re-asserts its claims where it now is (a body carries the fields inside it): the grid is
+        cleared under them, and their claims are kept for drawing and as a source motion can carry away."""
+        S = self._sub[root_id]
+        ids = self._field_leaves(root_id)
+        if not ids:
+            return
+        trails, self._paint_only = dict(self._trails), ids
+        try:
+            v, c = self._paint(self.grid, root_id, True, values=True)
+        finally:
+            self._paint_only, self._trails = None, trails
+        F = c > 0
+        S["fe"], S["fc"], S["F"] = _claimed_value(v, c), c, F
+        S["v"][F], S["s"][F], S["moved"][F] = 0.5, 0.0, False
+        for key in S["marks"]:                       # what the reset replaced is no longer ordered or marked
+            S["marks"][key] &= ~F
+        for o in S["orders"]:
+            o[0] = o[0] & ~F
+        S["orders"] = [o for o in S["orders"] if o[0].any()]
+
+    def _field_leaves(self, root_id: str) -> frozenset:
+        """STATIC_FIELDS: the nodes of a tree's fields, not of the bodies they hold (their claims are the boundary
+        condition: they outrank everything they cover, so a void field hides whatever enters it)."""
+        def build():
+            tree, out = self.tree_index(), {}
+            for rid in {tree.get(g.node_id) for g in self._nodes.values() if isinstance(g, FieldNode)}:
+                ids, stack = set(), [g for g in self._nodes.values()
+                                     if isinstance(g, FieldNode) and tree.get(g.node_id) == rid]
+                while stack:
+                    n = stack.pop()
+                    ids.add(n.node_id)
+                    stack.extend(c for c in getattr(n, "children", ()) if not getattr(c, "agency", False))
+                out[rid] = frozenset(ids)
+            return out
+        return self._meta("field_leaves", build).get(root_id, frozenset())
+
+    def _move_substance(self, root_id: str) -> None:
+        """Each order on the substance grid advances at most one cell per tick once its credit reaches a cell."""
+        S = self._sub.get(root_id)
+        if S is None:
+            return
+        keep = []
+        for o in S["orders"]:                    # [cells, axis, direction, cells left, rate, credit, delay]
+            if o[6] >= 1 - 1e-9:
+                o[6] -= 1
+                keep.append(o)
+                continue
+            o[5] += o[4]
+            k = min(int(o[5]), 1, o[3])
+            o[5] -= k
+            o[3] -= k
+            if k:
+                self._shift_substance(S, o[0], o[2] if o[1] == 0 else 0, o[2] if o[1] == 1 else 0)
+            if o[3] > 0:
+                keep.append(o)
+        S["orders"] = keep
+
+    @staticmethod
+    def _shift_substance(S: dict, cells: np.ndarray, dy: int, dx: int) -> None:
+        """Move the contents of ``cells`` by (dy, dx). A field cell gives a copy of its claim (a source); content
+        stays at the board's edge; cells left behind read known empty; content arriving on content that also moved
+        piles up (noisy-OR strength), elsewhere it replaces what was there. Orders and marks follow their contents."""
+        H, W = cells.shape
+        src_s = np.where(S["s"] > 0, S["s"], np.where(S["F"], S["fc"], 0.0))
+        src_v = np.where(S["s"] > 0, S["v"], S["fe"])
+        rows, cols = np.nonzero(cells & (src_s > 0))
+        tr, tc = rows + dy, cols + dx
+        ok = (tr >= 0) & (tr < H) & (tc >= 0) & (tc < W)
+        rows, cols, tr, tc = rows[ok], cols[ok], tr[ok], tc[ok]
+        if not rows.size:
+            return
+        av, aw = src_v[rows, cols].copy(), src_s[rows, cols].copy()
+        S["v"][rows, cols], S["s"][rows, cols], S["moved"][rows, cols] = 0.0, aw, False   # left behind: empty
+        pv, pw, pm = S["v"][tr, tc], S["s"][tr, tc], S["moved"][tr, tc]
+        both = pm & (pw > 0)
+        S["v"][tr, tc] = np.where(both, (pw * pv + aw * av) / np.maximum(pw + aw, 1e-12), av)
+        S["s"][tr, tc] = np.where(both, 1.0 - (1.0 - pw) * (1.0 - aw), aw)
+        S["moved"][tr, tc] = True
+        gone = np.zeros((H, W), dtype=bool)
+        gone[rows, cols] = True
+
+        def follow(m):
+            out = m & ~gone
+            out[tr, tc] |= m[rows, cols]
+            return out
+        for o in S["orders"]:
+            o[0] = follow(o[0])
+        for key in list(S["marks"]):
+            S["marks"][key] = follow(S["marks"][key])
 
     def derived_fields(self, shape: Tuple[int, int] = (9, 9)) -> Dict[str, ReceptiveField]:
         """One display field per node (used by the visualizer).
