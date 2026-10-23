@@ -61,19 +61,22 @@ svg{display:block;max-width:100%;height:auto}
 .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted);margin-top:8px}
 .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}
 .units label{font-size:.88rem;margin-right:10px}
+.sem label{font-size:.88rem;margin-right:12px;white-space:nowrap}
+.sem input{vertical-align:-2px;margin-right:4px}
 .tag-obs{color:var(--obs);font-weight:600}.tag-img{color:var(--img);font-weight:600}.tag-body{color:var(--body);font-weight:600}.tag-meas{color:var(--meas);font-weight:600}
 </style>
 </head>
 <body>
 <main>
 <h1>v7 playground</h1>
-<p class="muted">Type a program and step it on the 12×12 gameboard. The server runs the real engine (<code>embodied_lot</code>) under the semantics of <code id="cfg"></code>, so what you see is what inference sees. Each run checks itself against <code>ConceptGraph.step()</code> and against the whole-program rollout; a difference shows up as a bug below.</p>
+<p class="muted">Type a program and step it on the 12×12 gameboard. The server runs the real engine (<code>embodied_lot</code>) under the semantics of <code id="cfg"></code> with the language switches below, so what you see is what inference sees under those semantics. Each run checks itself against <code>ConceptGraph.step()</code> and against the whole-program rollout; a difference shows up as a bug below.</p>
 
 <div class="card">
   <div class="row" style="margin-top:0">
     <label class="muted" for="examples" style="font-size:.9rem">Examples</label>
     <select id="examples"></select>
   </div>
+  <div class="row sem" id="sem" title="Language semantics (lot config flags). Examples marked New switch all four on."></div>
   <div style="margin-top:8px"><textarea id="program" spellcheck="false" aria-label="Program"></textarea></div>
   <div class="row">
     <button class="primary" id="run">Run</button>
@@ -153,16 +156,39 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 let D = null, t = 0, timer = null, states = {};
 
 $('cfg').textContent = BOOT.config;
+const SEM_LABEL = {pure_claims: 'pure claims', solid_figure: 'solid figure', soft_edges: 'soft edges', static_fields: 'static fields'};
+const SEM_HELP = {
+  pure_claims: 'void, neutral and universal claim the substance in every band; other patterns claim only their figure; a nested claim wins',
+  solid_figure: 'moving bodies cannot enter substance; the edge of a body pushes what it touches',
+  soft_edges: 'the size and place of a body in its region are uncertain: drawn as the average over its placements',
+  static_fields: 'fields are sources and drains re-asserted every tick and spawn the bodies they hold; bare leaves are sand (needs pure claims)'};
+let lot = {...BOOT.lot};
+function showSemantics() {
+  $('sem').innerHTML = '<span class="muted" style="font-size:.88rem">Semantics:</span> ' + BOOT.semantics.map(k =>
+    `<label title="${esc(SEM_HELP[k])}"><input type="checkbox" data-k="${k}"${lot[k] ? ' checked' : ''}>${SEM_LABEL[k]}</label>`).join('');
+  $('sem').querySelectorAll('input').forEach(i => i.onchange = () => {
+    lot[i.dataset.k] = i.checked;
+    if (i.dataset.k === 'static_fields' && i.checked) lot.pure_claims = true;     // static fields need pure claims
+    if (i.dataset.k === 'pure_claims' && !i.checked) lot.static_fields = false;
+    showSemantics(); run();
+  });
+}
 BOOT.examples.forEach((e, i) => { const o = document.createElement('option'); o.value = i; o.textContent = e.title; $('examples').appendChild(o); });
-$('examples').onchange = () => { $('program').value = BOOT.examples[+$('examples').value].program; states = {}; run(); };
+$('examples').onchange = () => {
+  const e = BOOT.examples[+$('examples').value];
+  $('program').value = e.program; states = {};
+  lot = Object.keys(e.lot || {}).length ? {...BOOT.lot, ...e.lot} : {...BOOT.lot};
+  showSemantics(); run();
+};
 $('program').value = BOOT.examples[0].program;
+showSemantics();
 
 async function run() {
   stop();
   $('run').disabled = true; $('run').textContent = 'Running…';
   try {
     const r = await fetch('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({program: $('program').value, ticks: +$('ticks').value, states})});
+      body: JSON.stringify({program: $('program').value, ticks: +$('ticks').value, states, lot})});
     const d = await r.json();
     if (d.error) { showError(d); return; }
     D = d; t = Math.min(t, D.frames.length - 1);
@@ -182,6 +208,8 @@ function showMessages() {
   const m = [];
   if (D.bugs.length) m.push(`<div class="msg bug"><b>Engine inconsistency</b><ul>${D.bugs.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`);
   if (D.issues.length) m.push(`<div class="msg warn"><b>Outside the configured language</b> (the engine still runs it; inference would never propose it)<ul>${D.issues.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`);
+  const on = Object.entries(D.semantics || {}).filter(([, v]) => v).map(([k]) => SEM_LABEL[k]);
+  m.push(`<div class="msg ok">Semantics: ${on.length ? on.join(', ') : 'those of the config (no language switches on)'}</div>`);
   if (!D.bugs.length && !D.issues.length) m.push(`<div class="msg ok">In the language · ${D.windows.length} output window${D.windows.length === 1 ? '' : 's'} · ${D.combinations} motion realization${D.combinations === 1 ? '' : 's'} · recorder and component rollouts agree with the engine</div>`);
   else if (!D.bugs.length) m.push(`<div class="msg ok">Recorder and component rollouts agree with the engine</div>`);
   $('messages').innerHTML = m.join('');
@@ -282,8 +310,15 @@ function phases(f) {
   const moved = f.shifts.map(s => `<span class="tag-body">${esc(label(s.unit))}</span> moved ${step(s)}`)
     .concat(f.mass.map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s mass moved`)).join('; ');
   const pend = f.tokens.filter(u => u.orders.length).map(u => `<span class="tag-body">${esc(u.id)}</span>: ${u.orders.map(o => `${fmt(o.cells)} cells ${way(o)} (credit ${fmt(o.credit)})`).join(', ')}`).join('; ');
-  li.push(`<span class="k">5 Move</span>${moved || '<span class="muted">nothing moved</span>'}${pend ? ' · still to go: ' + pend : ''}`);
-  li.push(`<span class="k">6 Draw</span>each tree draws its own space; observers read this drawing next tick`);
+  const sub = (f.substance || []).map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s substance changed`).join('; ');
+  li.push(`<span class="k">5 Move</span>${[moved, sub].filter(Boolean).join('; ') || '<span class="muted">nothing moved</span>'}${pend ? ' · still to go: ' + pend : ''}`);
+  if (D.semantics && D.semantics.static_fields) {
+    const rs = (f.resets || []).map(m => `tree ${m.tree}'s fields re-assert ${m.cells} cell${m.cells === 1 ? '' : 's'}`);
+    const sp = (f.spawned || []).filter(x => x.new > 0).map(x => `<span class="tag-body">${esc(label(x.unit))}</span> spawned (${x.instances} instance${x.instances === 1 ? '' : 's'})`);
+    const live = (f.spawned || []).filter(x => !x.new).map(x => `<span class="tag-body">${esc(label(x.unit))}</span>: ${x.instances} instance${x.instances === 1 ? '' : 's'}`);
+    li.push(`<span class="k">6 Fields</span>${rs.concat(sp, live).join('; ') || '<span class="muted">no fields</span>'}`);
+  }
+  li.push(`<span class="k">${D.semantics && D.semantics.static_fields ? 7 : 6} Draw</span>each tree draws its own space; observers read this drawing next tick`);
   $('phases').innerHTML = li.map(s => `<li>${s}</li>`).join('');
 }
 
@@ -297,6 +332,7 @@ function render() {
   figure(b, 'Seen (last tick, all trees)', f.seen, f, false);
   figure(b, 'Drawn this tick (all trees)', f.drawn, f, true);
   if (D.roots.length > 1) D.roots.forEach((r, i) => figure(b, `Tree ${i}'s own space`, f.spaces[r], f, true));
+  D.roots.forEach((r, i) => { if (f.grids && f.grids[r]) figure(b, `Substance${D.roots.length > 1 ? ` (tree ${i})` : ''}: bare leaves and what motion carries`, f.grids[r], f, false); });
   const c = $('channels'); c.innerHTML = '';
   const ch = D.channels[t + 1];
   ch.forEach((img, k) => figure(c, `window ${k} (${D.windows[k] || 'tree'})`, img, f, false));

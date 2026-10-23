@@ -568,10 +568,10 @@ _#_
 [[case]]
 concept = "containment"
 name = "a carried field: a rigid box (body around a field) is pushed whole by the ball inside"
-program = "(serial_h void/V (body (field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H*)))))) void/V)"
+program = "(serial_h void/V (body (parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H*))))) void/V)"
 frames = [15]
 size = 24
-note = "A body carrying a field is the old rigid field: the ball's edge pushes it whole; by frame 15 it has left the middle."
+note = "A body carrying the walls' field is a rigid box; the ball sits beside the field inside the body (in the field it would be spawned). Its edge pushes the box whole; by frame 15 it has left the middle."
 [case.boards]
 "15" = """
 *****__*****

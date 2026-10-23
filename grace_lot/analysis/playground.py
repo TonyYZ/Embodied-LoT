@@ -1,11 +1,13 @@
 """A playground for the v7 language: type a program, step it on the gameboard, look for bugs.
 
     python -m grace_lot.analysis.playground [--config configs/grace_v7_parts.toml] [--port 8765]
+                                            [--lot pure_claims=true solid_figure=true soft_edges=true static_fields=true]
 
 then open http://localhost:8765 for the graph visualizer (``visualizer/page.html``: edit a graph, load or
 export v7 program text, run it on the engine and replay the ticks), or /gameboard for the board-first page.
 The pages send programs to this server, which runs the real engine
-(``embodied_lot``) under the config's semantics and records every tick phase by phase, as
+(``embodied_lot``) under the config's semantics (with the language flags the page or ``--lot`` switches on:
+``SEMANTICS``) and records every tick phase by phase, as
 ``ConceptGraph._step_gameboard`` runs them. Each run also checks itself: the recorded boards must equal a
 twin graph stepped with ``step()``, and the component rollouts (``adapter.rollout``) must equal whole-program
 rollouts; any difference is reported on the page as a bug.
@@ -33,6 +35,10 @@ from grace_lot.lot_adapter.program import (apply_semantics, as_program, compile_
 
 GRID = 12
 _lock = Lock()                       # the engine's semantics are module flags: one run at a time
+# The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
+# STATIC_FIELDS. Static fields need pure claims.
+SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields")
+NEW = {k: True for k in SEMANTICS}
 
 EXAMPLES = [
     ("One body glides", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"),
@@ -50,6 +56,28 @@ EXAMPLES = [
     ("Self-observing oscillator",
      "(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) out) "
      "| .0.0.1>.0.0.0 .0.1.1>.0.1.0"),
+]
+# Examples of the new language (all four flags): (title, program, flags).
+EXAMPLES += [
+    ("New: a basket by superposition (surrounded, with a bottom)", "(parallel periphery/H bottom/V out)", NEW),
+    ("New: a basket by hollowing a block", "(parallel universal/H (template center/H upper/V void/H) out)", NEW),
+    ("New: a ball in a sand basket (it breaks the walls)",
+     "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)", NEW),
+    ("New: a ball beside a field basket (the walls hold)",
+     "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)", NEW),
+    ("New: a plant (a source field under upward motion)",
+     "(parallel (template bottom/V center/H (field universal/H)) bottom/V* out)", NEW),
+    ("New: a spawner (a field holding a rising body)",
+     "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))) out)", NEW),
+    ("New: a drain (a void field swallows a rising body)",
+     "(parallel (template top/V center/H (field void/H)) (template bottom/V center/H (body (parallel universal/H bottom/V*))) out)", NEW),
+    ("New: a fountain (a field with motion inside)",
+     "(parallel (template bottom/V center/H (field (parallel universal/H bottom/V*))) void/V out)", NEW),
+    ("New: a rigid box (a body carrying a field), pushed by the ball inside",
+     "(parallel (serial_h void/V (body (parallel (field (parallel periphery/H bottom/V)) (template center/H center/V "
+     "(body (parallel universal/H universal/H*))))) void/V) out)", NEW),
+    ("New: contraction piles up at the centre",
+     "(parallel (template center/H center/V universal/H) periphery/V* out)", NEW),
 ]
 
 
@@ -134,9 +162,11 @@ def _order(o) -> dict:
             "leaf": o[5]}
 
 
-def prepare(src: str, cfg_path: str) -> tuple:
-    """The program under the config's semantics, why it is outside the language (if it is), a fresh graph."""
+def prepare(src: str, cfg_path: str, lot: dict = None) -> tuple:
+    """The program under the config's semantics (``lot``: the language flags to switch, ``SEMANTICS``), why it is
+    outside the language (if it is), a fresh graph."""
     cfg = load_config(cfg_path)
+    cfg["lot"].update({k: bool(v) for k, v in (lot or {}).items() if k in SEMANTICS})
     apply_semantics(cfg["lot"])
     tree_part = src.split("|")[0]
     if tree_part.count("(") != tree_part.count(")"):            # parse_program fails obscurely on these
@@ -168,17 +198,23 @@ def viewer_snapshot(g, label: str, masks: dict) -> dict:
             "roots": [r.node_id for r in g.roots]}
 
 
-def program_graph(src: str, cfg_path: str) -> dict:
+def program_graph(src: str, cfg_path: str, lot: dict = None) -> dict:
     """A program as a visualizer payload: its compiled graph, drawn once (tick 0, before any step)."""
-    prog, issues, g = prepare(src, cfg_path)
+    prog, issues, g = prepare(src, cfg_path, lot)
     g._spaces, g._imagery = g._render_all()
     base = viewer_snapshot(g, "initial drawing", g.view_masks((GRID, GRID)))
     return {"version": 1, "name": str(prog), "base": base, "frames": [base], "icon_sprites": {},
             "program": str(prog), "issues": issues}
 
 
-def record(src: str, ticks: int, states: dict, cfg_path: str) -> dict:
-    prog, issues, g = prepare(src, cfg_path)
+def substance_board(S: dict) -> np.ndarray:
+    """STATIC_FIELDS: a substance grid as a board: each cell's claimed value, by its strength (unknown where none)."""
+    return 0.5 + (S["v"] - 0.5) * S["s"]
+
+
+def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) -> dict:
+    prog, issues, g = prepare(src, cfg_path, lot)
+    static = embodied_lot.STATIC_FIELDS and embodied_lot.PURE_CLAIMS
     units = {k: kind for k, (kind, _, _) in sorted(g.unknown_motion_units().items())}
     options = {"universal": ["a", "b"], "neutral": ["still", "a", "b"]}
     states = {k: states.get(k, options[kind][0]) for k, kind in units.items()}
@@ -229,7 +265,22 @@ def record(src: str, ticks: int, states: dict, cfg_path: str) -> dict:
                         for n in g.nodes if n.node_id in pos and abs(n.gate - gates_before[n.node_id]) > 1e-6]
         offsets = {k: st["off"].copy() for k, st in g._mass.items()}
         g._move_bodies_gameboard(views)
-        if embodied_lot.MOTION_KINDS:
+        substance, spawned, resets = [], [], []
+        if static:                                   # move substance, re-assert fields, spawn held bodies
+            before_sub = {k: substance_board(S) for k, S in getattr(g, "_sub", {}).items()}
+            for rid in list(getattr(g, "_sub", {})):
+                g._move_substance(rid)
+            moved_sub = {k: substance_board(S) for k, S in g._sub.items()}
+            for rid in list(g._sub):
+                g._reset_fields(rid)
+                resets.append({"tree": g.roots.index(g[rid]), "cells": int(g._sub[rid]["F"].sum())})
+            count = lambda: {n.node_id: len(n.instances) for n in g._spawners()}
+            was = count()
+            g._spawn_bodies()
+            spawned = [{"unit": k, "instances": v, "new": v - was.get(k, 0)} for k, v in count().items()]
+            substance = [{"tree": g.roots.index(g[k]), "cells": int((np.abs(moved_sub[k] - b) > 1e-9).sum())}
+                         for k, b in before_sub.items()]
+        elif embodied_lot.MOTION_KINDS:
             g._move_mass()
         mass = [{"tree": g.roots.index(g[k]) if k in g._nodes else k,
                  "cells": int(np.any(st["off"] != offsets.get(k, 0), axis=-1).sum())} for k, st in g._mass.items()]
@@ -263,6 +314,10 @@ def record(src: str, ticks: int, states: dict, cfg_path: str) -> dict:
                         "orders": [_order(o) for o in u.orders]} for u in tokens],
             "shifts": shifts, "mass": [m for m in mass if m["cells"]],
             "issued": issued, "onsets": onsets, "gate_changes": gate_changes,
+            "substance": [m for m in substance if m["cells"]], "resets": [m for m in resets if m["cells"]],
+            "spawned": spawned,
+            "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()}
+            if static else {},
         })
 
     whole = adapter.rollout_whole(prog, ticks + 1, GRID, states)
@@ -276,25 +331,31 @@ def record(src: str, ticks: int, states: dict, cfg_path: str) -> dict:
             "dashed": dashed, "roots": [r.node_id for r in g.roots], "windows": windows,
             "units": [{"key": k, "kind": kind, "options": options[kind], "state": states[k]} for k, kind in units.items()],
             "combinations": len(combos), "channels": np.round(whole, 3).tolist(), "frames": frames,
-            "config": cfg_path, "prior_ok": not issues, "snapshots": snapshots}
+            "config": cfg_path, "prior_ok": not issues, "snapshots": snapshots,
+            "semantics": {k: bool(getattr(embodied_lot, k.upper())) for k in SEMANTICS}}
 
 
-def visualizer_page(cfg_path: str) -> str:
+def _examples() -> list:
+    return [{"title": e[0], "program": e[1], "lot": e[2] if len(e) > 2 else {}} for e in EXAMPLES]
+
+
+def visualizer_page(cfg_path: str, lot: dict = None) -> str:
     """``visualizer/page.html`` (via ``visualize_lot``) on the first example, told that the engine is here."""
     from visualize_lot import _html_template
     with _lock:
-        payload = program_graph(EXAMPLES[0][1], cfg_path)
-    payload["engine"] = {"examples": [{"title": t, "program": p} for t, p in EXAMPLES], "config": cfg_path}
+        payload = program_graph(EXAMPLES[0][1], cfg_path, lot)
+    payload["engine"] = {"examples": [{"title": t, "program": p} for t, p, *_ in EXAMPLES], "config": cfg_path}
     return _html_template("Embodied-LoT v7 visualizer", payload)
 
 
-def page(cfg_path: str) -> str:
+def page(cfg_path: str, lot: dict = None) -> str:
     html = Path(__file__).with_name("playground_page.html").read_text(encoding="utf-8")
-    data = json.dumps({"examples": [{"title": t, "program": p} for t, p in EXAMPLES], "config": cfg_path})
+    data = json.dumps({"examples": _examples(), "config": cfg_path, "semantics": list(SEMANTICS),
+                       "lot": {k: bool((lot or {}).get(k, False)) for k in SEMANTICS}})
     return html.replace("__BOOT__", data.replace("</", r"<\/"))
 
 
-def make_handler(cfg_path: str):
+def make_handler(cfg_path: str, lot: dict = None):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, kind: str) -> None:
             self.send_response(code)
@@ -305,9 +366,9 @@ def make_handler(cfg_path: str):
 
         def do_GET(self):
             if self.path in ("/", "/index.html"):
-                self._send(200, visualizer_page(cfg_path).encode("utf-8"), "text/html; charset=utf-8")
+                self._send(200, visualizer_page(cfg_path, lot).encode("utf-8"), "text/html; charset=utf-8")
             elif self.path == "/gameboard":
-                self._send(200, page(cfg_path).encode("utf-8"), "text/html; charset=utf-8")
+                self._send(200, page(cfg_path, lot).encode("utf-8"), "text/html; charset=utf-8")
             else:
                 self._send(404, b"not found", "text/plain")
 
@@ -317,9 +378,11 @@ def make_handler(cfg_path: str):
             try:
                 req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 ticks = max(1, min(int(req.get("ticks", 24)), 80))
+                flags = {**(lot or {}), **dict(req.get("lot") or {})}           # the page's switches win
                 with _lock:
-                    out = (program_graph(str(req.get("program", "")), cfg_path) if self.path == "/api/graph" else
-                           record(str(req.get("program", "")), ticks, dict(req.get("states") or {}), cfg_path))
+                    out = (program_graph(str(req.get("program", "")), cfg_path, flags) if self.path == "/api/graph"
+                           else record(str(req.get("program", "")), ticks, dict(req.get("states") or {}), cfg_path,
+                                       flags))
                 self._send(200, json.dumps(out, separators=(",", ":")).encode("utf-8"), "application/json")
             except Exception as e:                       # a parse error or an engine error: show it on the page
                 import traceback
@@ -335,9 +398,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/grace_v7_parts.toml")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--lot", nargs="*", default=[], help="language flags on by default, e.g. static_fields=true")
     args = ap.parse_args()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.config))
-    print(f"v7 playground on http://localhost:{args.port}  (semantics from {args.config})", flush=True)
+    lot = {k: v.lower() == "true" for k, v in (item.split("=", 1) for item in args.lot)}
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.config, lot))
+    print(f"v7 playground on http://localhost:{args.port}  (semantics from {args.config}"
+          + (f", with {', '.join(k for k, v in lot.items() if v)}" if any(lot.values()) else "") + ")", flush=True)
     server.serve_forever()
 
 
