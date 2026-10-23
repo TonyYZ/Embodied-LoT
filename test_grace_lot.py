@@ -1351,8 +1351,8 @@ class PlaygroundTests(unittest.TestCase):
         from grace_lot.analysis.playground import EXAMPLES, record
         saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
         try:
-            for title, src in EXAMPLES:
-                r = record(src, 12, {}, "configs/grace_v7_parts.toml")
+            for title, src, *lot in EXAMPLES:                    # each under its own semantics (new-language ones)
+                r = record(src, 12, {}, "configs/grace_v7_parts.toml", lot[0] if lot else None)
                 self.assertEqual(r["bugs"], [], title)
                 self.assertEqual(len(r["channels"]), 13)
         finally:
