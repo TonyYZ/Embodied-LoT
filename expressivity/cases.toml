@@ -356,9 +356,9 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: the object moves around inside"
-program = "(field (parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*)))))"
+program = "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -369,9 +369,9 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: the object is a strip moving randomly"
-program = "(field (parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V))))"
+program = "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body universal/H* universal/V* center/V)))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -381,11 +381,11 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "anchored: the empty strip of a field is a drain, so the ball entering it vanishes"
+name = "anchored: a void slot in the field above the ball is a drain, so the ball entering it vanishes"
 expect = "differ"
-program = "(field (serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V))"
+program = "(parallel (field (parallel periphery/H bottom/V (template center/H top/V void/H))) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -396,9 +396,9 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: strip U, the object moves inside"
-program = "(field (serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H))"
+program = "(parallel (field (serial_v universal/H periphery/H periphery/H)) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -409,9 +409,9 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: a ball moving in the superposed basket"
-program = "(field (parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*)))))"
+program = "(parallel (field (parallel periphery/H bottom/V)) (template center/H (body (parallel center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -423,9 +423,9 @@ all = """
 concept = "containment"
 name = "anchored: a hollow made by a field is a drain, so the ball in it vanishes"
 expect = "differ"
-program = "(field (parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*)))))"
+program = "(parallel (field (parallel universal/H (template center/H upper/V void/H))) (template center/H (body (parallel center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -436,9 +436,9 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: a small ball moving in the superposed basket"
-program = "(field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*)))))"
+program = "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 #o#
@@ -450,9 +450,9 @@ all = """
 concept = "containment"
 name = "anchored: the closed box hollowed inside a field is a drain, so the ball vanishes"
 expect = "differ"
-program = "(field (parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*)))))"
+program = "(parallel (field (parallel universal/H (template center/H center/V void/H))) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The same scene inside a field that fills the frame: a ground that cannot move, so the walls hold."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
 all = """
 ###
@@ -599,6 +599,61 @@ note = "In: each row moves only as far as the centre, so the halves pile up inst
 ************
 ************
 ************
+"""
+
+# --- spawners: a body held by a field is re-asserted (static_fields) ----------------------------------------------
+
+[[case]]
+concept = "growth"
+name = "a spawner: a field holding a rising thin body emits a growing line"
+program = "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))))"
+frames = [0, 11]
+note = "Each tick a new body appears at home while the last rises, so a line grows up out of the field."
+[case.boards]
+"0" = """
+*****__*****
+*****__*****
+*****__*****
+*****__*****
+*****__*****
+*****__*****
+*****__*****
+*****__*****
+************
+************
+************
+************
+"""
+"11" = """
+************
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+*****##*****
+************
+"""
+
+[[case]]
+concept = "growth"
+name = "contrast: a body beside a field, not in it, rises alone"
+program = "(parallel (template bottom/V center/H (field void/H)) (template bottom/V center/H (body (parallel center/H bottom/V*))))"
+frames = [11]
+expect = "differ"
+note = "The same body as a sibling of the field is independent: one body rises and nothing replaces it."
+[case.boards]
+"11" = """
+*#*
+*#*
+*#*
+*#*
+*#*
+*?*
 """
 
 # --- support: an object resting on a surface (a first draft) ---------------------------------------------------

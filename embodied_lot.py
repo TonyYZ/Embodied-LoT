@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 import warnings
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from functools import lru_cache
 from enum import Enum
 from typing import Dict, Iterator, List, Optional, Set, Tuple
@@ -251,8 +251,20 @@ SOFT_EDGES = False
 # pushes; a body around a field is the old rigid field). Each tree's substance grid holds a value and a strength per
 # cell; motion moves cell contents, contents arriving together pile up, cells left behind read known empty. Each
 # tick: issue orders, move bodies, move substance, reset fields, draw. Contact moves substance outside fields only.
+# A body held by a field (the nearest unit above it is a field) is part of what the field re-asserts: whenever no
+# instance of it is at its home, the field spawns a new one there, so a moving body held by a field is a stream of
+# bodies (a spawner). Instances of one body pass through each other; instances that come to the same place in the
+# same state merge. A body beside a field, not in it, is independent.
 # With False, fields are rigid units that move, and bare leaves are drawn every tick (earlier runs).
 STATIC_FIELDS = False
+
+
+def _spawned(node, ikey: tuple, instances) -> List[tuple]:
+    """STATIC_FIELDS: the keys of a unit's instances at template position ``ikey``: the first, then those a field
+    spawned (``ikey + ("s", n)``)."""
+    n = len(ikey)
+    return [ikey] + sorted((k for k in instances if len(k) == n + 2 and k[:n] == ikey and k[n] == "s"),
+                           key=lambda k: k[-1])
 
 
 def _soft_body(node) -> bool:
@@ -1229,6 +1241,7 @@ class GroupToken:
         self.jitter = [0.0, 0.0]
         self.drive = [0.0, 0.0]                  # agency: accumulated self-propulsion, per axis
         self.anchor: Optional[Tuple[int, int]] = None   # where its region started when placed (frame cells)
+        self.home: Optional[List[float]] = None          # where it was placed (STATIC_FIELDS: where a field spawns it)
 
     def rect(self, region: Region, fh: int, fw: int) -> Region:
         """Its window, carried along with the region it receives: a nested instance follows its parent."""
@@ -1690,21 +1703,22 @@ class ConceptGraph:
             if isinstance(node, GroupNode):                      # an instance: its own place in its frame
                 if weight < 1e-9:
                     return                                       # a copy that is not there has no instance
-                tok = node.token(ikey)
-                fh, fw = _frame_shape(chain, (H, W))
-                if (place or tok.position is None) and tok.node_id not in placed:   # new instances start in place
-                    r0, r1, c0, c1 = rect
-                    tok.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
-                    tok.extent = [(r1 - r0) / fh, (c1 - c0) / fw]
-                    tok.anchor = (r0, c0)
-                    placed.add(tok.node_id)
-                if tok.position is not None:
-                    rect = tok.rect(rect, fh, fw)
-                if weight >= 1e-9:
+                home = rect
+                for key in (_spawned(node, ikey, node.instances) if STATIC_FIELDS else [ikey]):
+                    tok = node.token(key)
+                    fh, fw = _frame_shape(chain, (H, W))
+                    if (place or tok.position is None) and tok.node_id not in placed:   # new instances start in place
+                        r0, r1, c0, c1 = home
+                        tok.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
+                        tok.extent = [(r1 - r0) / fh, (c1 - c0) / fw]
+                        tok.anchor = (r0, c0)
+                        tok.home = list(tok.position)
+                        placed.add(tok.node_id)
+                    rect = tok.rect(home, fh, fw) if tok.position is not None else home
                     views[node.node_id].append((weight, chain, rect))
-                    meta[node.node_id].append((ikey, groups))
-                for child in content_children(node):
-                    visit(child, weight, chain, rect, ikey, groups + (tok.node_id,))
+                    meta[node.node_id].append((key, groups))
+                    for child in content_children(node):
+                        visit(child, weight, chain, rect, key, groups + (tok.node_id,))
                 return
             if isinstance(node, BodyNode) and not isinstance(node, PlanNode):
                 fh, fw = _frame_shape(chain, (H, W))
@@ -2230,6 +2244,7 @@ class ConceptGraph:
         A body moves on its own frame's cells (the board, or the turned frame it lives in).
         """
         homes = self._moving_bodies(self.node_views(self.grid) if views is None else views, cells=False)
+        self._solid_cache, self._moves = {}, Counter()     # solidity maps, valid until something else moves
         for body in self._tokens().values():
             if body.position is None:
                 continue
@@ -2259,6 +2274,8 @@ class ConceptGraph:
             if SOLID_FIGURE and any(net) and (H, W) == tuple(self.grid):
                 net = self._solid_step(body, net)
             moved = [self._clamped_shift(body, axis, net[axis], n) for axis, n in ((0, H), (1, W))]
+            if any(moved):
+                self._moves[getattr(body, "node", body).node_id] += 1
             for axis, n in ((0, H), (1, W)):
                 size = max(1, round(body.extent[axis] * n))
                 if TREE_SIZED_BODIES:                    # move the window's start cell; keep it on the board
@@ -2277,7 +2294,15 @@ class ConceptGraph:
         """SOLID_FIGURE: the move ``net`` (cells), or the part of it along one axis, that keeps the body's figure out
         of cells the rest of its tree makes figure (above SOLID_THRESHOLD); no move if neither is free."""
         node = body.node if isinstance(body, GroupToken) else body
-        others, own = self._solid_maps(node)
+        moves = getattr(self, "_moves", Counter())
+        stamp = sum(moves.values()) - moves[node.node_id]          # moves by anything but this body's instances
+        cache = self.__dict__.setdefault("_solid_cache", {})
+        hit = cache.get(node.node_id)
+        if hit is not None and hit[0] == stamp:    # instances of one body pass through each other: shared maps
+            others, own = hit[1]
+        else:
+            others, own = self._solid_maps(node)
+            cache[node.node_id] = (stamp, (others, own))
         self._solid_others = others              # reused by _push_contacts for this move
         H, W = self.grid
         r0, r1, c0, c1 = body.window(H, W)
@@ -2336,6 +2361,8 @@ class ConceptGraph:
                         start = round(tok.position[axis] * n - size / 2)
                         shift = self._clamped_shift(tok, axis, d[axis], n)
                         tok.position[axis] = (start + shift + size / 2) / n
+                        if shift and hasattr(self, "_moves"):
+                            self._moves[top.node_id] += 1
                         if carried:                   # both move together: the body keeps its place inside
                             body.position[axis] -= shift / n
         if not MOTION_KINDS:
@@ -2345,6 +2372,8 @@ class ConceptGraph:
             cells = ring & (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]
             if cells.any():
                 self._shift_substance(S, cells, d[0], d[1])
+                if hasattr(self, "_moves"):
+                    self._moves["substance"] += 1
             return
         st = self._mass_state(root)
         fy, fn, _ = self._paint(self.grid, root, True, layer="free")
@@ -2492,6 +2521,7 @@ class ConceptGraph:
             for rid in list(getattr(self, "_sub", {})):
                 self._move_substance(rid)
                 self._reset_fields(rid)
+            self._spawn_bodies()
         elif MOTION_KINDS:
             self._move_mass()
         self._spaces, self._imagery = self._render_all()
@@ -2796,6 +2826,27 @@ class ConceptGraph:
             cv[1] *= 1.0 - Q * np.clip(1.0 - 2.0 * V, 0.0, 1.0)
             claim(mask, V, Q, leaf)
 
+        def draw_instance(node, region: Region, weight: float, ikey: tuple) -> None:
+            """One instance of a field or body, drawn where it is (its region: where the tree places it)."""
+            tok = node.instances.get(ikey)
+            home = region
+            if cv[2] and tok is not None and tok.position is not None:
+                region = tok.rect(region, *cv[3])
+            soft = _soft_edge(node, home, cv[3])
+            averaged = soft and cv[6] is not None and not any(isinstance(n, GroupNode) for n in walk(node)
+                                                              if n is not node)
+
+            def draw(r):
+                was_inside = cv[4]
+                cv[4] = True
+                if averaged:                     # an agent of uncertain extent: averaged over its placements
+                    draw_averaged(content_children(node), r, weight * _sg(node), ikey, node.node_id)
+                else:                            # (with nested units: at its core)
+                    for child in content_children(node):
+                        render_node(child, unit_core(r) if soft else r, weight * _sg(node), ikey)
+                cv[4] = was_inside
+            draw_moved(draw, home, region, (node.node_id, ikey))
+
         def render_node(node: Node, region: Region, weight: float, ikey: tuple = ()) -> None:
             if weight < 1e-9 or is_empty(region):
                 return
@@ -2848,25 +2899,8 @@ class ConceptGraph:
                     else:
                         cv[0][r0:r1, c0:c1] *= 1.0 - _clamp(w * (1.0 if bit > 0 else 0.5))
             elif isinstance(node, GroupNode):                    # an instance, drawn where it is
-                tok = node.instances.get(ikey)
-                home = region
-                if cv[2] and tok is not None and tok.position is not None:
-                    region = tok.rect(region, *cv[3])
-
-                soft = _soft_edge(node, home, cv[3])
-                averaged = soft and cv[6] is not None and not any(isinstance(n, GroupNode) for n in walk(node)
-                                                                  if n is not node)
-
-                def draw(r):
-                    was_inside = cv[4]
-                    cv[4] = True
-                    if averaged:                     # an agent of uncertain extent: averaged over its placements
-                        draw_averaged(content_children(node), r, weight * _sg(node), ikey, node.node_id)
-                    else:                            # (with nested units: at its core)
-                        for child in content_children(node):
-                            render_node(child, unit_core(r) if soft else r, weight * _sg(node), ikey)
-                    cv[4] = was_inside
-                draw_moved(draw, home, region, (node.node_id, ikey))
+                for key in (_spawned(node, ikey, node.instances) if STATIC_FIELDS else [ikey]):
+                    draw_instance(node, region, weight, key)
             elif isinstance(node, BodyNode):
                 home = region
                 if cv[2] and not isinstance(node, PlanNode) and node.position is not None:
@@ -2961,6 +2995,48 @@ class ConceptGraph:
                 out[rid] = frozenset(ids)
             return out
         return self._meta("field_leaves", build).get(root_id, frozenset())
+
+    def _spawners(self) -> List["GroupNode"]:
+        """STATIC_FIELDS: bodies held by a field (the nearest unit above them is a field)."""
+        def build():
+            parents, out = self._parents(), []
+            for n in self._nodes.values():
+                if not getattr(n, "agency", False):
+                    continue
+                up = next((a for a in self._ancestors(n, parents) if isinstance(a, GroupNode)), None)
+                if isinstance(up, FieldNode):
+                    out.append(n)
+            return out
+        return self._meta("spawners", build)
+
+    def _spawn_bodies(self) -> None:
+        """STATIC_FIELDS: a field re-asserts the bodies it holds. For each spawning body and template position,
+        instances that came to the same place in the same state merge; then, if none is at home, a new instance is
+        placed there, as the first one was."""
+        same = lambda t: (tuple(round(v, 9) for v in t.position), tuple(tuple(o) for o in t.orders),
+                          tuple(round(v, 6) for v in t.jitter + t.drive))
+        for node in self._spawners():
+            firsts = [k for k in node.instances if not any(k[i] == "s" for i in range(0, len(k) - 1))]
+            for base in firsts:
+                first = node.instances[base]
+                if first.home is None or first.position is None:
+                    continue
+                keys = _spawned(node, base, node.instances)
+                seen = {}
+                for k in keys:                                   # merge indistinguishable instances
+                    t = node.instances[k]
+                    sig = same(t)
+                    if sig in seen and k != base:
+                        del node.instances[k]
+                    else:
+                        seen.setdefault(sig, k)
+                keys = _spawned(node, base, node.instances)
+                if any(np.allclose(node.instances[k].position, first.home) for k in keys):
+                    continue
+                n = 1 + max((k[-1] for k in keys if k != base), default=0)
+                tok = node.token(base + ("s", n))
+                tok.position, tok.extent = list(first.home), list(first.extent)
+                tok.anchor, tok.home = first.anchor, list(first.home)
 
     def _move_substance(self, root_id: str) -> None:
         """Each order on the substance grid advances at most one cell per tick once its credit reaches a cell."""

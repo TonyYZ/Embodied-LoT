@@ -1306,6 +1306,30 @@ class StaticFieldsTests(unittest.TestCase):
         self.assertTrue((v[11][:4, 4:8] < 0.25).all())                       # the drain stays empty
         self.assertTrue((v[0][8:, 4:8] > 0.5).any())                          # the body was there at first
 
+    def test_a_field_spawns_the_bodies_it_holds_and_a_sibling_body_is_alone(self):
+        from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.program import compile_program
+        held = "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))))"
+        beside = ("(parallel (template bottom/V center/H (field void/H)) "
+                  "(template bottom/V center/H (body (parallel center/H bottom/V*))))")
+        counts = {}
+        for name, src in (("held", held), ("beside", beside)):
+            g = compile_program(program_of(src))
+            g.grid = (12, 12)
+            g.reset_gates()
+            g.assign_roles()
+            g._render_all()
+            n = []
+            for _ in range(30):
+                g.step()
+                n.append(len([t for t in g._group_tokens() if getattr(t.node, "agency", False)]))
+            counts[name] = n
+        self.assertGreater(max(counts["held"]), 5)                         # a stream of bodies
+        self.assertEqual(counts["held"][-1], counts["held"][-10])          # merging at the edge bounds it
+        self.assertEqual(set(counts["beside"]), {1})                       # one independent body
+        line = self.boards(held)[11]
+        self.assertTrue((line[1:11, 5:7] > 0.75).all())                    # the line, from the field to the top
+
     def test_contraction_piles_up_at_the_centre(self):
         v = self.boards("(parallel (template center/H center/V universal/H) periphery/V*)")
         self.assertTrue((v[11][5:7, 4:8] > 0.75).all() and (v[11][[4, 7], 4:8] < 0.25).all())
