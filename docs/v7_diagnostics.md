@@ -714,3 +714,18 @@ predictive density is 1211.3 against 1212.6 for the current language (recognitio
 flags (static fields) scores 1218.0 (recognition 0.96; bowing 183.7, jumping 194.8, scurrying 384.1, shuffling
 290.6, swinging 164.9): 5.4 above the current language, higher on four of five manners, within search noise.
 Design and expressivity results: `docs/language_semantics.md`.
+
+## Raising the node cap (all four flags, lambda = 1.0)
+
+At lambda = 1.0 the 24-node cap binds: 44% of the posterior (averaged over manners) sits at it, mean 22.8 nodes.
+Refit with `max_nodes = 32`, everything else the same:
+
+| Cap | Held-out density | Recognition | bowing | jumping | scurrying | shuffling | swinging | Mass at cap | Mean nodes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 24 | 1218.0 | 0.96 | 183.7 | 194.8 | 384.1 | 290.6 | 164.9 | 0.44 | 22.8 |
+| 32 | **1236.0** | 0.96 | 193.2 | 199.3 | 385.0 | 291.4 | 167.1 | 0.18 | 28.2 |
+
+The larger cap scores 18.0 nats higher, higher on every manner (most on bowing, +9.5), so the cap was costing fit,
+not only constraining the search. It still binds for 18% of the posterior at 32 nodes. Since 24 was used for
+every earlier comparison (including the current language's 1212.6), languages should be compared at the same,
+larger cap.
