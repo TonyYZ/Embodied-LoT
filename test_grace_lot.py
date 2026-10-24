@@ -1371,6 +1371,28 @@ class PredictiveTests(unittest.TestCase):
         np.testing.assert_allclose(log_predictive(s), np.log([0.4, 2e-300]), rtol=1e-12)
 
 
+class ParallelLadderTests(unittest.TestCase):
+    def test_parallel_ladders_give_the_same_chains(self):
+        """inference.parallel_ladders: every ladder in its own process gives the population search's chains."""
+        import json, tempfile
+        from pathlib import Path
+        from grace_lot.config import load_config
+        from grace_lot.inference.run import apply_overrides, run
+        cfg = apply_overrides(load_config("configs/grace_v7_parts.toml"), [
+            "inference.lambda_size=1.0", "inference.temperature=0.03125", "inference.population=2",
+            "inference.replicas=3", "inference.iterations=120", "inference.burn_in=60", "inference.thin=10",
+            "inference.select_every=20", "inference.progress_every=0", "inference.chains=1"])
+        with tempfile.TemporaryDirectory() as d:
+            run(cfg, "train", Path(d) / "seq", ["swinging"], workers=1, quiet=True)
+            cfg["inference"]["parallel_ladders"] = True
+            run(cfg, "train", Path(d) / "par", ["swinging"], quiet=True)
+            a, b = (json.loads((Path(d) / r / "posteriors" / "swinging.json").read_text()) for r in ("seq", "par"))
+        strip = lambda cs: sorted(json.dumps({k: v for k, v in c.items() if k != "seconds"}, sort_keys=True) for c in cs)
+        self.assertEqual(a["posterior"], b["posterior"])
+        self.assertEqual(strip(a["chains"]), strip(b["chains"]))
+        self.assertGreater(sum(c["replaced"] for c in b["chains"]), 0)          # selection happened
+
+
 class PlaygroundTests(unittest.TestCase):
     def test_examples_agree_with_the_engine(self):
         """The playground's phase-by-phase recording equals ConceptGraph.step(), and component rollouts equal

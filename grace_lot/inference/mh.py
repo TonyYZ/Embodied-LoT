@@ -239,12 +239,19 @@ class _Ladder:
             self.tried[:] = self.done[:] = 0                # report the swap rates of the fixed ladder
         _record(chain, states[0], it, burn_in, thin)
 
-    def take(self, other: "_Ladder") -> None:
-        """Continue from another ladder's replicas (and its ladder spacing); keep this one's records and stream."""
-        self.states = [_State(s.program, s.lp, s.ll) for s in other.states]
-        self.taus = list(other.taus)
-        if other.gaps is not None:
-            self.gaps, self.rates = other.gaps.copy(), other.rates.copy()
+    def state(self) -> tuple:
+        """What another ladder needs to continue from this one: replicas and ladder spacing (picklable)."""
+        return ([_State(s.program, s.lp, s.ll) for s in self.states], list(self.taus),
+                None if self.gaps is None else (self.gaps.copy(), self.rates.copy()))
+
+    def take(self, other) -> None:
+        """Continue from another ladder's replicas (and its ladder spacing), given the ladder or its ``state()``;
+        keep this one's records and stream."""
+        states, taus, spacing = other.state() if isinstance(other, _Ladder) else other
+        self.states = [_State(s.program, s.lp, s.ll) for s in states]
+        self.taus = list(taus)
+        if spacing is not None:
+            self.gaps, self.rates = spacing[0].copy(), spacing[1].copy()
         self.chain.replaced += 1
 
     def finish(self) -> Chain:

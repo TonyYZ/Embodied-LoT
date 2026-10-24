@@ -8,7 +8,10 @@
 Each (manner, chain) pair is one parallel job. Chains use parallel
 tempering when ``inference.replicas > 1``. With ``inference.population`` > 1
 each job is a search of that many ladders with selection (``run_population``),
-and every ladder is reported as a chain, tagged with its search. For each manner this writes
+and every ladder is reported as a chain, tagged with its search. With
+``inference.parallel_ladders`` as well, every ladder of every search runs in a
+process of its own (``run_parallel``): the same chains, bit for bit, in about
+1 / population of the time on as many more cores. For each manner this writes
 ``<out>/posteriors/<manner>.json``:
 * the pooled posterior;
 * the MAP program per chain;
@@ -28,7 +31,7 @@ import random
 import time
 import zlib
 from collections import Counter
-from multiprocessing import Pool
+from multiprocessing import Pipe, Pool, Process
 from pathlib import Path
 from typing import Dict, List
 
@@ -226,7 +229,116 @@ def videos_for(cfg: dict, split: str):
     return split_videos(d["raw_dir"], cfg["split"], split), {}
 
 
+def _ladder_worker(conn, cfg: dict, manner: str, videos, k: int, j: int) -> None:
+    """One ladder of search ``k`` (``run_parallel``), in a process of its own so its caches stay warm. It is set
+    up exactly as ``run_population`` sets up ladder ``j`` (the same seed, ladder and start), then follows commands:
+    ("run", n) sweeps n times and answers its log posterior; ("state",) answers its state; ("take", state)
+    continues from another ladder's; ("trace",) answers its log-posterior trace; ("finish",) answers its chain."""
+    from grace_lot.inference.mh import _Ladder
+    inf = cfg["inference"]
+    observations = observations_for(cfg, videos)
+    _, _, prior, lik, proposal = build(cfg, observations)
+    taus, adapt_until = chain_ladder(inf, prior, lik, proposal, len(observations), manner)
+    rng = random.Random(inf["seed"] * 1000 + k + 17 * zlib.crc32(manner.encode()))
+    for _ in range(j):                                    # the ladders before this one take their seeds first
+        rng.getrandbits(64)
+    init = None
+    if inf.get("start") == "parts":
+        from grace_lot.inference.starts import part_fit_start
+        init = lambda r: part_fit_start(lik, proposal, prior, r, inf.get("start_candidates", 100), inf.get("start_steps", 200))
+    ladder = _Ladder(prior, lik, proposal, random.Random(rng.getrandbits(64)), taus, inf.get("swap_every", 1),
+                     adapt_until, inf.get("crossover", 0.0), init)
+    it, t0 = 0, time.time()
+    while True:
+        cmd = conn.recv()
+        if cmd[0] == "run":
+            for _ in range(cmd[1]):
+                ladder.sweep(it, inf["burn_in"], inf["thin"])
+                it += 1
+            conn.send(ladder.log_post)
+        elif cmd[0] == "state":
+            conn.send(ladder.state())
+        elif cmd[0] == "take":
+            ladder.take(cmd[1])
+            conn.send(True)
+        elif cmd[0] == "trace":
+            conn.send(list(ladder.chain.log_post))
+        elif cmd[0] == "finish":
+            conn.send((ladder.finish(), time.time() - t0))
+            return
+
+
+def run_parallel(cfg: dict, split: str, out: Path, manners=None, quiet: bool = False) -> None:
+    """``run`` with ``inference.parallel_ladders``: every ladder of every search in its own process, all advanced
+    together to the next selection or progress point. At a selection point each search's lowest ladder continues
+    from a copy of its highest (as ``run_population`` does), so the chains are the same as ``run``'s."""
+    inf = cfg["inference"]
+    by_manner, flags = videos_for(cfg, split)
+    manners = manners or sorted(by_manner)
+    n, total = inf["population"], inf["iterations"]
+    keys = [(m, k) for m in manners for k in range(inf["chains"])]
+    (out / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (out / "config.json").write_text(json.dumps(
+        {"fit_split": split, **{key: cfg[key] for key in ("preprocess", "lot", "inference", "split")},
+         "lot": resolved_lot(cfg["lot"]),
+         "interface": cfg.get("interface", {"representation": "occupancy"})}, indent=1))
+    conns, procs = {}, []
+    for m, k in keys:
+        for j in range(n):
+            parent, child = Pipe()
+            p = Process(target=_ladder_worker, args=(child, cfg, m, by_manner[m], k, j), daemon=True)
+            p.start()
+            conns[m, k, j], procs = parent, procs + [p]
+    every, select = inf.get("progress_every", 0), inf.get("select_every", 1000)
+    stops = sorted({total} | {b for b in range(select, inf["burn_in"], select)}
+                   | ({b for b in range(every, total, every)} if every else set()))
+    it, t0 = 0, time.time()
+    for b in stops:
+        for c in conns.values():
+            c.send(("run", b - it))
+        lp = {key: c.recv() for key, c in conns.items()}
+        it = b
+        if b < inf["burn_in"] and b % select == 0:
+            for m, k in keys:                            # the lowest ladder continues from the highest
+                ranked = sorted(range(n), key=lambda j: lp[m, k, j])
+                conns[m, k, ranked[-1]].send(("state",))
+                conns[m, k, ranked[0]].send(("take", conns[m, k, ranked[-1]].recv()))
+                conns[m, k, ranked[0]].recv()
+        if every and b % every == 0 and b < total:
+            for m, k in keys:
+                lead = max(range(n), key=lambda j: lp[m, k, j])
+                if not quiet:
+                    print(f"  {m} chain {k}: {b}/{total} iterations, {(time.time() - t0) / 60:.0f} min, "
+                          f"log-post {lp[m, k, lead]:.1f}", flush=True)
+                conns[m, k, lead].send(("trace",))
+                trace = np.array(conns[m, k, lead].recv())
+                path = out / "checkpoints" / f"{m}_{k}.npz"
+                tmp = path.with_suffix(".tmp.npz")
+                np.savez(tmp, log_post=trace, log_lik=trace, log_prior=trace)
+                tmp.replace(path)
+    for c in conns.values():
+        c.send(("finish",))
+    done = {}
+    for (m, k, j), c in conns.items():
+        chain, seconds = c.recv()
+        done.setdefault(m, []).append({
+            "search": k, "samples": [str(p) for p in chain.samples], "best": str(chain.best),
+            "best_log_post": chain.best_log_post, "acceptance": chain.acceptance_rate,
+            "proposed": dict(chain.moves), "accepted": dict(chain.accepted), "swaps": chain.swaps,
+            "taus": chain.taus, "crossovers": chain.crossovers, "replaced": chain.replaced,
+            "log_post": chain.log_post, "log_lik": chain.log_lik, "log_prior": chain.log_prior, "seconds": seconds})
+    for p in procs:
+        p.join()
+    for m in manners:
+        line = finish_manner(cfg, m, by_manner[m], done[m], out, flags)
+        if not quiet:
+            print(f"{m}: done in {(time.time() - t0) / 60:.0f} min", flush=True)
+            print(line, flush=True)
+
+
 def run(cfg: dict, split: str, out: Path, manners=None, workers: int = 16, quiet: bool = False) -> None:
+    if cfg["inference"].get("parallel_ladders") and cfg["inference"].get("population", 1) > 1:
+        return run_parallel(cfg, split, out, manners, quiet)
     by_manner, flags = videos_for(cfg, split)
     manners = manners or sorted(by_manner)
     jobs = [(cfg, m, by_manner[m], k, out) for m in manners for k in range(cfg["inference"]["chains"])]
