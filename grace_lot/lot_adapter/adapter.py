@@ -24,7 +24,10 @@ from grace_lot.lot_adapter.program import (OUT, OUTPUTS, P, Program, as_program,
 def _state_signature(graph) -> tuple:
     """Everything that can change a later frame: body positions, gates and activations."""
     orders = tuple(tuple(tuple(o) for o in n.orders) for n in graph.nodes if hasattr(n, "orders"))
-    return (tuple((nid, tuple(s["position"])) for nid, s in sorted(graph.body_states().items())),
+    from embodied_lot import PlanNode
+    placed = sorted((b.node_id, tuple(b.position)) for b in graph._body_nodes()          # as body_states() has them
+                    if not isinstance(b, PlanNode) and b.position is not None)
+    return (tuple(placed),
             tuple((n.gate, n.activation) for n in graph.nodes), orders,
             tuple(sorted(graph._prev_act.items())),
             tuple(sorted((k, tuple(sorted(v))) for k, v in getattr(graph, "_inside", {}).items())),
@@ -41,7 +44,7 @@ def motion_combinations(program: P, size: int) -> list:
     combos = _combination_cache.get(key)
     if combos is None:
         combos = _combination_cache[key] = _motion_combinations(program, size)
-        if len(_combination_cache) > COMPONENT_CACHE_SIZE:
+        if len(_combination_cache) > COMBINATION_CACHE_SIZE:
             _combination_cache.popitem(last=False)
     return [(dict(states), w) for states, w in combos]
 
@@ -68,7 +71,10 @@ def _motion_combinations(program: P, size: int) -> list:
     return out
 
 
-COMPONENT_CACHE_SIZE = 5_000                    # about 30 KB each: ~150 MB per worker
+# Cache sizes: a search's hits are almost all recent re-uses (a proposal re-rolls the components it did not change),
+# so small caches keep nearly every hit. Components: 72.2% of lookups hit at 250 entries, 72.6% with no limit.
+COMPONENT_CACHE_SIZE = 500                      # 30-60 KB each: ~25 MB per worker
+COMBINATION_CACHE_SIZE = 1_000                  # whole programs: rarely re-proposed
 _component_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
 
 

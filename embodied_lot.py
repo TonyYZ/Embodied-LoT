@@ -1411,6 +1411,7 @@ class ConceptGraph:
         """Put ``new`` in place of ``old`` (same id), keeping all of old's edges."""
         new.children = old.children
         self._nodes[old.node_id] = new
+        self._version += 1
         for edge in self._solid + self._dashed:
             if edge.source is old: edge.source = new
             if edge.target is old: edge.target = new
@@ -1659,10 +1660,14 @@ class ConceptGraph:
         return [t for n in self._meta("group_nodes", lambda: [n for n in self._nodes.values() if isinstance(n, GroupNode)])
                 for t in n.instances.values()]
 
+    def _body_nodes(self) -> List["BodyNode"]:
+        """Every BodyNode (plans, fields and bodies included), in node order: the nodes motion and drawing visit."""
+        return self._meta("body_nodes", lambda: [n for n in self._nodes.values() if isinstance(n, BodyNode)])
+
     def _tokens(self) -> Dict[str, object]:
         """Every moving unit by id: earlier bodies (the node itself) and group instances."""
         out = {}
-        for n in self._nodes.values():
+        for n in self._body_nodes():
             if isinstance(n, GroupNode):
                 for t in n.instances.values():
                     out[t.node_id] = t
@@ -1915,7 +1920,7 @@ class ConceptGraph:
     def _moving_bodies(self, views, cells: bool = True) -> Dict[str, tuple]:
         """Each placed body's home (its first view's chain and frame size) and its board cells."""
         out = {}
-        for b in self._nodes.values():
+        for b in self._body_nodes():
             vs = views.get(b.node_id)
             if isinstance(b, BodyNode) and not isinstance(b, PlanNode) and b.position is not None \
                     and b.extent is not None and vs:
@@ -2238,10 +2243,8 @@ class ConceptGraph:
                      tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
                            for o in st["orders"]))
                     for rid, st in sorted(self._mass.items()))
-        jit = tuple(tuple(round(v, 6) for v in getattr(n, "jitter", ())) for n in self._nodes.values()
-                    if isinstance(n, BodyNode))
-        random_now = any(isinstance(n, ObjectNode) and n.is_dynamic and PATTERN_TO_NAME.get(n.pattern) == "universal"
-                         for n in self._nodes.values())
+        jit = tuple(tuple(round(v, 6) for v in getattr(n, "jitter", ())) for n in self._body_nodes())
+        random_now = any(n.is_dynamic and PATTERN_TO_NAME.get(n.pattern) == "universal" for n in self.leaf_nodes())
         groups = tuple((t.node_id, None if t.position is None else tuple(round(v, 9) for v in t.position),
                         tuple(tuple(o) for o in t.orders), tuple(round(v, 6) for v in t.jitter + t.drive))
                        for t in self._group_tokens())
@@ -3238,7 +3241,7 @@ class ConceptGraph:
         return len(self._nodes)
 
     def leaf_nodes(self) -> List[ObjectNode]:
-        return [n for n in self._nodes.values() if isinstance(n, ObjectNode)]
+        return list(self._meta("leaf_nodes", lambda: [n for n in self._nodes.values() if isinstance(n, ObjectNode)]))
 
     def activation_summary(self) -> Dict[str, float]:
         return {nid: n.activation for nid, n in self._nodes.items()}
@@ -3247,8 +3250,8 @@ class ConceptGraph:
         """The position, velocity and extent of every placed moving body."""
         return {
             nid: {"position": list(n.position), "velocity": list(n.velocity), "extent": list(n.extent)}
-            for nid, n in self._nodes.items()
-            if isinstance(n, BodyNode) and not isinstance(n, PlanNode) and n.position is not None
+            for nid, n in ((b.node_id, b) for b in self._body_nodes())
+            if not isinstance(n, PlanNode) and n.position is not None
         }
 
     def __repr__(self) -> str:

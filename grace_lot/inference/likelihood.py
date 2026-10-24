@@ -288,7 +288,8 @@ class ProbabilisticScanLikelihood:
         return value
 
 
-MEMO_SIZE = 10_000          # entries per channel / row memo (a few KB each: ~100 MB per worker), then cleared
+MEMO_SIZE = 2_000           # entries per channel / row memo (a few KB each: ~20 MB per worker), then cleared;
+                            # 98% of lookups hit at 250 entries, about as many as with no limit
 
 
 def _digest(*arrays) -> bytes:
@@ -337,7 +338,7 @@ class GaussianScanLikelihood:
 
     def __init__(self, observations, frames: int, size: int, softness: float, salience: float, background: dict,
                  temperature: float = None, temporal_weight: float = 0.0, draws: int = 256, noise_floor: float = 0.1,
-                 noise: dict = None, cache_size: int = 5000, features: str = "max6", phases: int = 1,
+                 noise: dict = None, cache_size: int = 1000, features: str = "max6", phases: int = 1,
                  shift_radius: int = 0) -> None:
         from collections import OrderedDict
         self.features = features                                          # interface.features (scanner.field_features)
