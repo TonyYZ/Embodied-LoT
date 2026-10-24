@@ -333,8 +333,7 @@ def _claim_values(claims: list, shape: Tuple[int, int], boundary=frozenset()) ->
     if not claims:
         return np.full(shape, 0.5), np.zeros(shape)
     M = np.array([c[0] for c in claims])                                     # (n, H, W) cells
-    V = np.array([np.broadcast_to(c[1], shape) for c in claims], dtype=float)
-    w = np.array([np.broadcast_to(c[2], shape) for c in claims], dtype=float)
+    V, w = (_per_claim([c[k] for c in claims], shape) for k in (1, 2))
     extent: Dict[str, np.ndarray] = {}
     for c in claims:
         extent[c[4]] = extent[c[4]] | c[3] if c[4] in extent else c[3]
@@ -347,7 +346,7 @@ def _claim_values(claims: list, shape: Tuple[int, int], boundary=frozenset()) ->
         b = np.array([c[4] in boundary for c in claims])
         over = b[:, None] & ~b[None, :]
         inside = (inside | over) & ~over.T
-    depth = np.einsum("ij,jhw->ihw", inside.astype(int), M.astype(int))
+    depth = (inside.astype(int) @ M.reshape(len(claims), -1).astype(int)).reshape(M.shape)
     v = np.full(shape, 0.5)
     for d in np.unique(depth[M]):
         ws = w * (M & (depth == d))
@@ -356,6 +355,13 @@ def _claim_values(claims: list, shape: Tuple[int, int], boundary=frozenset()) ->
         t = (ws * V).sum(axis=0) / np.maximum(total, 1e-12)
         v = np.where(total > 0, (1.0 - s) * v + s * t, v)
     return v, 1.0 - np.prod(1.0 - w * M, axis=0)
+
+
+def _per_claim(xs: list, shape: Tuple[int, int]) -> np.ndarray:
+    """Per-claim values or strengths, (n, 1, 1) when all are scalars (broadcast alike), else (n, H, W)."""
+    if all(np.isscalar(x) for x in xs):
+        return np.array(xs, dtype=float)[:, None, None]
+    return np.array([np.broadcast_to(x, shape) for x in xs], dtype=float)
 
 
 def _placements(h: int, w: int) -> List[Tuple[int, int, int, int, float]]:
@@ -619,7 +625,9 @@ class ReceptiveField:
         # A band thinner than one pixel gives an empty field, which scans to 0.
         if activation.size and not (0 <= activation.min() and activation.max() <= 1 + 1e-6):
             warnings.warn("Clipping activation values to [0, 1].")
-        self.activation = np.clip(activation, 0.0, 1.0).astype(float)
+        self.activation = np.clip(activation, 0.0, 1.0)            # a new array
+        if self.activation.dtype != float:
+            self.activation = self.activation.astype(float)
         self.motion = motion
         self.bounds = tuple(bounds)
         # Bodies carve their window from the root, not from a strip.
@@ -1806,8 +1814,9 @@ class ConceptGraph:
             yang, yin, left = yang * a, yin * b, left * v
         return spaces, _compose(yang, _covered(yang, yin, left))
 
-    def _draw_key(self, root_id: str) -> tuple:
-        """Everything a tree's drawing depends on (besides structure, which is part of the key)."""
+    def _draw_key(self, root_id: str, substance: bool = True) -> tuple:
+        """Everything a tree's drawing depends on (besides structure, which is part of the key); without the
+        substance grid for a drawing of only some leaves, which never draws it."""
         def build():
             per = {}
             for r in self.roots:
@@ -1827,7 +1836,7 @@ class ConceptGraph:
                 tuple(id(n.field) for n in inputs),
                 UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
                 MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES,
-                PROBABILISTIC_MOTION, PURE_CLAIMS, STATIC_FIELDS, self._substance_key(root_id),
+                PROBABILISTIC_MOTION, PURE_CLAIMS, STATIC_FIELDS, self._substance_key(root_id) if substance else None,
                 tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
 
     def tree_index(self) -> Dict[str, str]:
@@ -2407,9 +2416,13 @@ class ConceptGraph:
 
     def _solid_maps(self, node, only=None) -> Tuple[np.ndarray, np.ndarray]:
         """The body's tree drawn without the body's subtree, and the body's subtree (or the leaves ``only``) drawn
-        alone (where it is)."""
+        alone (where it is). Memoised by what the tree's drawing depends on: a blocked body probes the same state."""
         root = self.tree_index()[node.node_id]
-        ids = {n.node_id for n in walk(node)}
+        ids = frozenset(n.node_id for n in walk(node))
+        key = (self._draw_key(root), ids, None if only is None else frozenset(only))
+        cache = self.__dict__.setdefault("_probes", {})
+        if key in cache:
+            return cache[key]
         trails = dict(self._trails)               # probes must not extend any trail
         out = []
         try:
@@ -2420,7 +2433,10 @@ class ConceptGraph:
         finally:
             self._paint_skip = self._paint_only = None
             self._trails = trails
-        return out[0], out[1]
+        if len(cache) > 256:
+            cache.clear()
+        cache[key] = out[0], out[1]
+        return cache[key]
 
     def _pushable(self, unit_id: str, own: tuple) -> bool:
         """Can a leaf inside the groups ``own`` push this unit? Not one of its own groups, and not a nested
@@ -2970,11 +2986,7 @@ class ConceptGraph:
         ids = self._field_leaves(root_id)
         if not ids:
             return
-        trails, self._paint_only = dict(self._trails), ids
-        try:
-            v, c = self._paint(self.grid, root_id, True, values=True)
-        finally:
-            self._paint_only, self._trails = None, trails
+        v, c = self._paint_only_values(root_id, ids)
         F = c > 0
         S["fe"], S["fc"], S["F"] = _claimed_value(v, c), c, F
         S["src"] = self._field_sources(root_id)
@@ -3013,13 +3025,26 @@ class ConceptGraph:
         for key, ids in groups.items():
             if not ids:
                 continue
-            trails, self._paint_only = dict(self._trails), ids
-            try:
-                v, c = self._paint(self.grid, root_id, True, values=True)
-            finally:
-                self._paint_only, self._trails = None, trails
+            v, c = self._paint_only_values(root_id, ids)
             out[key] = (c > 0) & (_claimed_value(v, c) > 0.5)
         return out
+
+    def _paint_only_values(self, root_id: str, ids: frozenset) -> Tuple[np.ndarray, np.ndarray]:
+        """STATIC_FIELDS: the claimed values and strengths of only the nodes ``ids`` (trails left as they were),
+        memoised by what that drawing depends on: fields are re-asserted every tick, mostly where they were."""
+        key = (self._draw_key(root_id, substance=False), ids)
+        cache = self.__dict__.setdefault("_only_paints", {})
+        hit = cache.get(key)
+        if hit is None:
+            trails, self._paint_only = dict(self._trails), ids
+            try:
+                hit = self._paint(self.grid, root_id, True, values=True)
+            finally:
+                self._paint_only, self._trails = None, trails
+            if len(cache) > 256:
+                cache.clear()
+            cache[key] = hit
+        return hit
 
     def _field_leaves(self, root_id: str) -> frozenset:
         """STATIC_FIELDS: the nodes of a tree's fields, not of the bodies they hold (their claims are the boundary

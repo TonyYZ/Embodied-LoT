@@ -17,7 +17,8 @@ from collections import OrderedDict
 
 import numpy as np
 
-from grace_lot.lot_adapter.program import OUT, OUTPUTS, P, Program, as_program, compile_program, nodes, output_roots
+from grace_lot.lot_adapter.program import (OUT, OUTPUTS, P, Program, as_program, compile_program, leaves, nodes,
+                                           output_roots)
 
 
 def _state_signature(graph) -> tuple:
@@ -34,9 +35,26 @@ def motion_combinations(program: P, size: int) -> list:
     """Every joint state of the program's unknown-motion units, with its prior weight.
 
     universal*: "a" / "b" (one way or the other), 1/2 each; neutral*: "still" 1/2, "a" 1/4, "b" 1/4.
-    A program without unknown motion has one combination, ``({}, 1.0)``.
+    A program without unknown motion has one combination, ``({}, 1.0)``. Memoised per program and semantics.
     """
+    key = (as_program(program), size, _semantics())
+    combos = _combination_cache.get(key)
+    if combos is None:
+        combos = _combination_cache[key] = _motion_combinations(program, size)
+        if len(_combination_cache) > COMPONENT_CACHE_SIZE:
+            _combination_cache.popitem(last=False)
+    return [(dict(states), w) for states, w in combos]
+
+
+_combination_cache: "OrderedDict[tuple, list]" = OrderedDict()
+
+
+def _motion_combinations(program: P, size: int) -> list:
     import itertools
+    from embodied_lot import _UNKNOWN_MOTION, TRIGRAM_PATTERNS
+    if not any(q.params[2] and TRIGRAM_PATTERNS[q.params[0]] in _UNKNOWN_MOTION
+               for q in leaves(as_program(program).tree)):
+        return [({}, 1.0)]                        # no unknown-motion leaf: nothing to compile
     graph = compile_program(program)
     graph.grid = (size, size)
     graph.reset_gates()
@@ -198,7 +216,7 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
     from embodied_lot import ReceptiveField, _view_field, blank_board
     tree = graph.tree_index()
     out = np.empty((frames, len(ids), size, size))
-    seen = {}
+    seen, stretch = {}, {}
     for t in range(frames):
         sig = _state_signature(graph)
         if sig in seen:
@@ -207,8 +225,12 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
                 out[u] = out[u - period]
             break
         seen[sig] = t
-        spaces, shared = graph._render_all()          # reused when the step just drew this same state
+        if t and graph.dynamics == "gameboard":       # the gameboard step has just drawn this state
+            spaces, shared = graph._spaces, graph._imagery
+        else:
+            spaces, shared = graph._render_all()
         views = graph.node_views((size, size))        # memoised: recomputed only if something moved
+        fields = {}                                   # one field per space this frame
         for k, i in enumerate(ids):
             space = spaces[tree[i]] if embodied_lot.SEPARATE_TREE_SPACES else shared
             vs = views.get(i)
@@ -216,9 +238,13 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
                 out[t, k] = blank_board((size, size))
                 continue
             _, chain, rect = max(vs, key=lambda v: v[0])
-            local = _view_field(ReceptiveField(space), chain, rect).activation
+            if id(space) not in fields:
+                fields[id(space)] = ReceptiveField(space)
+            local = _view_field(fields[id(space)], chain, rect).activation
             h, w = local.shape
-            out[t, k] = local[np.arange(size) * h // size][:, np.arange(size) * w // size]
+            if (h, w) not in stretch:
+                stretch[h, w] = np.ix_(np.arange(size) * h // size, np.arange(size) * w // size)
+            out[t, k] = local[stretch[h, w]]
         graph.step()
     return out
 

@@ -467,11 +467,10 @@ class GaussianScanLikelihood:
     def _matched(self, m):
         """Per video: (rows, columns, matched NLL); outputs beyond the parts stay unmatched."""
         from scipy.optimize import linear_sum_assignment
-        res = []
-        for C in self.costs(m):
-            r, c = linear_sum_assignment(C)
-            res.append((r, c, float(C[r, c].sum())))
-        return res
+        C = self.costs(m)
+        rc = [linear_sum_assignment(c) for c in C]
+        nll = C[np.arange(len(C))[:, None], np.array([r for r, _ in rc]), np.array([c for _, c in rc])].sum(axis=1)
+        return [(r, c, float(v)) for (r, c), v in zip(rc, nll)]
 
     def _scores(self, p):
         """(combinations, N) log densities (phase marginalised), and the matchings per (video, phase)."""
