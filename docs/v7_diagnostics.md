@@ -711,4 +711,6 @@ lambda for both properness and simplicity) is a constraint worth revisiting.
 With pure claims, solid figure and soft edges (same lambda, w, search and validation actors), the held-out log
 predictive density is 1211.3 against 1212.6 for the current language (recognition 0.92 for both; per manner
 +4.7, -7.1, -2.0, +1.8, +1.3 for bowing, jumping, scurrying, shuffling, swinging): a tie. The fit with all four
-flags (static fields) is job 89278. Design and expressivity results: `docs/language_semantics.md`.
+flags (static fields) scores 1218.0 (recognition 0.96; bowing 183.7, jumping 194.8, scurrying 384.1, shuffling
+290.6, swinging 164.9): 5.4 above the current language, higher on four of five manners, within search noise.
+Design and expressivity results: `docs/language_semantics.md`.

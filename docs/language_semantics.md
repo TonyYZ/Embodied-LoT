@@ -146,10 +146,15 @@ actors):
 | --- | --- | --- | --- | --- | --- | --- |
 | current | 1212.6 | 181.9 | 196.7 | 382.1 | 287.2 | 164.8 |
 | pure claims + solid figure + soft edges | 1211.3 | 186.6 | 189.6 | 380.1 | 289.0 | 166.1 |
-| all four | running (job 89278) | | | | | |
+| all four | **1218.0** | 183.7 | 194.8 | 384.1 | 290.6 | 164.9 |
 
 The three-flag language ties the current one (recognition 0.92 for both): the added expressivity cost nothing in
-fit. These locomotion manners hardly involve containers, sources or pushing, so a near-tie is the expected
+fit. The full language scores 5.4 nats higher than the current one, higher on four of five manners (bowing +1.8,
+scurrying +2.0, shuffling +3.4, swinging +0.1; jumping -1.9), and recognises 24 of 25 validation videos against
+23. The gain is small, within what separate searches vary by, so the honest reading is: at least as good, perhaps
+slightly better. One change shows clearly in the programs: `void` appears in every posterior sample under the new
+languages (mean share 1.00, against 0.88 before), because mixed patterns no longer claim ground and emptiness must
+now be stated; fields are used a little less with static fields (0.32 against 0.38), bodies about as much (0.38). These locomotion manners hardly involve containers, sources or pushing, so a near-tie is the expected
 outcome; a test that could favour the new semantics needs stimuli with objects, places and their relations.
 λ was chosen under the current language (1.0 beat 1.25 and 1.5 on every manner), which slightly favours it.
 
