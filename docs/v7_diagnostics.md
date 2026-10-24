@@ -705,3 +705,10 @@ lambda = 1.0 is best on every manner and is chosen. It sits at the edge of the u
 description-length prior cannot be normalised and programs pile up at the 24-node cap (lambda = 0.75: 92% of
 prior samples at the cap). The data favour the weakest proper prior, which suggests the size prior's form (one
 lambda for both properness and simplicity) is a constraint worth revisiting.
+
+## The new language on GRACE (lambda = 1.0)
+
+With pure claims, solid figure and soft edges (same lambda, w, search and validation actors), the held-out log
+predictive density is 1211.3 against 1212.6 for the current language (recognition 0.92 for both; per manner
++4.7, -7.1, -2.0, +1.8, +1.3 for bowing, jumping, scurrying, shuffling, swinging): a tie. The fit with all four
+flags (static fields) is job 89278. Design and expressivity results: `docs/language_semantics.md`.
