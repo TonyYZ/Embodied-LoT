@@ -105,6 +105,7 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.SOLID_FIGURE = bool(lot_cfg.get("solid_figure", False))
     embodied_lot.SOFT_EDGES = bool(lot_cfg.get("soft_edges", False))
     embodied_lot.STATIC_FIELDS = bool(lot_cfg.get("static_fields", False))
+    embodied_lot.STANDING_MOTION = bool(lot_cfg.get("standing_motion", False))
 
 
 # Semantics keys whose defaults have changed. A saved run config that lacks one was made
@@ -116,7 +117,7 @@ SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameb
                   "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False),
                   "probabilistic_motion": (True, False), "measure_trees": (True, False),
                   "pure_claims": (False, False), "solid_figure": (False, False), "soft_edges": (False, False),
-                  "static_fields": (False, False)}
+                  "static_fields": (False, False), "standing_motion": (False, False)}
 
 
 def resolved_lot(lot_cfg: dict) -> dict:

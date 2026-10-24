@@ -156,12 +156,13 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 let D = null, t = 0, timer = null, states = {};
 
 $('cfg').textContent = BOOT.config;
-const SEM_LABEL = {pure_claims: 'pure claims', solid_figure: 'solid figure', soft_edges: 'soft edges', static_fields: 'static fields'};
+const SEM_LABEL = {pure_claims: 'pure claims', solid_figure: 'solid figure', soft_edges: 'soft edges', static_fields: 'static fields', standing_motion: 'standing motion'};
 const SEM_HELP = {
   pure_claims: 'void, neutral and universal claim the substance in every band; other patterns claim only their figure; a nested claim wins',
   solid_figure: 'moving bodies cannot enter substance; the edge of a body pushes what it touches',
   soft_edges: 'the size and place of a body in its region are uncertain: drawn as the average over its placements',
-  static_fields: 'fields are sources and drains re-asserted every tick and spawn the bodies they hold; bare leaves are sand (needs pure claims)'};
+  static_fields: 'fields are sources and drains re-asserted every tick and spawn the bodies they hold; bare leaves are sand (needs pure claims)',
+  standing_motion: 'motion outside a body acts every tick on everything in its region, held bodies and the carrier included (needs static fields)'};
 let lot = {...BOOT.lot};
 function showSemantics() {
   $('sem').innerHTML = '<span class="muted" style="font-size:.88rem">Semantics:</span> ' + BOOT.semantics.map(k =>
@@ -169,7 +170,9 @@ function showSemantics() {
   $('sem').querySelectorAll('input').forEach(i => i.onchange = () => {
     lot[i.dataset.k] = i.checked;
     if (i.dataset.k === 'static_fields' && i.checked) lot.pure_claims = true;     // static fields need pure claims
+    if (i.dataset.k === 'standing_motion' && i.checked) lot.static_fields = lot.pure_claims = true;
     if (i.dataset.k === 'pure_claims' && !i.checked) lot.static_fields = false;
+    if (!lot.static_fields) lot.standing_motion = false;                          // standing motion needs static fields
     showSemantics(); run();
   });
 }

@@ -258,6 +258,14 @@ SOFT_EDGES = False
 # With False, fields are rigid units that move, and bare leaves are drawn every tick (earlier runs).
 STATIC_FIELDS = False
 
+# Standing motion (needs STATIC_FIELDS). A motion leaf outside an agent (bare, or in a field) is a standing rule: every
+# tick it acts on everything in its space. The substance there moves a cell whenever the leaf's credit (its rate
+# per tick) reaches one; each body there is driven as an agent drives itself (so solidity and contact apply), the
+# body being the outermost one around it below any field: a body held by a field is moved (a bubble machine), and
+# so is the body carrying the field, which re-asserts the motion where the body now is. A field never moves itself.
+# With False, a motion leaf orders content once, when it enters its space, to cross the space (earlier runs).
+STANDING_MOTION = False
+
 
 def _spawned(node, ikey: tuple, instances) -> List[tuple]:
     """STATIC_FIELDS: the keys of a unit's instances at template position ``ikey``: the first, then those a field
@@ -2042,7 +2050,8 @@ class ConceptGraph:
         if not keyed_views:
             return                                # an agent's leaves move the agent (_drive_bodies), nothing else
         if STATIC_FIELDS and PURE_CLAIMS:
-            return self._issue_substance(node, kind, a, keyed_views, bodies_at, root.node_id, meta, units)
+            issue = self._stand_substance if STANDING_MOTION else self._issue_substance
+            return issue(node, kind, a, keyed_views, bodies_at, root.node_id, meta, units)
         st = self._mass_state(root.node_id)
         H, W = self.grid
         fy, fn, _ = self._paint(self.grid, root.node_id, True, layer="free")
@@ -2113,6 +2122,79 @@ class ConceptGraph:
                         if side:
                             go = side if kind == "out" else -side
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
+
+    def _stand_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
+        """STANDING_MOTION: this tick's action of a motion leaf on everything in its space (see STANDING_MOTION).
+        "In" moves nothing already at the centre, so the halves pile up there."""
+        S = self._substance(root_id)
+        H, W = self.grid
+        R, C = _grid_index((H, W))
+        none = np.zeros((H, W), dtype=bool)
+        src, credit = S.get("src", {}), S.setdefault("credit", {})
+        loose = (S["s"] > 0) & (S["v"] > 0.5)
+        groups = getattr(self, "_unit_groups", {})
+        is_field = lambda b: isinstance(getattr(units.get(b), "node", None), FieldNode)
+
+        def outermost(b):                        # the body that moves: up through bodies, never through a field
+            for g in reversed(groups.get(b, ())):
+                if is_field(g):
+                    break
+                b = g
+            return b
+        motion = BodyNode._template_motion(node)
+        axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
+        for key, (_, chain, rect) in keyed_views:
+            space = _view_mask(self.grid, chain, rect)
+            rows, cols = np.nonzero(space)
+            if not rows.size:
+                continue
+            k = int(key.split("#")[1])
+            own = meta[k][1] if k < len(meta) else ()
+            mine = getattr(getattr(units.get(own[-1]), "node", None), "node_id", None) if own else None
+            stuff = (loose | src.get(None, none) | src.get(mine, none)) & space   # a carried field: only its own motion
+            bodies = sorted({outermost(b) for b, (_, _, cells) in bodies_at.items() if (space & cells).any()})
+            bodies = [b for b in bodies if b in bodies_at and not is_field(b)]
+            self._inside[key] = set(bodies)
+            if kind in ("bulk", "gradient"):
+                norm = float(np.hypot(*motion))
+                if norm < 1e-12:
+                    continue
+                d = _view_turn(chain, (motion[0] / norm, motion[1] / norm))
+            else:
+                d = _view_turn(chain, axis_vec)
+            for axis, comp in enumerate(d):
+                if abs(comp) < 1e-9 or kind == "random":
+                    continue
+                lo, hi = (rows.min(), rows.max()) if axis == 0 else (cols.min(), cols.max())
+                centre, coord = (lo + hi + 1) / 2.0, (R, C)[axis]
+                rate = a * abs(comp)
+                ck = f"{key}|{axis}"
+                credit[ck] = credit.get(ck, 0.0) + rate
+                step = credit[ck] >= 1 - 1e-9
+                if step:
+                    credit[ck] -= 1.0
+                if kind in ("bulk", "gradient"):
+                    parts = [(stuff, 1 if comp > 0 else -1)]
+                    goes = {b: 1 if comp > 0 else -1 for b in bodies}
+                else:                                                   # out / in: the two halves
+                    out = 1 if kind == "out" else -1
+                    off = coord + 0.5 - centre
+                    moving = stuff if kind == "out" else stuff & (np.abs(off) > 0.5)    # in: the centre stays
+                    parts = [(moving & (np.sign(off) == h), out * h) for h in (-1, 1)]
+                    goes = {}
+                    for b in bodies:
+                        o = float(np.nonzero(bodies_at[b][2])[axis].mean()) + 0.5 - centre
+                        goes[b] = 0 if kind == "in" and abs(o) <= 0.5 else out * int(np.sign(o))
+                for part, go in parts:
+                    if step and go and part.any():
+                        S["orders"].append([part.copy(), axis, go, 1, 1.0, 0.0, 0.0])
+                for b, go in goes.items():
+                    if not go:
+                        continue
+                    vec = [0.0, 0.0]
+                    vec[axis] = go * rate
+                    for ax, m in enumerate(_view_unturn(bodies_at[b][0], tuple(vec))):
+                        units[b].drive[ax] += m
 
     def _issue_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
         """STATIC_FIELDS: ``_issue_kinds`` on the substance grid. The substance in a view's space that this leaf has
@@ -2250,7 +2332,7 @@ class ConceptGraph:
                        for t in self._group_tokens())
         subs = tuple((rid, self._substance_key(rid), tuple(sorted((k, m.tobytes()) for k, m in S["marks"].items())),
                       tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
-                            for o in S["orders"]))
+                            for o in S["orders"]), tuple(sorted((k, round(v, 6)) for k, v in S.get("credit", {}).items())))
                      for rid, S in sorted(getattr(self, "_sub", {}).items()))
         return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ()) + ((subs,) if subs else ())
 

@@ -10,6 +10,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `solid_figure` | Moving bodies cannot enter substance; they interact by contact, and only their own motion propels them |
 | `soft_edges` | A body's size and place in its region are uncertain: drawn as an average over placements |
 | `static_fields` | Bare leaves are stuff, bodies are objects, fields are places re-asserted every tick |
+| `standing_motion` | Motion outside a body acts every tick on everything in its region (25 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -115,6 +116,40 @@ Rules that make these consistent:
 matches intuition (children distinguish substances from objects early: Soja, Carey & Spelke 1991; relational
 concepts like "a container that is always refilled" come later). Body and field cost the same because the grammar
 chooses node kinds uniformly; whether places should be as cheap as objects is an empirical question.
+
+## 5b. Standing motion (`standing_motion`, 25 Oct)
+
+**The reading.** A body *relativises* shape and motion: it renders and executes them in a local region that moves.
+A field *asserts* them: it keeps rendering and executing them in the region it belongs to. So `(body (field X))`
+is an assertion inside a relative frame, and `(field (body X))` asserts a relative frame in space.
+
+**The rule.** A motion leaf outside an agent (bare, or in a field) is a standing rule: every tick it acts on
+everything in its space. Substance there moves a cell whenever the leaf's accumulated rate reaches one; each body
+there is driven as an agent drives itself, so solidity and contact apply. The body moved is the outermost one
+around what is in the space, below any field. A field never moves itself. Before (flag off), a motion leaf gave
+content one order when it entered its space, to cross the space once, and moved neither the bodies a field holds
+nor the body carrying the field.
+
+**What changes.**
+
+| Program | Before | Standing motion |
+| --- | --- | --- |
+| `(body universal/H (field bottom/H*))` | stays put | drives itself, as `(body universal/H bottom/H*)` does |
+| `(field (parallel top/H* (body universal/H)))` | stays put | a bubble machine: pushes each body out, spawns the next |
+| a body beside a conveyor field | carried one region-width | carried all the way, to the edge or an obstacle |
+| stuff on a conveyor | carried one region-width | carried every tick while in the region |
+| fountain `(field (parallel universal bottom/V*))` | emits up to its own height | emits one cell past the field, then stops |
+| carried source on a pushed cart | sows a trail behind the cart | its emitting motion also drives the cart the same way |
+
+The last two follow from motion existing only in its region: what leaves the region stops. A sprinkler whose
+emission propels its own truck (in the direction it emits) may not be the intended reading; it is expressible
+instead with the motion leaf directly in the truck's body.
+
+**Open: stuff meeting stuff.** Moved stuff arriving on stuff that also moved piles up (noisy-OR, so drawn mass
+shrinks: four conveyed columns end as one at the conveyor's end); arriving on resting stuff it replaces it. Neither
+conserves mass or matches the solidity that bodies obey; pushing (sand pushing sand) is the consistent option.
+
+The expressivity suite passes 58/58 with all five flags (four cases restated to these semantics).
 
 ## 6. Results
 

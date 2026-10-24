@@ -36,9 +36,10 @@ from grace_lot.lot_adapter.program import (apply_semantics, as_program, compile_
 GRID = 12
 _lock = Lock()                       # the engine's semantics are module flags: one run at a time
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
-# STATIC_FIELDS. Static fields need pure claims.
-SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields")
-NEW = {k: True for k in SEMANTICS}
+# STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
+SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion")
+NEW = {k: True for k in SEMANTICS[:4]}
+STANDING = {**NEW, "standing_motion": True}
 
 EXAMPLES = [
     ("One body glides", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"),
@@ -78,6 +79,13 @@ EXAMPLES += [
      "(body (parallel universal/H universal/H*))))) void/V) out)", NEW),
     ("New: contraction piles up at the centre",
      "(parallel (template center/H center/V universal/H) periphery/V* out)", NEW),
+    ("Standing: a body carrying a field with motion drives itself",
+     "(parallel (serial_h void/V (body universal/H (field bottom/H*)) void/V) out)", STANDING),
+    ("Standing: a bubble machine pushes out the bodies it holds",
+     "(parallel (serial_h void/V (serial_v void/H (field (parallel top/H* (body universal/H))) void/H) void/V) out)",
+     STANDING),
+    ("Standing: a conveyor carries a cart all the way",
+     "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)", STANDING),
 ]
 
 

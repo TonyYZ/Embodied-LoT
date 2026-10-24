@@ -1363,6 +1363,38 @@ class StaticFieldsTests(unittest.TestCase):
         self.assertTrue((v[11][5:7, 4:8] > 0.75).all() and (v[11][[4, 7], 4:8] < 0.25).all())
 
 
+class StandingMotionTests(unittest.TestCase):
+    """lot.standing_motion: motion outside a body acts every tick on everything in its region."""
+
+    def setUp(self):
+        import embodied_lot
+        self.saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        embodied_lot.PURE_CLAIMS = embodied_lot.SOLID_FIGURE = embodied_lot.SOFT_EDGES = True
+        embodied_lot.STATIC_FIELDS = embodied_lot.STANDING_MOTION = True
+
+    def tearDown(self):
+        import embodied_lot
+        vars(embodied_lot).update(self.saved)
+
+    def boards(self, src, frames=9):
+        from grace_lot.analysis.expressivity import render
+        return render(src, frames, 0)[0][1][:, 0]
+
+    def test_a_body_carrying_a_field_with_motion_drives_itself(self):
+        v = self.boards("(serial_h void/V (body universal/H (field bottom/H*)) void/V)")
+        self.assertTrue((v[0][:, 4:8] > 0.75).all())
+        self.assertTrue((v[8][:, 8:] > 0.75).all() and (v[8][:, 4:8] < 0.25).all())   # at the edge, home left empty
+
+    def test_a_field_pushes_out_the_body_it_holds_and_spawns_another(self):
+        v = self.boards("(serial_h void/V (field (parallel bottom/H* (body universal/H))) void/V)")
+        self.assertTrue((v[8][:, 4:8] > 0.6).all())                                 # a new one at home (soft edges)
+        self.assertTrue((v[8][:, 8:10] > 0.6).all())                                # the first one pushed out
+
+    def test_a_conveyor_carries_stuff_every_tick(self):
+        v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")
+        self.assertTrue((v[8][:, 8:11] > 0.75).all() and (v[8][:, :8] < 0.25).all())
+
+
 class PredictiveTests(unittest.TestCase):
     def test_log_predictive_is_the_log_of_the_mean_density(self):
         import numpy as np
