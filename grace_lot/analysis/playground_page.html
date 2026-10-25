@@ -51,7 +51,14 @@ pre{white-space:pre-wrap;font-size:.8rem;margin:6px 0 0}
 .boards figure{margin:0}
 .boards figcaption{font-size:.8rem;color:var(--muted);margin-bottom:3px}
 svg{display:block;max-width:100%;height:auto}
-.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.top h1{margin:0;font-size:1.15rem}
+.top select{flex:1 1 220px;min-width:0;max-width:100%;font-size:1rem;padding:6px 8px}
+.stage{max-width:min(100%,440px);margin:0 auto}
+.stage figcaption{font-size:.8rem;color:var(--muted);margin-bottom:3px}
+.stage figure{margin:0}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.controls button{min-width:40px;min-height:36px}
 .controls input[type=range]{flex:1 1 200px}
 .tick{font-variant-numeric:tabular-nums;font-weight:600;min-width:64px}
 .phases{list-style:none;padding:0;margin:0;font-size:.9rem}
@@ -68,54 +75,13 @@ svg{display:block;max-width:100%;height:auto}
 </head>
 <body>
 <main>
-<h1>v7 playground</h1>
-<p class="muted">Type a program and step it on the 12×12 gameboard. The server runs the real engine (<code>embodied_lot</code>) under the semantics of <code id="cfg"></code> with the language switches below, so what you see is what inference sees under those semantics. Each run checks itself against <code>ConceptGraph.step()</code> and against the whole-program rollout; a difference shows up as a bug below.</p>
-
-<div class="card">
-  <div class="row" style="margin-top:0">
-    <label class="muted" for="examples" style="font-size:.9rem">Examples</label>
-    <select id="examples"></select>
-  </div>
-  <div class="row sem" id="sem" title="Language semantics (lot config flags). Examples marked New switch all four on."></div>
-  <div style="margin-top:8px"><textarea id="program" spellcheck="false" aria-label="Program"></textarea></div>
-  <div class="row">
-    <button class="primary" id="run">Run</button>
-    <label class="muted" style="font-size:.9rem">ticks <input type="number" id="ticks" min="1" max="80" value="24"></label>
-    <span class="muted" style="font-size:.85rem">Ctrl+Enter runs · trees side by side, then <code>| .a.b&gt;.c.d</code> for dashed edges</span>
-  </div>
-  <div class="row units" id="units"></div>
-  <div id="messages"></div>
+<div class="top">
+  <h1>v7 playground</h1>
+  <select id="examples" aria-label="Example"></select>
 </div>
 
 <div class="card" id="view" hidden>
-  <div class="prog muted" id="prog" style="font:13px ui-monospace,Consolas,monospace;word-break:break-all"></div>
-  <div class="grid2">
-    <div>
-      <h2 style="margin-top:8px">Boards</h2>
-      <div class="boards" id="boards"></div>
-      <div class="legend">
-        <span><span class="sw" style="background:rgba(var(--cell),.85)"></span>figure (1)</span>
-        <span><span class="sw" style="background:var(--yin)"></span>known empty (0)</span>
-        <span><span class="sw" style="border:1px solid var(--line)"></span>unknown (0.5)</span>
-        <span><span class="sw" style="border:2px dashed var(--obs)"></span>observer</span>
-        <span><span class="sw" style="border:2px dashed var(--meas)"></span>measure tree</span>
-        <span><span class="sw" style="border:2px solid var(--body)"></span>body</span>
-        <span><span class="sw" style="border:2px solid var(--field)"></span>field</span>
-      </div>
-      <h2>Output windows <span class="muted" style="font-weight:400;font-size:.85rem">what the likelihood scores, after this tick</span></h2>
-      <div class="boards" id="channels"></div>
-    </div>
-    <div>
-      <h2 style="margin-top:8px">The forest</h2>
-      <svg id="tree"></svg>
-      <div class="legend">
-        <span><span class="sw" style="background:var(--obs)"></span>observer</span>
-        <span><span class="sw" style="background:var(--img)"></span>imagined</span>
-        <span><span class="sw" style="background:var(--meas)"></span>measure tree</span>
-        <span>fill = activation · bar = gate</span>
-      </div>
-    </div>
-  </div>
+  <div class="stage" id="stage"></div>
   <div class="controls">
     <button id="first" aria-label="First tick">⏮</button>
     <button id="prev" aria-label="Previous tick">◀</button>
@@ -125,8 +91,54 @@ svg{display:block;max-width:100%;height:auto}
     <input type="range" id="scrub" min="0" value="0" aria-label="Tick">
     <select id="speed" aria-label="Speed"><option value="700">slow</option><option value="350" selected>normal</option><option value="150">fast</option></select>
   </div>
-  <h2>What happened this tick</h2>
+  <div class="row units" id="units"></div>
+  <div class="legend">
+    <span><span class="sw" style="background:rgba(var(--cell),.85)"></span>figure (1)</span>
+    <span><span class="sw" style="background:var(--yin)"></span>known empty (0)</span>
+    <span><span class="sw" style="border:1px solid var(--line)"></span>unknown (0.5)</span>
+    <span><span class="sw" style="border:2px dashed var(--obs)"></span>observer</span>
+    <span><span class="sw" style="border:2px dashed var(--meas)"></span>measure tree</span>
+    <span><span class="sw" style="border:2px solid var(--body)"></span>body</span>
+    <span><span class="sw" style="border:2px solid var(--field)"></span>field</span>
+  </div>
+</div>
+
+<div id="messages"></div>
+
+<div class="card" id="more" hidden>
+  <h2 style="margin-top:0">What happened this tick</h2>
   <ul class="phases" id="phases"></ul>
+  <div class="prog muted" id="prog" style="font:13px ui-monospace,Consolas,monospace;word-break:break-all;margin-top:14px"></div>
+  <div class="grid2">
+    <div>
+      <h2>More boards</h2>
+      <div class="boards" id="boards"></div>
+      <h2>Output windows <span class="muted" style="font-weight:400;font-size:.85rem">what the likelihood scores, after this tick</span></h2>
+      <div class="boards" id="channels"></div>
+    </div>
+    <div>
+      <h2>The forest</h2>
+      <svg id="tree"></svg>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--obs)"></span>observer</span>
+        <span><span class="sw" style="background:var(--img)"></span>imagined</span>
+        <span><span class="sw" style="background:var(--meas)"></span>measure tree</span>
+        <span>fill = activation · bar = gate</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Program</h2>
+  <div class="row sem" id="sem" title="Language semantics (lot config flags). Examples marked New switch all four on."></div>
+  <div style="margin-top:8px"><textarea id="program" spellcheck="false" aria-label="Program"></textarea></div>
+  <div class="row">
+    <button class="primary" id="run">Run</button>
+    <label class="muted" style="font-size:.9rem">ticks <input type="number" id="ticks" min="1" max="80" value="24"></label>
+    <span class="muted" style="font-size:.85rem">Ctrl+Enter runs · trees side by side, then <code>| .a.b&gt;.c.d</code> for dashed edges</span>
+  </div>
+  <p class="muted">Type a program and step it on the 12×12 gameboard. The server runs the real engine (<code>embodied_lot</code>) under the semantics of <code id="cfg"></code> with the language switches below, so what you see is what inference sees under those semantics. Each run checks itself against <code>ConceptGraph.step()</code> and against the whole-program rollout; a difference shows up as a bug below.</p>
 </div>
 </main>
 
@@ -206,7 +218,7 @@ async function run() {
     if (d.error) { showError(d); return; }
     D = d; t = Math.min(t, D.frames.length - 1);
     states = Object.fromEntries(D.units.map(u => [u.key, u.state]));
-    showMessages(); showUnits(); $('view').hidden = false; render();
+    showMessages(); showUnits(); $('view').hidden = $('more').hidden = false; render();
   } catch (e) {
     showError({error: 'Could not reach the playground server. Is it still running?', trace: String(e)});
   } finally { $('run').disabled = false; $('run').textContent = 'Run'; }
@@ -214,7 +226,7 @@ async function run() {
 
 function showError(d) {
   $('messages').innerHTML = `<div class="msg bug"><b>${esc(d.error)}</b>${d.trace ? `<pre>${esc(d.trace)}</pre>` : ''}</div>`;
-  $('view').hidden = true; $('units').innerHTML = '';
+  $('view').hidden = $('more').hidden = true; $('units').innerHTML = '';
 }
 
 function showMessages() {
@@ -347,9 +359,10 @@ function render() {
   $('prog').textContent = D.program;
   $('scrub').max = D.frames.length - 1; $('scrub').value = t;
   $('tick').textContent = `tick ${t}`;
+  const st = $('stage'); st.innerHTML = '';
+  figure(st, `Drawn this tick · ${BOOT.examples[+$('examples').value] && BOOT.examples[+$('examples').value].program === $('program').value ? BOOT.examples[+$('examples').value].title : 'your program'}`, f.drawn, f, true);
   const b = $('boards'); b.innerHTML = '';
   figure(b, 'Seen (last tick, all trees)', f.seen, f, false);
-  figure(b, 'Drawn this tick (all trees)', f.drawn, f, true);
   if (D.roots.length > 1) D.roots.forEach((r, i) => figure(b, `Tree ${i}'s own space`, f.spaces[r], f, true));
   D.roots.forEach((r, i) => { if (f.grids && f.grids[r]) figure(b, `Substance${D.roots.length > 1 ? ` (tree ${i})` : ''}: bare leaves and what motion carries`, f.grids[r], f, false); });
   const c = $('channels'); c.innerHTML = '';
