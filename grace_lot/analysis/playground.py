@@ -86,6 +86,17 @@ EXAMPLES += [
      STANDING),
     ("Standing: a conveyor carries a cart all the way",
      "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)", STANDING),
+    ("Standing: a ball moves a hollow box only by pushing its walls",
+     "(parallel (serial_h void/V (body (parallel (field (parallel periphery/H bottom/V)) (template center/H center/V "
+     "(body (parallel universal/H bottom/H*))))) void/V) out)", STANDING),
+    ("Standing: a body riding in a moving body is driven as well as carried",
+     "(parallel (serial_h void/V (body (parallel bottom/V bottom/H* (template center/V center/H (body universal/H)))) "
+     "void/V void/V) out)", STANDING),
+    ("Open: a pushed block passes into the block ahead (no chain pushing yet)",
+     "(parallel (serial_h (body (parallel universal/H bottom/H*)) (body universal/H) void/V (body universal/H) void/V void/V) out)",
+     STANDING),
+    ("Open: conveyed stuff piles into one column at the conveyor's end",
+     "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)", STANDING),
 ]
 
 
@@ -259,7 +270,15 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
         prev_act = dict(g._prev_act)
         tokens = g._group_tokens() if embodied_lot.GROUPING_NODES else []
         before = {u.node_id: len(u.orders) for u in movers + tokens}
+        sub_before = {k: len(S["orders"]) for k, S in getattr(g, "_sub", {}).items()}
         g._issue_orders(views)
+        acts = []                                    # standing motion: what each switched-on leaf acts on this tick
+        if embodied_lot._standing():
+            for key, bodies in sorted(g._inside.items()):
+                if "#" in key and not key.endswith("m") and g._prev_act.get(key.split("#")[0], 0.0) > embodied_lot.ONSET_THRESHOLD:
+                    acts.append({"leaf": key.split("#")[0], "bodies": sorted(bodies)})
+        stuff = [{"tree": g.roots.index(g[k]), "cells": int(sum(o[0].sum() for o in S["orders"][sub_before.get(k, 0):]))}
+                 for k, S in getattr(g, "_sub", {}).items()]
         if embodied_lot.GROUPING_NODES:
             g._drive_bodies(views)
         issued = [{"unit": u.node_id, **_order(o)} for u in movers + tokens
@@ -322,6 +341,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
                         "orders": [_order(o) for o in u.orders]} for u in tokens],
             "shifts": shifts, "mass": [m for m in mass if m["cells"]],
             "issued": issued, "onsets": onsets, "gate_changes": gate_changes,
+            "acts": acts, "stuff": [m for m in stuff if m["cells"]],
             "substance": [m for m in substance if m["cells"]], "resets": [m for m in resets if m["cells"]],
             "spawned": spawned,
             "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()}
