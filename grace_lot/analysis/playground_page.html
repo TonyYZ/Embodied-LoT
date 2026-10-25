@@ -162,7 +162,7 @@ const SEM_HELP = {
   solid_figure: 'moving bodies cannot enter substance; the edge of a body pushes what it touches',
   soft_edges: 'the size and place of a body in its region are uncertain: drawn as the average over its placements',
   static_fields: 'fields are sources and drains re-asserted every tick and spawn the bodies they hold; bare leaves are sand (needs pure claims)',
-  standing_motion: 'every motion leaf acts every tick on everything in its region, its own body included (self-motion), and held bodies and carriers (needs static fields)'};
+  standing_motion: 'every motion leaf acts every tick on everything in its region, its own body included (self-motion); a push is passed along, and stuff cannot be squeezed (needs static fields)'};
 let lot = {...BOOT.lot};
 function showSemantics() {
   $('sem').innerHTML = '<span class="muted" style="font-size:.88rem">Semantics:</span> ' + BOOT.semantics.map(k =>

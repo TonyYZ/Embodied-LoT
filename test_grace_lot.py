@@ -1397,6 +1397,24 @@ class StandingMotionTests(unittest.TestCase):
         embodied_lot.STANDING_MOTION = False                                    # the agent's own drive
         self.assertTrue(np.array_equal(standing, self.boards(src)))
 
+    def test_a_pushed_row_of_blocks_stops_side_by_side_at_the_edge(self):
+        from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.program import compile_program
+        g = compile_program(program_of("(serial_h (body (parallel universal/H bottom/H*)) (body universal/H) void/V "
+                                       "(body universal/H) void/V void/V)"))
+        g.grid = (12, 12)
+        g.reset_gates()
+        g.assign_roles()
+        for _ in range(12):
+            g.step()
+        cols = sorted(t.window(12, 12)[2:] for t in g._tokens().values())
+        self.assertEqual(cols, [(6, 8), (8, 10), (10, 12)])                      # no overlap, the front at the edge
+
+    def test_conveyed_stuff_pushes_resting_stuff_and_none_is_lost(self):
+        v = self.boards("(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V))")
+        self.assertEqual(int((v[0] > 0.75).sum()), int((v[8] > 0.75).sum()))        # the same amount of stuff
+        self.assertTrue((v[8][:, 4:] > 0.75).all())                                  # pushed up against the edge
+
     def test_a_conveyor_carries_stuff_every_tick(self):
         v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")
         self.assertTrue((v[8][:, 8:11] > 0.75).all() and (v[8][:, :8] < 0.25).all())

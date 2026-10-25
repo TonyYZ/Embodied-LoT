@@ -402,6 +402,38 @@ def _claimed_value(v: np.ndarray, c: np.ndarray) -> np.ndarray:
     return np.where(c > 0, np.clip(0.5 + (v - 0.5) / np.maximum(c, 1e-12), 0.0, 1.0), 0.5)
 
 
+def _moved_mask(m: np.ndarray, dy: int, dx: int) -> np.ndarray:
+    """``m`` moved by (dy, dx), either sign; what leaves the board is dropped."""
+    H, W = m.shape
+    out = np.zeros_like(m)
+    if abs(dy) < H and abs(dx) < W:
+        out[max(dy, 0):H + min(dy, 0), max(dx, 0):W + min(dx, 0)] = m[max(-dy, 0):H - max(dy, 0), max(-dx, 0):W - max(dx, 0)]
+    return out
+
+
+def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
+    """STANDING_MOTION: substance moving by (dy, dx) pushes the substance ahead of it. Returns the run (``cells`` and
+    every substance cell in its way, transitively) and its blocked cells: those whose target is off the board, in a
+    field's figure or in ``against`` (content pushing the other way), and those whose target is blocked. Claims of
+    absence are not pushed; they are replaced."""
+    against = np.zeros_like(cells) if against is None else against & ~cells
+    solid = (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"] & ~against
+    run = cells.copy()
+    while True:
+        ahead = _moved_mask(run, dy, dx) & solid & ~run
+        if not ahead.any():
+            break
+        run |= ahead
+    lands = lambda m: _moved_mask(m, -dy, -dx)                # the cells whose target is in m
+    blocked = run & (~lands(np.ones_like(run)) | lands((S["F"] & (S["fe"] > 0.5) | against) & ~run))
+    while True:
+        more = run & lands(blocked) & ~blocked
+        if not more.any():
+            break
+        blocked |= more
+    return run, blocked
+
+
 def _shifted(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
     """``a`` moved down by dy and right by dx (both >= 0), zero filled."""
     if dy == 0 and dx == 0:
@@ -2198,7 +2230,12 @@ class ConceptGraph:
                         units[b].drive[ax] += m
 
     def _own_figure(self, root_id: str, node) -> np.ndarray:
-        """STANDING_MOTION: where a body's own content is figure (its leaves and its fields', not its nested bodies')."""
+        """STANDING_MOTION: where a body's own content is figure."""
+        v, c = self._paint_only_values(root_id, self._own_content(node))
+        return (c > 0) & (_claimed_value(v, c) > 0.5)
+
+    def _own_content(self, node) -> frozenset:
+        """STANDING_MOTION: a body's own content: its nodes and its fields', not its nested bodies'."""
         def build():
             out = {}
             for g in self._body_nodes():
@@ -2210,8 +2247,7 @@ class ConceptGraph:
                                  if not (isinstance(c, GroupNode) and not isinstance(c, FieldNode)))
                 out[g.node_id] = frozenset(ids)
             return out
-        v, c = self._paint_only_values(root_id, self._meta("own_content", build)[node.node_id])
-        return (c > 0) & (_claimed_value(v, c) > 0.5)
+        return self._meta("own_content", build)[node.node_id]
 
     def _issue_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
         """STATIC_FIELDS: ``_issue_kinds`` on the substance grid. The substance in a view's space that this leaf has
@@ -2387,7 +2423,7 @@ class ConceptGraph:
                 net[ax] += step
                 drive[ax] -= step
             if SOLID_FIGURE and any(net) and (H, W) == tuple(self.grid):
-                net = self._solid_step(body, net)
+                net = self._chain_move(body, net) if _standing() else self._solid_step(body, net)
             moved = [self._clamped_shift(body, axis, net[axis], n) for axis, n in ((0, H), (1, W))]
             if any(moved):
                 self._moves[getattr(body, "node", body).node_id] += 1
@@ -2402,7 +2438,7 @@ class ConceptGraph:
                 cell = min(max(cell, size // 2), n - size + size // 2)
                 body.position[axis] = cell / n
             body.velocity = [net[0] / H, net[1] / W]
-            if SOLID_FIGURE and SOFT_EDGES and any(moved) and (H, W) == tuple(self.grid):
+            if SOLID_FIGURE and SOFT_EDGES and any(moved) and (H, W) == tuple(self.grid) and not _standing():
                 self._push_contacts(body, moved)
 
     def _solid_step(self, body, net: list) -> list:
@@ -2497,6 +2533,76 @@ class ConceptGraph:
         hit = (fy < 0.5) & ring[where]                                   # substance now under the edge
         st["off"][..., 0] = np.where(hit, np.clip(where[0] + d[0], 0, H - 1) - R, st["off"][..., 0])
         st["off"][..., 1] = np.where(hit, np.clip(where[1] + d[1], 0, W - 1) - C, st["off"][..., 1])
+
+    def _chain_move(self, body, net: list) -> list:
+        """STANDING_MOTION with SOLID_FIGURE: the move ``net`` (or its part along one axis) if everything it pushes can
+        move with it, else none. A body pushes what its figure would move into: a unit, with everything inside it (a
+        body pushing the unit it is inside is carried along), and through it whatever that unit would move into; stuff
+        as a run (``_stuff_run``). Nothing may leave the board or enter a field's figure; instances of one body pass
+        through each other. A unit's figure here is where its own content is drawn above SOLID_THRESHOLD; an agent of
+        uncertain extent's is its core where it leans figure (as in ``_solid_step``: an uncertain edge may overlap, so
+        a body has room in its slot), or all of it where it leans figure if it is too small to have a core."""
+        H, W = self.grid
+        units, groups = self._tokens(), getattr(self, "_unit_groups", {})
+        node_of = lambda b: getattr(units[b], "node", units[b])
+        root = self.tree_index()[node_of(body.node_id).node_id]
+        def figure(u, cells):                    # what of a unit's own content is solid (as in _solid_step)
+            v = self._paint_only_values(root, self._own_content(u))[0]
+            if not _soft_body(u):
+                return (v > SOLID_THRESHOLD) & cells
+            rows, cols = np.nonzero(cells)            # an agent of uncertain extent: its core, where it leans figure;
+            q0, q1, p0, p1 = unit_core((rows.min(), rows.max() + 1, cols.min(), cols.max() + 1))
+            core = np.zeros_like(cells)
+            core[q0:q1, p0:p1] = True
+            return (v > 0.5) & (core if (core & cells).any() else cells)       # too small for a core: all of it
+        own = {b: figure(node_of(b), cells) for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()
+               if cells.any() and self.tree_index().get(node_of(b).node_id) == root and not isinstance(node_of(b), FieldNode)}
+        inside = lambda b, a: a in groups.get(b, ())                          # unit b is inside unit a
+        none = np.zeros((H, W), dtype=bool)
+        group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
+        S = self._substance(root)
+        stuff = (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]
+        fixed = S["F"] & (0.5 + (S["fe"] - 0.5) * S["fc"] > SOLID_THRESHOLD)             & ~np.logical_or.reduce(list(own.values()) + [none])                  # carried fields move with their unit
+
+        def plan(d):
+            moving, push, queue = [], none.copy(), [body.node_id]
+            while queue:
+                x = queue.pop()
+                if x in moving or any(inside(x, m) for m in moving):
+                    continue                                                  # carried by a moving unit
+                g = group(x)
+                foot = _moved_mask(g, *d)
+                if foot.sum() < g.sum() or (foot & fixed).any():
+                    return None                                               # off the board, or into a field
+                if not groups.get(x) and [self._clamped_shift(units[x], a, d[a], n) for a, n in ((0, H), (1, W))] != list(d):
+                    return None
+                moving.append(x)
+                push |= foot & stuff & ~g
+                queue += [y for y in own if y not in moving and not inside(y, x) and node_of(y) is not node_of(x)
+                          and (foot & own[y] & ~g).any()]
+            if push.any() and _stuff_run(S, push, *d)[1].any():
+                return None                                                   # stuff in the way cannot move
+            return moving, push
+        for d in ((net[0], net[1]), (net[0], 0), (0, net[1])):
+            found = plan(d) if d != (0, 0) else None
+            if found is None:
+                continue
+            moving, push = found
+            for x in moving:
+                if x == body.node_id or any(inside(x, m) for m in moving if m != x):
+                    continue
+                tok = units[x]
+                for axis, n in ((0, H), (1, W)):
+                    size = max(1, round(tok.extent[axis] * n))
+                    tok.position[axis] = (round(tok.position[axis] * n - size / 2) + d[axis] + size / 2) / n
+                if hasattr(self, "_moves"):
+                    self._moves[node_of(x).node_id] += 1
+            if push.any():
+                self._shift_substance(S, push, *d)
+                if hasattr(self, "_moves"):
+                    self._moves["substance"] += 1
+            return [0, 0] if any(inside(body.node_id, m) for m in moving) else list(d)   # carried: no move of its own
+        return [0, 0]
 
     @staticmethod
     def _ancestors(node, parents) -> list:
@@ -3213,7 +3319,7 @@ class ConceptGraph:
         S = self._sub.get(root_id)
         if S is None:
             return
-        keep = []
+        keep, fire = [], []
         for o in S["orders"]:                    # [cells, axis, direction, cells left, rate, credit, delay]
             if o[6] >= 1 - 1e-9:
                 o[6] -= 1
@@ -3223,20 +3329,31 @@ class ConceptGraph:
             k = min(int(o[5]), 1, o[3])
             o[5] -= k
             o[3] -= k
-            if k:
+            if k and _standing():
+                fire.append(o)                   # moved together below: stuff pressed from both sides holds
+            elif k:
                 self._shift_substance(S, o[0], o[2] if o[1] == 0 else 0, o[2] if o[1] == 1 else 0)
             if o[3] > 0:
                 keep.append(o)
+        none = np.zeros(self.grid, dtype=bool)
+        for o in fire:
+            against = np.logical_or.reduce([q[0] for q in fire if q[1] == o[1] and q[2] == -o[2]] + [none])
+            self._shift_substance(S, o[0], o[2] if o[1] == 0 else 0, o[2] if o[1] == 1 else 0, against)
         S["orders"] = keep
 
     @staticmethod
-    def _shift_substance(S: dict, cells: np.ndarray, dy: int, dx: int) -> None:
+    def _shift_substance(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None) -> None:
         """Move the contents of ``cells`` by (dy, dx). A field cell gives a copy of its claim (a source); content
         stays at the board's edge; cells left behind read known empty; content arriving on content that also moved
-        piles up (noisy-OR strength), elsewhere it replaces what was there. Orders and marks follow their contents."""
+        piles up (noisy-OR strength), elsewhere it replaces what was there. Orders and marks follow their contents.
+        STANDING_MOTION: content pushes the content ahead of it instead, and moves only if its run can (``_stuff_run``;
+        ``against``: content moving the other way this tick, which it cannot push)."""
         H, W = cells.shape
         src_s = np.where(S["s"] > 0, S["s"], np.where(S["F"], S["fc"], 0.0))
         src_v = np.where(S["s"] > 0, S["v"], S["fe"])
+        if _standing():
+            run, blocked = _stuff_run(S, cells & (src_s > 0), dy, dx, against)
+            cells = run & ~blocked
         rows, cols = np.nonzero(cells & (src_s > 0))
         tr, tc = rows + dy, cols + dx
         ok = (tr >= 0) & (tr < H) & (tc >= 0) & (tc < W)

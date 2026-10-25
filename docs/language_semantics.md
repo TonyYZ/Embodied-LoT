@@ -139,21 +139,28 @@ entered its space, to cross it once, moving neither the bodies a field holds nor
 | `(field (parallel top/H* (body universal/H)))` | stays put | a bubble machine: pushes each body out, spawns the next |
 | a body beside a conveyor field | carried one region-width | carried all the way, to the edge or an obstacle |
 | stuff on a conveyor | carried one region-width | carried every tick while in the region |
-| fountain `(field (parallel universal bottom/V*))` | emits up to its own height | emits one cell past the field, then stops |
+| fountain `(field (parallel universal bottom/V*))` | emits up to its own height | each emission pushes the last: a column rises to the top |
 | carried source on a pushed cart | sows a trail behind the cart | its emitting motion also drives the cart the same way |
 | `(body universal/H bottom/H*)` (self-motion) | drives itself | the same, bit for bit (now by the general rule) |
 | a ball in a hollow box | pushes the box by contact | the same: the walls are not in the ball's space |
 | a body riding inside a moving body | carried rigidly | driven as well as carried (rigid cargo: bare leaves of the carrier) |
 
-The last two follow from motion existing only in its region: what leaves the region stops. A sprinkler whose
-emission propels its own truck (in the direction it emits) may not be the intended reading; it is expressible
-instead with the motion leaf directly in the truck's body.
+Motion exists only in its region: what leaves the region stops, unless something behind pushes it on (the fountain,
+below). A sprinkler whose emission propels its own truck (in the direction it emits) may not be the intended
+reading; a truck that sows along its path takes the motion leaf directly in its body.
 
-**Open: stuff meeting stuff.** Moved stuff arriving on stuff that also moved piles up (noisy-OR, so drawn mass
-shrinks: four conveyed columns end as one at the conveyor's end); arriving on resting stuff it replaces it. Neither
-conserves mass or matches the solidity that bodies obey; pushing (sand pushing sand) is the consistent option.
+**Pushing is passed along (with `solid_figure`).** A body that moves into anything pushes it: a unit, with
+everything inside it (a body pushing the unit it is inside is carried along), and through it whatever that unit would
+move into; stuff as a run, cell by cell along the line. All of it moves together if it can, else nothing does: none
+may leave the board or enter a field's figure, and stuff pressed from both sides in one tick holds. A unit's solid
+part is as before (its figure above 0.75; an agent of uncertain extent's core where it leans figure, or all of it if
+too small for a core), so soft edges shape the drawing, not contact. Consequences: a row of blocks pushed to the
+edge stops side by side; stuff is never piled up or lost (conveyed sand keeps its width; a fountain's column, each
+emission pushing the last, rises to the top; contraction gathers stuff but cannot squeeze a solid block); sand
+packed to the board's edge holds a ball inside it. This replaces edge contact (`_push_contacts`), which moved what an
+edge overlapped without checking what lay ahead, so pushed blocks passed into one another and stuff piled up.
 
-The expressivity suite passes 58/58 with all five flags (four cases restated to these semantics).
+The expressivity suite passes 61/61 with all five flags (twelve cases restated to these semantics, three added).
 
 ## 6. Results
 

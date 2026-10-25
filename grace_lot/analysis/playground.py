@@ -92,11 +92,16 @@ EXAMPLES += [
     ("Standing: a body riding in a moving body is driven as well as carried",
      "(parallel (serial_h void/V (body (parallel bottom/V bottom/H* (template center/V center/H (body universal/H)))) "
      "void/V void/V) out)", STANDING),
-    ("Open: a pushed block passes into the block ahead (no chain pushing yet)",
-     "(parallel (serial_h (body (parallel universal/H bottom/H*)) (body universal/H) void/V (body universal/H) void/V void/V) out)",
-     STANDING),
-    ("Open: conveyed stuff piles into one column at the conveyor's end",
+    ("Standing: a pusher drives a row of blocks until the front one meets the edge",
+     "(parallel (serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) "
+     "neutral/V neutral/V) out)", STANDING),
+    ("Standing: a ball pushes a sand pile across open ground",
+     "(parallel (serial_h void/V (body (parallel universal/H bottom/H*)) (serial_v void/H universal/H void/H) void/V void/V "
+     "void/V) out)", STANDING),
+    ("Standing: conveyed stuff pushes resting stuff; none is lost",
      "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)", STANDING),
+    ("Standing: periphery motion gathers two strips at the centre",
+     "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)", STANDING),
 ]
 
 

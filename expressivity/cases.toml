@@ -92,11 +92,10 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "sand: U from strips, the object moves inside"
+name = "sand: U from strips, packed to the edge, holds the object"
 program = "(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)"
-expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 [case.boards]
 all = """
 #o#
@@ -174,11 +173,10 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "sand: strip U, the object moves inside"
+name = "sand: strip U, packed to the edge, holds the object"
 program = "(serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H)"
-expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 [case.boards]
 all = """
 #o#
@@ -325,11 +323,10 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "sand: a small ball moving in the superposed basket"
+name = "sand: the superposed basket, packed to the edge, holds a small ball"
 program = "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
-expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 [case.boards]
 all = """
 #o#
@@ -339,10 +336,9 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "sand: a ball moving in the closed box"
+name = "sand: the closed box, packed to the edge, holds a ball"
 program = "(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
-expect = "differ"
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 frames = [0, 3, 6, 9, 12, 15]
 [case.boards]
 all = """
@@ -554,19 +550,33 @@ note = "The field is a drain: what enters its region is empty again on the next 
 
 [[case]]
 concept = "growth"
-name = "a fountain: a field with motion inside emits its substance just past its region"
+name = "a fountain: a field with motion inside pushes out a column that rises to the top"
 program = "(parallel (template bottom/V center/H (field (parallel universal/H bottom/V*))) void/V)"
-frames = [11]
-note = "Standing motion: the field's motion leaf acts only in its space, so its substance is carried one cell past the field and stops there."
+frames = [3, 11]
+note = "Standing motion with chain pushing: the field's motion carries its substance out, and each new emission pushes the last, so the column rises until the board stops it."
 [case.boards]
+"3" = """
+____________
+____________
+____________
+____________
+____________
+****####****
+****####****
+****####****
+****####****
+****####****
+****####****
+****####****
+"""
 "11" = """
-************
-************
-************
-************
-************
-************
-****____****
+****####****
+****####****
+****####****
+****####****
+****####****
+****####****
+****####****
 ****####****
 ****####****
 ****####****
@@ -590,27 +600,47 @@ note = "A body carrying the walls' field is a rigid box; the ball sits beside th
 
 [[case]]
 concept = "contraction"
-name = "periphery motion piles a block up at its centre and stops"
+name = "periphery motion gathers two strips at the centre, where they stop"
+program = "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V*)"
+frames = [11]
+note = "In: stuff moves towards the centre; pressed from both sides it holds (stuff cannot be squeezed), so the strips meet and stop as one block."
+[case.boards]
+"11" = """
+____________
+____________
+____________
+____________
+############
+############
+############
+############
+____________
+____________
+____________
+____________
+"""
+
+[[case]]
+concept = "contraction"
+name = "contrast: periphery motion cannot squeeze a solid block"
 program = "(parallel (template center/H center/V universal/H) periphery/V*)"
 frames = [11]
-note = "In: each row moves only as far as the centre, so the halves pile up instead of passing through each other."
+note = "Already packed at the centre: nothing moves."
 [case.boards]
 "11" = """
 ************
 ************
 ************
 ************
-****____****
 ****####****
 ****####****
-****____****
+****####****
+****####****
 ************
 ************
 ************
 ************
 """
-
-# --- spawners: a body held by a field is re-asserted (static_fields) ----------------------------------------------
 
 [[case]]
 concept = "growth"
@@ -682,7 +712,7 @@ note = "The field claims no substance, so it is no source; its motion leaf moves
 """
 "11" = """
 ************
-****_______#
+****____####
 ************
 """
 
@@ -704,7 +734,7 @@ concept = "conveyor"
 name = "a cart carrying a conveyor: the conveyor drives the cart and its load"
 program = "(parallel (template center/H center/V (body (parallel bottom/V (field bottom/H*)))) (template center/H center/V center/V universal/H))"
 frames = [0, 11]
-note = "Standing motion: the field's motion acts on everything in its region, the body carrying it included, so the cart drives right with the sand, which piles at the edge."
+note = "Standing motion: the field's motion acts on everything in its region, the body carrying it included, so the cart drives right with the sand on it, to the edge."
 [case.boards]
 "0" = """
 ************
@@ -726,9 +756,9 @@ note = "Standing motion: the field's motion acts on everything in its region, th
 ************
 ************
 ************
-****_______*
-****_______*
-********####
+****____####
+****____####
+****____####
 ************
 ************
 ************
@@ -842,6 +872,52 @@ expect = "differ"
 ***
 ***
 **o
+"""
+
+# --- pushing passed along (standing motion with solid figure) ----------------------------------------------------
+
+[[case]]
+concept = "pushing"
+name = "a pusher drives a row of blocks until the front one meets the edge; then all stop"
+program = "(serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) neutral/V neutral/V)"
+frames = [11]
+note = "A push is passed along: the pushed block pushes the one ahead. None may leave the board, so at the edge the row stops, pusher included, the blocks side by side."
+[case.boards]
+"11" = """
+************
+************
+************
+************
+____**######
+____**######
+____**######
+____**######
+************
+************
+************
+************
+"""
+
+[[case]]
+concept = "pushing"
+name = "a ball pushes a sand pile across open ground; at the edge the pile keeps its shape"
+program = "(serial_h void/V (body (parallel universal/H bottom/H*)) (serial_v void/H universal/H void/H) void/V void/V void/V)"
+frames = [11]
+note = "Sand is pushed as a run and cannot be squeezed, so it is not piled up or lost at the edge."
+[case.boards]
+"11" = """
+************
+************
+************
+************
+________**##
+________**##
+________**##
+________**##
+************
+************
+************
+************
 """
 
 # --- support: an object resting on a surface (a first draft) ---------------------------------------------------
