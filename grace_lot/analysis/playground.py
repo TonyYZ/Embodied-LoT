@@ -2,6 +2,7 @@
 
     python -m grace_lot.analysis.playground [--config configs/grace_v7_parts.toml] [--port 8765]
                                             [--lot pure_claims=true solid_figure=true soft_edges=true static_fields=true]
+    python -m grace_lot.analysis.playground --offline playground_offline.html     # a self-contained copy (no server)
 
 then open http://localhost:8765 for the graph visualizer (``visualizer/page.html``: edit a graph, load or
 export v7 program text, run it on the engine and replay the ticks), or /gameboard for the board-first page.
@@ -16,6 +17,7 @@ rollouts; any difference is reported on the page as a bug.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -372,6 +374,25 @@ def _examples() -> list:
     return [{"title": e[0], "program": e[1], "lot": e[2] if len(e) > 2 else {}} for e in EXAMPLES]
 
 
+def offline_page(cfg_path: str, ticks: int = 24) -> str:
+    """The board-first page with every example's runs built in (each joint state of its unknown motion, ``ticks``
+    ticks, under its own language switches), so it plays without the server: a phone, an e-mail attachment. Programs
+    and switches other than the examples' cannot run offline; the page says so."""
+    runs = []
+    for e in _examples():
+        lot = {k: bool(e["lot"].get(k, False)) for k in SEMANTICS}
+        first = record(e["program"], ticks, {}, cfg_path, lot)
+        options = [dict(zip([u["key"] for u in first["units"]], c))
+                   for c in itertools.product(*[u["options"] for u in first["units"]])]
+        for states in options:
+            d = first if states == {u["key"]: u["state"] for u in first["units"]} else record(e["program"], ticks, states, cfg_path, lot)
+            d.pop("snapshots", None)                     # the graph viewer's, not shown on this page
+            runs.append({"program": e["program"], "lot": lot, "states": states, "run": d})
+    html = page(cfg_path)
+    data = json.dumps({"ticks": ticks, "runs": runs}, separators=(",", ":"))
+    return html.replace("const OFFLINE = null;", "const OFFLINE = " + data.replace("</", r"<\/") + ";")
+
+
 def visualizer_page(cfg_path: str, lot: dict = None) -> str:
     """``visualizer/page.html`` (via ``visualize_lot``) on the first example, told that the engine is here."""
     from visualize_lot import _html_template
@@ -432,7 +453,12 @@ def main() -> None:
     ap.add_argument("--config", default="configs/grace_v7_parts.toml")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--lot", nargs="*", default=[], help="language flags on by default, e.g. static_fields=true")
+    ap.add_argument("--offline", help="write a self-contained page with the examples built in to this file, and exit")
     args = ap.parse_args()
+    if args.offline:
+        Path(args.offline).write_text(offline_page(args.config), encoding="utf-8")
+        print(f"wrote {args.offline}", flush=True)
+        return
     lot = {k: v.lower() == "true" for k, v in (item.split("=", 1) for item in args.lot)}
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.config, lot))
     print(f"v7 playground on http://localhost:{args.port}  (semantics from {args.config}"

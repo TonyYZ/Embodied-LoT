@@ -186,13 +186,23 @@ $('examples').onchange = () => {
 $('program').value = BOOT.examples[0].program;
 showSemantics();
 
+const OFFLINE = null;          // the offline copy (playground --offline) puts every example's runs here
+
+function offlineRun() {         // the built-in run of this example, switches and motion states
+  const prog = $('program').value.trim(), same = r => r.program === prog && BOOT.semantics.every(k => !!r.lot[k] === !!lot[k]);
+  const runs = OFFLINE.runs.filter(same);
+  if (!runs.length) return {error: 'This offline copy only has the examples built in, with their own switches. '
+    + 'To run other programs or switches, start the playground server (python -m grace_lot.analysis.playground).'};
+  return (runs.find(r => Object.entries(r.states).every(([k, v]) => states[k] === undefined || states[k] === v)) || runs[0]).run;
+}
+
 async function run() {
   stop();
   $('run').disabled = true; $('run').textContent = 'Running…';
   try {
-    const r = await fetch('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({program: $('program').value, ticks: +$('ticks').value, states, lot})});
-    const d = await r.json();
+    if (OFFLINE) $('ticks').value = OFFLINE.ticks;
+    const d = OFFLINE ? offlineRun() : await (await fetch('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({program: $('program').value, ticks: +$('ticks').value, states, lot})})).json();
     if (d.error) { showError(d); return; }
     D = d; t = Math.min(t, D.frames.length - 1);
     states = Object.fromEntries(D.units.map(u => [u.key, u.state]));
