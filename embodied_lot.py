@@ -258,13 +258,21 @@ SOFT_EDGES = False
 # With False, fields are rigid units that move, and bare leaves are drawn every tick (earlier runs).
 STATIC_FIELDS = False
 
-# Standing motion (needs STATIC_FIELDS). A motion leaf outside an agent (bare, or in a field) is a standing rule: every
-# tick it acts on everything in its space. The substance there moves a cell whenever the leaf's credit (its rate
-# per tick) reaches one; each body there is driven as an agent drives itself (so solidity and contact apply), the
-# body being the outermost one around it below any field: a body held by a field is moved (a bubble machine), and
-# so is the body carrying the field, which re-asserts the motion where the body now is. A field never moves itself.
-# With False, a motion leaf orders content once, when it enters its space, to cross the space (earlier runs).
+# Standing motion (needs STATIC_FIELDS). Every motion leaf is a standing rule: every tick it acts on everything whose
+# substance lies in its space. Loose substance moves a cell whenever the leaf's credit (its rate per tick) reaches
+# one; content that belongs to a body moves by driving that body (so solidity and contact apply). A body's own
+# content is its leaves and its fields' (a field never moves itself; what it holds as a body is not its content).
+# Self-motion is the case where the leaf's own body is in its space: the body moves, the leaf with it, and the leaf
+# acts again from there. So a body carrying a field with motion drives itself, a field moves the bodies it holds (a
+# bubble machine), a hollow box is moved by the ball inside only through contact (its walls are not in the ball's
+# space), and a body riding inside a moving body is driven as well as carried.
+# With False, a motion leaf in a body drives that body only, and other motion leaves order content once, when it
+# enters their space, to cross the space (earlier runs).
 STANDING_MOTION = False
+
+
+def _standing() -> bool:
+    return STANDING_MOTION and STATIC_FIELDS and PURE_CLAIMS
 
 
 def _spawned(node, ikey: tuple, instances) -> List[tuple]:
@@ -2046,7 +2054,7 @@ class ConceptGraph:
         in_agent = lambda k: (k < len(meta) and bool(meta[k][1])               # its innermost unit is an agent
                               and getattr(getattr(units.get(meta[k][1][-1]), "node", None), "agency", False))
         keyed_views = [(key, view) for key, view in keyed_views
-                       if not (SOLID_FIGURE and in_agent(int(key.split("#")[1])))]
+                       if not (SOLID_FIGURE and not _standing() and in_agent(int(key.split("#")[1])))]
         if not keyed_views:
             return                                # an agent's leaves move the agent (_drive_bodies), nothing else
         if STATIC_FIELDS and PURE_CLAIMS:
@@ -2124,7 +2132,8 @@ class ConceptGraph:
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
 
     def _stand_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
-        """STANDING_MOTION: this tick's action of a motion leaf on everything in its space (see STANDING_MOTION).
+        """STANDING_MOTION: this tick's action of a motion leaf on everything in its space (see STANDING_MOTION): its
+        substance, and each body whose own content is figure there.
         "In" moves nothing already at the centre, so the halves pile up there."""
         S = self._substance(root_id)
         H, W = self.grid
@@ -2132,15 +2141,7 @@ class ConceptGraph:
         none = np.zeros((H, W), dtype=bool)
         src, credit = S.get("src", {}), S.setdefault("credit", {})
         loose = (S["s"] > 0) & (S["v"] > 0.5)
-        groups = getattr(self, "_unit_groups", {})
         is_field = lambda b: isinstance(getattr(units.get(b), "node", None), FieldNode)
-
-        def outermost(b):                        # the body that moves: up through bodies, never through a field
-            for g in reversed(groups.get(b, ())):
-                if is_field(g):
-                    break
-                b = g
-            return b
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
         for key, (_, chain, rect) in keyed_views:
@@ -2152,8 +2153,8 @@ class ConceptGraph:
             own = meta[k][1] if k < len(meta) else ()
             mine = getattr(getattr(units.get(own[-1]), "node", None), "node_id", None) if own else None
             stuff = (loose | src.get(None, none) | src.get(mine, none)) & space   # a carried field: only its own motion
-            bodies = sorted({outermost(b) for b, (_, _, cells) in bodies_at.items() if (space & cells).any()})
-            bodies = [b for b in bodies if b in bodies_at and not is_field(b)]
+            bodies = [b for b, (_, _, cells) in sorted(bodies_at.items()) if not is_field(b) and (space & cells).any()
+                      and (self._own_figure(root_id, getattr(units[b], "node", units[b])) & cells & space).any()]
             self._inside[key] = set(bodies)
             if kind in ("bulk", "gradient"):
                 norm = float(np.hypot(*motion))
@@ -2195,6 +2196,22 @@ class ConceptGraph:
                     vec[axis] = go * rate
                     for ax, m in enumerate(_view_unturn(bodies_at[b][0], tuple(vec))):
                         units[b].drive[ax] += m
+
+    def _own_figure(self, root_id: str, node) -> np.ndarray:
+        """STANDING_MOTION: where a body's own content is figure (its leaves and its fields', not its nested bodies')."""
+        def build():
+            out = {}
+            for g in self._body_nodes():
+                ids, stack = set(), [g]
+                while stack:
+                    n = stack.pop()
+                    ids.add(n.node_id)
+                    stack.extend(c for c in getattr(n, "children", ())
+                                 if not (isinstance(c, GroupNode) and not isinstance(c, FieldNode)))
+                out[g.node_id] = frozenset(ids)
+            return out
+        v, c = self._paint_only_values(root_id, self._meta("own_content", build)[node.node_id])
+        return (c > 0) & (_claimed_value(v, c) > 0.5)
 
     def _issue_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
         """STATIC_FIELDS: ``_issue_kinds`` on the substance grid. The substance in a view's space that this leaf has
@@ -2538,6 +2555,8 @@ class ConceptGraph:
         leaf's gate (as orders are). Universal pushes at random; centre and periphery have no net direction.
         """
         import zlib
+        if _standing():
+            return                                # self-motion is the standing rule acting on the body's own content
         parents = self._parents()
         homes = self._moving_bodies(views, cells=False)
         units = self._tokens()

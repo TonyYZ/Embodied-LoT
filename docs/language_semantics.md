@@ -10,7 +10,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `solid_figure` | Moving bodies cannot enter substance; they interact by contact, and only their own motion propels them |
 | `soft_edges` | A body's size and place in its region are uncertain: drawn as an average over placements |
 | `static_fields` | Bare leaves are stuff, bodies are objects, fields are places re-asserted every tick |
-| `standing_motion` | Motion outside a body acts every tick on everything in its region (25 Oct) |
+| `standing_motion` | Every motion leaf acts every tick on everything in its region; self-motion is a special case (25 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -123,12 +123,13 @@ chooses node kinds uniformly; whether places should be as cheap as objects is an
 A field *asserts* them: it keeps rendering and executing them in the region it belongs to. So `(body (field X))`
 is an assertion inside a relative frame, and `(field (body X))` asserts a relative frame in space.
 
-**The rule.** A motion leaf outside an agent (bare, or in a field) is a standing rule: every tick it acts on
-everything in its space. Substance there moves a cell whenever the leaf's accumulated rate reaches one; each body
-there is driven as an agent drives itself, so solidity and contact apply. The body moved is the outermost one
-around what is in the space, below any field. A field never moves itself. Before (flag off), a motion leaf gave
-content one order when it entered its space, to cross the space once, and moved neither the bodies a field holds
-nor the body carrying the field.
+**The rule.** Every motion leaf is a standing rule: every tick it acts on everything whose substance lies in its
+space. Loose substance moves a cell whenever the leaf's accumulated rate reaches one. Content that belongs to a body
+moves by driving that body (so solidity and contact apply); a body's own content is its leaves and its fields'
+(a field never moves itself, and a body it holds is not its content). Self-motion is the special case where the
+leaf's own body is in its space: the body moves, the leaf with it, and the leaf acts again from there. Before
+(flag off), a motion leaf in a body drove that body only, and any other motion leaf gave content one order when it
+entered its space, to cross it once, moving neither the bodies a field holds nor the body carrying the field.
 
 **What changes.**
 
@@ -140,6 +141,9 @@ nor the body carrying the field.
 | stuff on a conveyor | carried one region-width | carried every tick while in the region |
 | fountain `(field (parallel universal bottom/V*))` | emits up to its own height | emits one cell past the field, then stops |
 | carried source on a pushed cart | sows a trail behind the cart | its emitting motion also drives the cart the same way |
+| `(body universal/H bottom/H*)` (self-motion) | drives itself | the same, bit for bit (now by the general rule) |
+| a ball in a hollow box | pushes the box by contact | the same: the walls are not in the ball's space |
+| a body riding inside a moving body | carried rigidly | driven as well as carried (rigid cargo: bare leaves of the carrier) |
 
 The last two follow from motion existing only in its region: what leaves the region stops. A sprinkler whose
 emission propels its own truck (in the direction it emits) may not be the intended reading; it is expressible

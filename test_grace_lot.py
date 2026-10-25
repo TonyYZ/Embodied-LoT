@@ -1390,6 +1390,13 @@ class StandingMotionTests(unittest.TestCase):
         self.assertTrue((v[8][:, 4:8] > 0.6).all())                                 # a new one at home (soft edges)
         self.assertTrue((v[8][:, 8:10] > 0.6).all())                                # the first one pushed out
 
+    def test_self_motion_is_the_standing_rule_on_the_bodys_own_content(self):
+        import embodied_lot
+        src = "(serial_h void/V (body universal/H bottom/H*) void/V)"
+        standing = self.boards(src)
+        embodied_lot.STANDING_MOTION = False                                    # the agent's own drive
+        self.assertTrue(np.array_equal(standing, self.boards(src)))
+
     def test_a_conveyor_carries_stuff_every_tick(self):
         v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")
         self.assertTrue((v[8][:, 8:11] > 0.75).all() and (v[8][:, :8] < 0.25).all())
