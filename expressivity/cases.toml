@@ -878,20 +878,20 @@ expect = "differ"
 
 [[case]]
 concept = "pushing"
-name = "a pusher drives a row of blocks until the front one meets the edge; then all stop"
+name = "a pusher drives a row of blocks against the edge, where they pack"
 program = "(serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) neutral/V neutral/V)"
 frames = [11]
-note = "A push is passed along: the pushed block pushes the one ahead. None may leave the board, so at the edge the row stops, pusher included, the blocks side by side."
+note = "A push is passed along: the pushed block pushes the one ahead. None may leave the board; the blocks' widths are uncertain, so as the pusher keeps pushing, its moves resolve them (and itself) as thin as they must be, and the row packs against the edge."
 [case.boards]
 "11" = """
 ************
 ************
 ************
 ************
-____**######
-____**######
-____**######
-____**######
+________*###
+________*###
+________*###
+________*###
 ************
 ************
 ************

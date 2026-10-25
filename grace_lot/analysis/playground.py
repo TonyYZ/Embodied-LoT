@@ -96,7 +96,7 @@ EXAMPLES += [
     ("Standing: a body riding in a moving body is driven as well as carried",
      "(parallel (serial_h void/V (body (parallel bottom/V bottom/H* (template center/V center/H (body universal/H)))) "
      "void/V void/V) out)", STANDING),
-    ("Standing: a pusher drives a row of blocks until the front one meets the edge",
+    ("Standing: a pusher drives a row of blocks against the edge, where they pack",
      "(parallel (serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) "
      "neutral/V neutral/V) out)", STANDING),
     ("Standing: a ball pushes a sand pile across open ground",
@@ -104,6 +104,13 @@ EXAMPLES += [
      "void/V) out)", STANDING),
     ("Standing: conveyed stuff pushes resting stuff; none is lost",
      "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)", STANDING),
+    ("Standing: a glider through unexplored stuff clears its path",
+     "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)", STANDING),
+    ("Standing: through fog (a field) the path closes behind",
+     "(parallel (serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H) out)", STANDING),
+    ("Standing: a ball in fixed walls moves as small as it must be",
+     "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* "
+     "universal/V*))) out)", STANDING),
     ("Standing: periphery motion gathers two strips at the centre",
      "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)", STANDING),
 ]

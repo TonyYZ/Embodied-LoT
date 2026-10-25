@@ -1407,8 +1407,10 @@ class StandingMotionTests(unittest.TestCase):
         g.assign_roles()
         for _ in range(12):
             g.step()
-        cols = sorted(t.window(12, 12)[2:] for t in g._tokens().values())
-        self.assertEqual(cols, [(6, 8), (8, 10), (10, 12)])                      # no overlap, the front at the edge
+        root = g.roots[-1].node_id
+        could = [g._paint_only_values(root, g._own_content(t.node))[1] > 0 for t in g._tokens().values()]
+        self.assertFalse(any((a & b).any() for i, a in enumerate(could) for b in could[i + 1:]))   # never overlapping
+        self.assertIn((10, 12), [t.window(12, 12)[2:] for t in g._tokens().values()])              # the front at the edge
 
     def test_conveyed_stuff_pushes_resting_stuff_and_none_is_lost(self):
         v = self.boards("(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V))")
@@ -1423,6 +1425,29 @@ class StandingMotionTests(unittest.TestCase):
         steps = np.sign(np.diff(cols))
         turns = np.diff(steps[steps != 0])
         self.assertGreaterEqual(int((turns != 0).sum()), 2)                        # left, right, left again
+
+    def test_a_passage_clears_unexplored_stuff_but_fog_closes(self):
+        stuff = self.boards("(serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H)", 10)
+        fog = self.boards("(serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H)", 10)
+        self.assertTrue((stuff[0][6, 4:8] == 0.5).all() and (stuff[9][6, 4:8] < 0.4).all())   # resolved where it went
+        self.assertTrue((fog[9][6, 4:8] == 0.5).all())                                           # a field re-asserts
+
+    def test_a_ball_in_fixed_walls_moves_as_small_as_it_must_be(self):
+        from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.program import compile_program
+        g = compile_program(program_of("(parallel (field (parallel bottom/V periphery/H)) (template center/H (body "
+                                       "(parallel center/V universal/H* universal/V*))))"))
+        g.grid = (12, 12)
+        g.reset_gates()
+        g.assign_roles()
+        g.motion_states = {k: "a" for k in g.unknown_motion_units()}
+        from embodied_lot import FieldNode
+        tok = next(t for t in g._tokens().values() if not isinstance(t.node, FieldNode))
+        start = list(tok.position)
+        for _ in range(6):
+            g.step()
+        self.assertNotEqual(tok.position, start)                                 # it moved inside the walls
+        self.assertIsNotNone(tok.placements)                                     # by being smaller than it might be
 
     def test_a_conveyor_carries_stuff_every_tick(self):
         v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")

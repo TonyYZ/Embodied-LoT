@@ -1299,6 +1299,7 @@ class GroupToken:
         self.drive = [0.0, 0.0]                  # agency: accumulated self-propulsion, per axis
         self.anchor: Optional[Tuple[int, int]] = None   # where its region started when placed (frame cells)
         self.home: Optional[List[float]] = None          # where it was placed (STATIC_FIELDS: where a field spawns it)
+        self.placements: Optional[frozenset] = None      # STANDING_MOTION: the extents its moves left possible (None: all)
 
     def rect(self, region: Region, fh: int, fw: int) -> Region:
         """Its window, carried along with the region it receives: a nested instance follows its parent."""
@@ -1879,7 +1880,7 @@ class ConceptGraph:
                                   [n for n in ns if isinstance(n, InWindowNode)])
             return per
         nodes, bodies, inputs = self._meta("draw_nodes", build)[root_id]
-        groups = tuple((t.node_id, None if t.position is None else tuple(t.position))
+        groups = tuple((t.node_id, None if t.position is None else tuple(t.position), t.placements)
                        for n in nodes if isinstance(n, GroupNode) for t in n.instances.values())
         st = self._mass.get(root_id)
         return (self._meta("structure", lambda: object()), tuple(self.grid),
@@ -2328,11 +2329,12 @@ class ConceptGraph:
         jit = tuple(tuple(round(v, 6) for v in getattr(n, "jitter", ())) for n in self._body_nodes())
         random_now = any(n.is_dynamic and PATTERN_TO_NAME.get(n.pattern) == "universal" for n in self.leaf_nodes())
         groups = tuple((t.node_id, None if t.position is None else tuple(round(v, 9) for v in t.position),
-                        tuple(tuple(o) for o in t.orders), tuple(round(v, 6) for v in t.jitter + t.drive))
+                        tuple(tuple(o) for o in t.orders), tuple(round(v, 6) for v in t.jitter + t.drive),
+                        None if t.placements is None else tuple(sorted(t.placements)))
                        for t in self._group_tokens())
         subs = tuple((rid, self._substance_key(rid), tuple(sorted((k, m.tobytes()) for k, m in S["marks"].items())),
                       tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
-                            for o in S["orders"]))
+                            for o in S["orders"]), S["passed"].tobytes() if "passed" in S else b"")
                      for rid, S in sorted(getattr(self, "_sub", {}).items()))
         return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ()) + ((subs,) if subs else ())
 
@@ -2483,33 +2485,42 @@ class ConceptGraph:
 
     def _chain_move(self, body, net: list) -> list:
         """STANDING_MOTION with SOLID_FIGURE: the move ``net`` (or its part along one axis) if everything it pushes can
-        move with it, else none. A body pushes what its figure would move into: a unit, with everything inside it (a
-        body pushing the unit it is inside is carried along), and through it whatever that unit would move into; stuff
-        as a run (``_stuff_run``). Nothing may leave the board or enter a field's figure; instances of one body pass
-        through each other. A unit's figure here is where its own content is drawn above SOLID_THRESHOLD; an agent of
-        uncertain extent's is its core where it leans figure (as in ``_solid_step``: an uncertain edge may overlap, so
-        a body has room in its slot), or all of it where it leans figure if it is too small to have a core."""
+        move with it, else none. Something blocks where it more likely than not is: substance and fields where they
+        claim figure with probability above one half, a unit where it more likely than not covers the cell (its own
+        content's coverage above one half: for an agent of uncertain extent, all but its corners; a body too small for any
+        cell to pass one half, where it most likely is). A body pushes what
+        it would move into: a unit, with everything inside it (a body pushing the unit it is inside is carried along),
+        and through it whatever that unit would move into; stuff as a run (``_stuff_run``). Nothing may leave the board
+        or enter a field's figure; instances of one body pass through each other.
+
+        A move resolves what made it possible. If an agent of uncertain extent cannot move as it might be, it moves as
+        it must be: its placements narrow to those the move fits (``GroupToken.placements``), clear of fields, the board's
+        edge and every cell another unit might cover (two uncertain bodies would settle nothing). And the uncertain stuff
+        it passes through (unknown, not substance more likely than not) is resolved by Bayes when it leaves a cell:
+        covering the cell meant it held no substance, so its chance of substance becomes p x (1 - c), c the most likely
+        the unit covered it while there (fields re-assert their claims, so a fog closes again behind)."""
         H, W = self.grid
         units, groups = self._tokens(), getattr(self, "_unit_groups", {})
         node_of = lambda b: getattr(units[b], "node", units[b])
         root = self.tree_index()[node_of(body.node_id).node_id]
-        def figure(u, cells):                    # what of a unit's own content is solid (as in _solid_step)
-            v = self._paint_only_values(root, self._own_content(u))[0]
-            if not _soft_body(u):
-                return (v > SOLID_THRESHOLD) & cells
-            rows, cols = np.nonzero(cells)            # an agent of uncertain extent: its core, where it leans figure;
-            q0, q1, p0, p1 = unit_core((rows.min(), rows.max() + 1, cols.min(), cols.max() + 1))
-            core = np.zeros_like(cells)
-            core[q0:q1, p0:p1] = True
-            return (v > 0.5) & (core if (core & cells).any() else cells)       # too small for a core: all of it
-        own = {b: figure(node_of(b), cells) for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()
+
+        def figure(u, cells):                    # where the unit more likely than not is (else where it most likely
+            v, c = self._paint_only_values(root, self._own_content(u))   # is), and how likely it is at each cell
+            solid = (_claimed_value(v, c) > 0.5) & cells
+            likely = solid & (c > 0.5)
+            fig = likely if likely.any() or not solid.any() else solid & (c >= c[solid].max() - 1e-9)
+            return fig, np.where(solid, c, 0.0)
+        win = {b: cells for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()
                if cells.any() and self.tree_index().get(node_of(b).node_id) == root and not isinstance(node_of(b), FieldNode)}
+        own, cover = {}, {}
+        for b, cells in win.items():
+            own[b], cover[b] = figure(node_of(b), cells)
         inside = lambda b, a: a in groups.get(b, ())                          # unit b is inside unit a
         none = np.zeros((H, W), dtype=bool)
         group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
         S = self._substance(root)
         stuff = (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]
-        fixed = S["F"] & (0.5 + (S["fe"] - 0.5) * S["fc"] > SOLID_THRESHOLD)             & ~np.logical_or.reduce(list(own.values()) + [none])                  # carried fields move with their unit
+        fixed = S["F"] & (S["fe"] > 0.5) & (S["fc"] > 0) & ~np.logical_or.reduce(list(own.values()) + [none])
 
         def plan(d):
             moving, push, queue = [], none.copy(), [body.node_id]
@@ -2530,14 +2541,47 @@ class ConceptGraph:
             if push.any() and _stuff_run(S, push, *d)[1].any():
                 return None                                                   # stuff in the way cannot move
             return moving, push
+
+        def narrow(d):                           # the mover's placements that a move by d fits, if fewer than now
+            tok = units[body.node_id]
+            if not (isinstance(tok, GroupToken) and _soft_body(tok.node) and body.node_id in win):
+                return None
+            rows, cols = np.nonzero(win[body.node_id])
+            r0, c0 = rows.min(), cols.min()
+            places = _placements(rows.max() + 1 - r0, cols.max() + 1 - c0)
+            allowed = tok.placements if tok.placements is not None else frozenset(range(len(places)))
+            walls = fixed | np.logical_or.reduce([cover[y] > 0 for y in own if y != body.node_id      # all another
+                                                  and not inside(y, body.node_id)                    # unit might
+                                                  and node_of(y) is not node_of(body.node_id)] + [none])    # cover
+            fits = set()
+            for k in allowed:
+                hs, ws, dy, dx, _ = places[k]
+                m = none.copy()
+                m[r0 + dy:r0 + dy + hs, c0 + dx:c0 + dx + ws] = True
+                f = _moved_mask(m, *d)
+                if f.sum() == m.sum() and not (f & walls).any():
+                    fits.add(k)
+            return frozenset(fits) if fits and len(fits) < len(allowed) else None
         for d in ((net[0], net[1]), (net[0], 0), (0, net[1])):
-            found = plan(d) if d != (0, 0) else None
+            if d == (0, 0):
+                continue
+            found = plan(d)
+            fits = narrow(d) if found is None else None
+            if fits is not None:                 # it moves as it must be: smaller than it might have been
+                tok, was = units[body.node_id], units[body.node_id].placements
+                tok.placements = fits
+                own[body.node_id], cover[body.node_id] = figure(tok.node, win[body.node_id])
+                found = plan(d)
+                if found is None:
+                    tok.placements = was
+                    own[body.node_id], cover[body.node_id] = figure(tok.node, win[body.node_id])
             if found is None:
                 continue
             moving, push = found
-            for x in moving:
-                if x == body.node_id or any(inside(x, m) for m in moving if m != x):
-                    continue
+            movers = [x for x in moving if not any(inside(x, m) for m in moving if m != x)]
+            for x in movers:
+                if x == body.node_id:
+                    continue                                                  # the caller moves the body itself
                 tok = units[x]
                 for axis, n in ((0, H), (1, W)):
                     size = max(1, round(tok.extent[axis] * n))
@@ -2548,6 +2592,18 @@ class ConceptGraph:
                 self._shift_substance(S, push, *d)
                 if hasattr(self, "_moves"):
                     self._moves["substance"] += 1
+            was, now = np.ones((H, W)), np.ones((H, W))       # the chance no unit covers a cell, before / after
+            for b in cover:
+                moved = any(b == x or inside(b, x) for x in movers)
+                was *= 1.0 - cover[b]
+                now *= 1.0 - (_moved_mask(cover[b], *d) if moved else cover[b])
+            passed = S.setdefault("passed", np.zeros((H, W)))   # the most likely it covered a cell it is still on
+            np.maximum(passed, 1.0 - np.minimum(was, now), out=passed)
+            left = (now >= 1.0) & (passed > 0)
+            seen = left & (S["s"] > 0) & ~S["F"] & ~(S["v"] > 0.5)             # uncertain stuff it went through:
+            p = 0.5 + (S["v"] - 0.5) * S["s"]                                 # substance only where it did not go
+            S["v"][seen], S["s"][seen], S["moved"][seen] = (p * (1.0 - passed))[seen], 1.0, False
+            passed[left] = 0.0
             return [0, 0] if any(inside(body.node_id, m) for m in moving) else list(d)   # carried: no move of its own
         return [0, 0]
 
@@ -2957,13 +3013,13 @@ class ConceptGraph:
             vacated = (trail < 1) & (ny == 1) & (nn == 1)
             cv[5][vacated] *= trail[vacated]
 
-        def draw_averaged(kids, r: Region, weight: float, ikey: tuple, leaf: str) -> None:
+        def draw_averaged(kids, r: Region, weight: float, ikey: tuple, leaf: str, allowed=None) -> None:
             """SOFT_EDGES with PURE_CLAIMS: the content drawn once per size at the region's corner, composed on its
-            own, then placed at each position (``_placements``) and averaged into one claim whose strength is the
-            chance some placement claims the cell."""
+            own, then placed at each position (``_placements``; only those ``allowed``, renormalised) and averaged
+            into one claim whose strength is the chance some placement claims the cell."""
             r0, r1, c0, c1 = r
             shape = cv[0].shape
-            key = (leaf, r1 - r0, c1 - c0, shape, weight, ikey,
+            key = (leaf, r1 - r0, c1 - c0, shape, weight, ikey, allowed,
                    tuple(n.gate for k in kids for n in walk(k)))        # its look depends on these, not on where
             cache = self.__dict__.setdefault("_averaged", {})
             ids = {n.node_id for k in kids for n in walk(k)}
@@ -2977,7 +3033,10 @@ class ConceptGraph:
                 Q, QV = np.zeros(shape), np.zeros(shape)
                 saved = cv[0], cv[1], cv[6], cv[7]
                 drawn = {}
-                for hs, ws, dy, dx, prob in _placements(r1 - r0, c1 - c0):
+                places = [q for k, q in enumerate(_placements(r1 - r0, c1 - c0)) if allowed is None or k in allowed]
+                total = sum(q[4] for q in places)
+                for hs, ws, dy, dx, prob in places:
+                    prob = prob / total if allowed is not None else prob
                     if (hs, ws) not in drawn:
                         cv[0], cv[1], cv[6], cv[7] = np.ones(shape), np.ones(shape), [], (0, 0)
                         for child in kids:
@@ -3017,7 +3076,8 @@ class ConceptGraph:
                 was_inside = cv[4]
                 cv[4] = True
                 if averaged:                     # an agent of uncertain extent: averaged over its placements
-                    draw_averaged(content_children(node), r, weight * _sg(node), ikey, node.node_id)
+                    draw_averaged(content_children(node), r, weight * _sg(node), ikey, node.node_id,
+                                  getattr(tok, "placements", None))
                 else:                            # (with nested units: at its core)
                     for child in content_children(node):
                         render_node(child, unit_core(r) if soft else r, weight * _sg(node), ikey)

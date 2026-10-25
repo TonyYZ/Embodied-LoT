@@ -164,7 +164,25 @@ emission pushing the last, rises to the top; contraction gathers stuff but canno
 packed to the board's edge holds a ball inside it. This replaces edge contact (`_push_contacts`), which moved what an
 edge overlapped without checking what lay ahead, so pushed blocks passed into one another and stuff piled up.
 
-The expressivity suite passes 61/61 with all five flags (twelve cases restated to these semantics, three added).
+**Blocking and what a move resolves.** Something blocks where it more likely than not is: substance and fields where
+their claimed chance of substance is above one half; a body where it more likely than not covers the cell (its own
+coverage above one half; for an agent of uncertain extent, all but its corners; for a body too small for any cell to
+pass one half, where it most likely is). The earlier threshold of 0.75 on the drawn board was this same rule for
+bodies (a soft body's drawn value is 1/2 + c/2, so c > 1/2 is a drawn value above 0.75) but wrong for stuff. Unknown
+space (1/2) is passable, as an occluded space with no evidence of an object is.
+
+A move resolves what made it possible, as a single imagined scenario must stay consistent (people simulate one run at
+a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths: Spelke et al. 1992):
+- The path: uncertain stuff a body passes through is updated by Bayes when the body leaves it. Covering a cell meant
+  it held no substance, so its chance becomes p x (1 - c), c the most likely the body covered it while there. Someone
+  crossing a dark room clears their route, not the room. A field re-asserts its claims every tick, so fog or water
+  closes again behind.
+- The body: an agent of uncertain extent that cannot move as it might be moves as it must be. Its placements narrow
+  to those the move fits, clear of fields, the board's edge and every cell another unit might cover (a ball heard
+  rattling in a box is smaller than the box). Two uncertain bodies settle nothing between them, so a collision with
+  another body never narrows; the push is passed along instead.
+
+The expressivity suite passes 61/61 with all five flags (thirteen cases restated to these semantics, three added).
 
 ## 6. Results
 
