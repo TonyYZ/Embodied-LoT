@@ -44,23 +44,25 @@ NEW = {k: True for k in SEMANTICS[:4]}
 STANDING = {**NEW, "standing_motion": True}
 
 EXAMPLES = [
-    ("One body glides", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"),
+    ("One body glides", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)", STANDING),
     ("Two bodies in file",
-     "(parallel (serial_h (body (parallel center/V bottom/H*)) (body (parallel center/V bottom/H*)) neutral/H) out)"),
-    ("A field does not drive itself", "(parallel (serial_v (field (parallel center/V bottom/V*)) out) out)"),
-    ("A body drives itself", "(parallel (serial_v (body (parallel center/V bottom/V*)) out) out)"),
-    ("Template copies, each its own instance",
-     "(parallel (serial_v (template periphery/H (field center/V)) out) (serial_h bottom/V* out out))"),
-    ("Unknown direction (universal)", "(parallel center/V universal/V* out)"),
-    ("Unknown whether it moves (neutral)", "(parallel center/H neutral/V* out)"),
-    ("Known still (void)", "(parallel center/V void/V* out)"),
-    ("A tree gating another tree", "(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0"),
-    ("Measure tree", "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0"),
-    ("Self-observing oscillator",
+     "(parallel (serial_h (body (parallel center/V bottom/H*)) (body (parallel center/V bottom/H*)) neutral/H) out)",
+     STANDING),
+    ("A field does not drive itself (its motion carries its stuff out)",
+     "(parallel (serial_v (field (parallel center/V bottom/V*)) out) out)", STANDING),
+    ("A body drives itself", "(parallel (serial_v (body (parallel center/V bottom/V*)) out) out)", STANDING),
+    ("Template copies, each its own instance (each copy's stuff carried up)",
+     "(parallel (serial_v (template periphery/H (field center/V)) out) (serial_h bottom/V* out out))", STANDING),
+    ("Unknown direction (universal)", "(parallel center/V universal/V* out)", STANDING),
+    ("Unknown whether it moves (neutral)", "(parallel center/H neutral/V* out)", STANDING),
+    ("Known still (void)", "(parallel center/V void/V* out)", STANDING),
+    ("A tree gating another tree", "(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0", STANDING),
+    ("Measure tree", "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0", STANDING),
+    ("Old language: a self-observing oscillator (it stalls under standing motion, which has no momentum)",
      "(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) out) "
      "| .0.0.1>.0.0.0 .0.1.1>.0.1.0"),
 ]
-# Examples of the new language (all four flags): (title, program, flags).
+# Examples of the new language: (title, program, flags); without flags, the config's (old) language.
 EXAMPLES += [
     ("New: a basket by superposition (surrounded, with a bottom)", "(parallel periphery/H bottom/V out)", NEW),
     ("New: a basket by hollowing a block", "(parallel universal/H (template center/H upper/V void/H) out)", NEW),
