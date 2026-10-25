@@ -258,14 +258,15 @@ SOFT_EDGES = False
 # With False, fields are rigid units that move, and bare leaves are drawn every tick (earlier runs).
 STATIC_FIELDS = False
 
-# Standing motion (needs STATIC_FIELDS). Every motion leaf is a standing rule: every tick it acts on everything whose
-# substance lies in its space. Loose substance moves a cell whenever the leaf's credit (its rate per tick) reaches
-# one; content that belongs to a body moves by driving that body (so solidity and contact apply). A body's own
-# content is its leaves and its fields' (a field never moves itself; what it holds as a body is not its content).
-# Self-motion is the case where the leaf's own body is in its space: the body moves, the leaf with it, and the leaf
-# acts again from there. So a body carrying a field with motion drives itself, a field moves the bodies it holds (a
-# bubble machine), a hollow box is moved by the ball inside only through contact (its walls are not in the ball's
-# space), and a body riding inside a moving body is driven as well as carried.
+# Standing motion (needs STATIC_FIELDS). Every motion leaf is a standing rule: every tick it gives an order to
+# everything whose substance lies in its space and has no order from it under way. Orders stay discrete (the board is
+# a diagram, not a simulation): substance is ordered across the space, a body by its own extent, one cell per tick,
+# committed once given. Content that belongs to a body moves with that body. A body's own content is its leaves and
+# its fields' (a field never moves itself; what it holds as a body is not its content). Self-motion is the case where
+# the leaf's own body is in its space: the body moves, the leaf with it, and the leaf orders it again from there. So
+# a body carrying a field with motion drives itself, a field moves the bodies it holds (a bubble machine), a hollow
+# box is moved by the ball inside only through contact (its walls are not in the ball's space), and a body riding
+# inside a moving body is moved as well as carried. With SOLID_FIGURE a push is passed along (``_chain_move``).
 # With False, a motion leaf in a body drives that body only, and other motion leaves order content once, when it
 # enters their space, to cross the space (earlier runs).
 STANDING_MOTION = False
@@ -2090,8 +2091,7 @@ class ConceptGraph:
         if not keyed_views:
             return                                # an agent's leaves move the agent (_drive_bodies), nothing else
         if STATIC_FIELDS and PURE_CLAIMS:
-            issue = self._stand_substance if STANDING_MOTION else self._issue_substance
-            return issue(node, kind, a, keyed_views, bodies_at, root.node_id, meta, units)
+            return self._issue_substance(node, kind, a, keyed_views, bodies_at, root.node_id, meta, units)
         st = self._mass_state(root.node_id)
         H, W = self.grid
         fy, fn, _ = self._paint(self.grid, root.node_id, True, layer="free")
@@ -2163,72 +2163,6 @@ class ConceptGraph:
                             go = side if kind == "out" else -side
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
 
-    def _stand_substance(self, node, kind: str, a: float, keyed_views, bodies_at, root_id: str, meta, units) -> None:
-        """STANDING_MOTION: this tick's action of a motion leaf on everything in its space (see STANDING_MOTION): its
-        substance, and each body whose own content is figure there.
-        "In" moves nothing already at the centre, so the halves pile up there."""
-        S = self._substance(root_id)
-        H, W = self.grid
-        R, C = _grid_index((H, W))
-        none = np.zeros((H, W), dtype=bool)
-        src, credit = S.get("src", {}), S.setdefault("credit", {})
-        loose = (S["s"] > 0) & (S["v"] > 0.5)
-        is_field = lambda b: isinstance(getattr(units.get(b), "node", None), FieldNode)
-        motion = BodyNode._template_motion(node)
-        axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
-        for key, (_, chain, rect) in keyed_views:
-            space = _view_mask(self.grid, chain, rect)
-            rows, cols = np.nonzero(space)
-            if not rows.size:
-                continue
-            k = int(key.split("#")[1])
-            own = meta[k][1] if k < len(meta) else ()
-            mine = getattr(getattr(units.get(own[-1]), "node", None), "node_id", None) if own else None
-            stuff = (loose | src.get(None, none) | src.get(mine, none)) & space   # a carried field: only its own motion
-            bodies = [b for b, (_, _, cells) in sorted(bodies_at.items()) if not is_field(b) and (space & cells).any()
-                      and (self._own_figure(root_id, getattr(units[b], "node", units[b])) & cells & space).any()]
-            self._inside[key] = set(bodies)
-            if kind in ("bulk", "gradient"):
-                norm = float(np.hypot(*motion))
-                if norm < 1e-12:
-                    continue
-                d = _view_turn(chain, (motion[0] / norm, motion[1] / norm))
-            else:
-                d = _view_turn(chain, axis_vec)
-            for axis, comp in enumerate(d):
-                if abs(comp) < 1e-9 or kind == "random":
-                    continue
-                lo, hi = (rows.min(), rows.max()) if axis == 0 else (cols.min(), cols.max())
-                centre, coord = (lo + hi + 1) / 2.0, (R, C)[axis]
-                rate = a * abs(comp)
-                ck = f"{key}|{axis}"
-                credit[ck] = credit.get(ck, 0.0) + rate
-                step = credit[ck] >= 1 - 1e-9
-                if step:
-                    credit[ck] -= 1.0
-                if kind in ("bulk", "gradient"):
-                    parts = [(stuff, 1 if comp > 0 else -1)]
-                    goes = {b: 1 if comp > 0 else -1 for b in bodies}
-                else:                                                   # out / in: the two halves
-                    out = 1 if kind == "out" else -1
-                    off = coord + 0.5 - centre
-                    moving = stuff if kind == "out" else stuff & (np.abs(off) > 0.5)    # in: the centre stays
-                    parts = [(moving & (np.sign(off) == h), out * h) for h in (-1, 1)]
-                    goes = {}
-                    for b in bodies:
-                        o = float(np.nonzero(bodies_at[b][2])[axis].mean()) + 0.5 - centre
-                        goes[b] = 0 if kind == "in" and abs(o) <= 0.5 else out * int(np.sign(o))
-                for part, go in parts:
-                    if step and go and part.any():
-                        S["orders"].append([part.copy(), axis, go, 1, 1.0, 0.0, 0.0])
-                for b, go in goes.items():
-                    if not go:
-                        continue
-                    vec = [0.0, 0.0]
-                    vec[axis] = go * rate
-                    for ax, m in enumerate(_view_unturn(bodies_at[b][0], tuple(vec))):
-                        units[b].drive[ax] += m
-
     def _own_figure(self, root_id: str, node) -> np.ndarray:
         """STANDING_MOTION: where a body's own content is figure."""
         v, c = self._paint_only_values(root_id, self._own_content(node))
@@ -2271,15 +2205,25 @@ class ConceptGraph:
             own = meta[k][1] if k < len(meta) else ()
             mine = getattr(getattr(units.get(own[-1]), "node", None), "node_id", None) if own else None
             stuff = loose | src.get(None, none) | src.get(mine, none)    # a carried field: only its own motion
-            bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
-                      if self._pushable(b, own) and (space & cells).any()
-                      and not isinstance(getattr(units[b], "node", None), FieldNode)]       # fields do not move
-            was = self._inside.get(key, set())
-            self._inside[key] = {b.node_id for b in bodies}
-            fresh = [b for b in bodies if b.node_id not in was]
-            marks = S["marks"].get(key, np.zeros((H, W), dtype=bool)) & space
-            fresh_m = stuff & space & ~marks
-            S["marks"][key] = marks | fresh_m        # emitted copies carry the mark; the reset unmarks field cells
+            n_orders = len(S["orders"])
+            if _standing():                      # everything whose substance is here, without an order from it
+                bodies = [units[b] for b, (_, _, cells) in sorted(bodies_at.items())
+                          if not isinstance(getattr(units[b], "node", None), FieldNode) and (space & cells).any()
+                          and (self._own_figure(root_id, getattr(units[b], "node", units[b])) & cells & space).any()]
+                self._inside[key] = {b.node_id for b in bodies}
+                fresh = [b for b in bodies if not any(o[5] == node.node_id for o in b.orders)]
+                under_way = np.logical_or.reduce([o[0] for o in S["orders"] if o[7:] == [key]] + [none])
+                fresh_m = stuff & space & ~under_way
+            else:
+                bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
+                          if self._pushable(b, own) and (space & cells).any()
+                          and not isinstance(getattr(units[b], "node", None), FieldNode)]       # fields do not move
+                was = self._inside.get(key, set())
+                self._inside[key] = {b.node_id for b in bodies}
+                fresh = [b for b in bodies if b.node_id not in was]
+                marks = S["marks"].get(key, np.zeros((H, W), dtype=bool)) & space
+                fresh_m = stuff & space & ~marks
+                S["marks"][key] = marks | fresh_m    # emitted copies carry the mark; the reset unmarks field cells
             if kind in ("bulk", "gradient"):
                 norm = float(np.hypot(*motion))
                 if norm < 1e-12:
@@ -2325,6 +2269,9 @@ class ConceptGraph:
                         if side:
                             go = side if kind == "out" else -side
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
+            if _standing():
+                for o in S["orders"][n_orders:]:
+                    o.append(key)
 
     def _push_body(self, body, bodies_at, axis: int, signed_rate: float, node_id: str = "",
                    delay: float = 0.0, half: bool = False, jitter: bool = False) -> None:
@@ -2385,7 +2332,7 @@ class ConceptGraph:
                        for t in self._group_tokens())
         subs = tuple((rid, self._substance_key(rid), tuple(sorted((k, m.tobytes()) for k, m in S["marks"].items())),
                       tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
-                            for o in S["orders"]), tuple(sorted((k, round(v, 6)) for k, v in S.get("credit", {}).items())))
+                            for o in S["orders"]))
                      for rid, S in sorted(getattr(self, "_sub", {}).items()))
         return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ()) + ((subs,) if subs else ())
 

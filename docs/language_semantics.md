@@ -123,13 +123,17 @@ chooses node kinds uniformly; whether places should be as cheap as objects is an
 A field *asserts* them: it keeps rendering and executing them in the region it belongs to. So `(body (field X))`
 is an assertion inside a relative frame, and `(field (body X))` asserts a relative frame in space.
 
-**The rule.** Every motion leaf is a standing rule: every tick it acts on everything whose substance lies in its
-space. Loose substance moves a cell whenever the leaf's accumulated rate reaches one. Content that belongs to a body
-moves by driving that body (so solidity and contact apply); a body's own content is its leaves and its fields'
-(a field never moves itself, and a body it holds is not its content). Self-motion is the special case where the
-leaf's own body is in its space: the body moves, the leaf with it, and the leaf acts again from there. Before
-(flag off), a motion leaf in a body drove that body only, and any other motion leaf gave content one order when it
-entered its space, to cross it once, moving neither the bodies a field holds nor the body carrying the field.
+**The rule.** Every motion leaf is a standing rule: every tick it gives an order to everything whose substance lies
+in its space and has no order from it under way. Orders stay discrete, as on the earlier gameboard: substance is
+ordered across the space and a body by its own extent, one cell per tick, committed once given (the board is a
+diagram whose states can be enumerated, not a continuous simulation). Content that belongs to a body moves with that
+body (so solidity and contact apply); a body's own content is its leaves and its fields' (a field never moves
+itself, and a body it holds is not its content). Self-motion is the special case where the leaf's own body is in
+its space: the body moves, the leaf with it, and the leaf orders it again from there. Before (flag off), a motion
+leaf in a body drove that body only, and any other motion leaf ordered content only when it entered its space, so
+neither the bodies a field holds nor the body carrying the field were moved. (A first version, 25 Oct, replaced the
+orders with a continuous push each tick; it lost the committed moves that, for example, carry a self-observing
+oscillator's body across into the other observer's view, and was dropped.)
 
 **What changes.**
 
@@ -137,8 +141,8 @@ entered its space, to cross it once, moving neither the bodies a field holds nor
 | --- | --- | --- |
 | `(body universal/H (field bottom/H*))` | stays put | drives itself, as `(body universal/H bottom/H*)` does |
 | `(field (parallel top/H* (body universal/H)))` | stays put | a bubble machine: pushes each body out, spawns the next |
-| a body beside a conveyor field | carried one region-width | carried all the way, to the edge or an obstacle |
-| stuff on a conveyor | carried one region-width | carried every tick while in the region |
+| a body beside a conveyor field | carried one region-width | ordered again while on it: carried to the edge or an obstacle |
+| stuff on a conveyor | carried one region-width | ordered again while in the region |
 | fountain `(field (parallel universal bottom/V*))` | emits up to its own height | each emission pushes the last: a column rises to the top |
 | carried source on a pushed cart | sows a trail behind the cart | its emitting motion also drives the cart the same way |
 | `(body universal/H bottom/H*)` (self-motion) | drives itself | the same, bit for bit (now by the general rule) |

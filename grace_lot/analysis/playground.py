@@ -58,9 +58,9 @@ EXAMPLES = [
     ("Known still (void)", "(parallel center/V void/V* out)", STANDING),
     ("A tree gating another tree", "(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0", STANDING),
     ("Measure tree", "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0", STANDING),
-    ("Old language: a self-observing oscillator (it stalls under standing motion, which has no momentum)",
+    ("Self-observing oscillator",
      "(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) out) "
-     "| .0.0.1>.0.0.0 .0.1.1>.0.1.0"),
+     "| .0.0.1>.0.0.0 .0.1.1>.0.1.0", STANDING),
 ]
 # Examples of the new language: (title, program, flags); without flags, the config's (old) language.
 EXAMPLES += [

@@ -1415,6 +1415,15 @@ class StandingMotionTests(unittest.TestCase):
         self.assertEqual(int((v[0] > 0.75).sum()), int((v[8] > 0.75).sum()))        # the same amount of stuff
         self.assertTrue((v[8][:, 4:] > 0.75).all())                                  # pushed up against the edge
 
+    def test_the_self_observing_oscillator_swings_back(self):
+        from grace_lot.analysis import playground as PG
+        src = next(e[1] for e in PG.EXAMPLES if e[0] == "Self-observing oscillator")
+        d = PG.record(src, 24, {}, "configs/grace_v7_parts.toml", PG.STANDING)
+        cols = [float((np.array(f["drawn"]) > 0.6).nonzero()[1].mean()) for f in d["frames"]]
+        steps = np.sign(np.diff(cols))
+        turns = np.diff(steps[steps != 0])
+        self.assertGreaterEqual(int((turns != 0).sum()), 2)                        # left, right, left again
+
     def test_a_conveyor_carries_stuff_every_tick(self):
         v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")
         self.assertTrue((v[8][:, 8:11] > 0.75).all() and (v[8][:, :8] < 0.25).all())
