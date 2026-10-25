@@ -388,7 +388,9 @@ def offline_page(cfg_path: str, ticks: int = 24) -> str:
             d = first if states == {u["key"]: u["state"] for u in first["units"]} else record(e["program"], ticks, states, cfg_path, lot)
             d.pop("snapshots", None)                     # the graph viewer's, not shown on this page
             runs.append({"program": e["program"], "lot": lot, "states": states, "run": d})
-    html = page(cfg_path)
+    html = page(cfg_path).replace(
+        "Type a program and step it on the 12×12 gameboard. The server runs the real engine",
+        "Pick an example and step it on the 12×12 gameboard. This offline copy holds runs of the real engine")
     data = json.dumps({"ticks": ticks, "runs": runs}, separators=(",", ":"))
     return html.replace("const OFFLINE = null;", "const OFFLINE = " + data.replace("</", r"<\/") + ";")
 
