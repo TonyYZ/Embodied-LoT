@@ -2342,8 +2342,10 @@ class ConceptGraph:
                 bodies = [units[b] for b, (_, _, cells) in sorted(bodies_at.items())
                           if not isinstance(getattr(units[b], "node", None), FieldNode) and (space & cells).any()
                           and (self._own_figure(root_id, getattr(units[b], "node", units[b])) & cells & space).any()]
-                self._inside[key] = {b.node_id for b in bodies}
-                fresh = [b for b in bodies if not any(o[5] == node.node_id for o in b.orders)]
+                self._inside[key] = ids = {b.node_id for b in bodies}
+                groups = getattr(self, "_unit_groups", {})              # a unit carried by one this leaf drives
+                fresh = [b for b in bodies if not any(o[5] == node.node_id for o in b.orders)    # moves with it,
+                         and not ids & set(groups.get(b.node_id, ()))]                             # not twice
                 under_way = np.logical_or.reduce([o[0] for o in S["orders"] if o[7:] == [key]] + [none])
                 fresh_m = stuff & space & ~under_way
             else:

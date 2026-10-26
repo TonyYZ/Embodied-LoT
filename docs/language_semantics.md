@@ -150,7 +150,12 @@ oscillator's body across into the other observer's view, and was dropped.)
 | carried source on a pushed cart | sows a trail behind the cart | its emitting motion also drives the cart the same way |
 | `(body universal/H bottom/H*)` (self-motion) | drives itself | the same, bit for bit (now by the general rule) |
 | a ball in a hollow box | pushes the box by contact | the same: the walls are not in the ball's space |
-| a body riding inside a moving body | carried rigidly | driven as well as carried (rigid cargo: bare leaves of the carrier) |
+| a body riding inside a moving body | carried rigidly | the same: carried, not driven again by the carrier's leaf (26 Oct) |
+
+A leaf moves each thing in its region once, on the board. A unit inside a body that the same leaf drives already
+moves with that body (its place is held in the body's frame), so the leaf does not drive it again: a passenger rides at
+the carrier's speed, not twice it. Anything that moves a body from outside (a push, another field's motion) moves
+everything inside it too.
 
 Motion exists only in its region: what leaves the region stops, unless something behind pushes it on (the fountain,
 below). A sprinkler whose emission propels its own truck (in the direction it emits) may not be the intended

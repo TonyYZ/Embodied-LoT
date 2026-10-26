@@ -101,7 +101,7 @@ EXAMPLES = [
     ("a ball crosses a roomy box, then moves it only by pushing its wall",
      "(parallel (serial_h (body (field periphery/H bottom/V) (template center/H center/V (body universal/H "
      "bottom/H*))) void/V) out)"),
-    ("a body riding in a moving body is driven as well as carried",
+    ("a body riding in a moving body is carried, not driven twice",
      "(parallel (serial_h void/V (body bottom/V bottom/H* (template center/V center/H (body universal/H))) "
      "void/V void/V) out)"),
     ("a pusher drives a row of blocks against the edge, where they stop side by side",
