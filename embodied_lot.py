@@ -291,18 +291,9 @@ def _uncertain_extent(node) -> bool:
 
 
 def _soft_body(node) -> bool:
-    """SOFT_EDGES: an agent of uncertain extent drawn as an average over its placements. Under STANDING_MOTION its
-    size is a realization instead (``_sized_body``): one definite size per run, a rigid body."""
+    """SOFT_EDGES: an agent of uncertain extent drawn as an average over its placements. Under STANDING_MOTION a body
+    is rigid and fills its region: a smaller body is one the program places in a smaller region."""
     return _uncertain_extent(node) and not _standing()
-
-
-def _sized_body(node) -> bool:
-    """SOFT_EDGES with STANDING_MOTION: an agent of uncertain extent whose size is an unknown of the run, like unknown
-    motion (key ``"<node id>:size"``): its whole region ("1"), or 2/3 or 1/3 of it centred, 1/3 each."""
-    return _uncertain_extent(node) and _standing()
-
-
-SIZES = {"1": 1.0, "2/3": 2.0 / 3.0, "1/3": 1.0 / 3.0}
 
 
 def _soft_edge(node, region: Region, frame: Tuple[int, int]) -> bool:
@@ -1314,7 +1305,6 @@ class GroupToken:
         self.drive = [0.0, 0.0]                  # agency: accumulated self-propulsion, per axis
         self.anchor: Optional[Tuple[int, int]] = None   # where its region started when placed (frame cells)
         self.home: Optional[List[float]] = None          # where it was placed (STATIC_FIELDS: where a field spawns it)
-        self.span: Optional[List[float]] = None          # the extent of the region it was placed in (a sized body's frame)
 
     def rect(self, region: Region, fh: int, fw: int) -> Region:
         """Its window, carried along with the region it receives: a nested instance follows its parent."""
@@ -1788,9 +1778,7 @@ class ConceptGraph:
                     if (place or tok.position is None) and tok.node_id not in placed:   # new instances start in place
                         r0, r1, c0, c1 = home
                         tok.position = [(r0 + r1) / (2.0 * fh), (c0 + c1) / (2.0 * fw)]
-                        tok.extent = tok.span = [(r1 - r0) / fh, (c1 - c0) / fw]
-                        if _sized_body(node):           # its realized size, centred in its region
-                            tok.extent = [x * self._size_of(node) for x in tok.span]
+                        tok.extent = [(r1 - r0) / fh, (c1 - c0) / fw]
                         tok.anchor = (r0, c0)
                         tok.home = list(tok.position)
                         placed.add(tok.node_id)
@@ -2686,27 +2674,8 @@ class ConceptGraph:
 
     # -- unknown motion (PROBABILISTIC_MOTION) ---------------------------------------------------------
 
-    @property
-    def motion_states(self) -> dict:
-        """This realization of the unknowns (``unknown_motion_units``): a direction per unknown-motion unit, a size
-        per sized body. Setting it resizes the sized bodies already placed."""
-        return self.__dict__.get("_motion_states", {})
-
-    @motion_states.setter
-    def motion_states(self, states: dict) -> None:
-        self._motion_states = dict(states)
-        for n in self._body_nodes():
-            if _sized_body(n):
-                for t in n.instances.values():
-                    if t.span is not None:
-                        t.extent = [x * self._size_of(n) for x in t.span]
-
-    def _size_of(self, node) -> float:
-        return SIZES[self.motion_states.get(f"{node.node_id}:size", "1")]
-
     def unknown_motion_units(self) -> Dict[str, Tuple[str, List[str], "Orientation"]]:
-        """Unit key -> (kind, leaf ids, orientation) for every imagined universal* / neutral* leaf, and (kind "size")
-        for every sized body (``_sized_body``).
+        """Unit key -> (kind, leaf ids, orientation) for every imagined universal* / neutral* leaf.
 
         A unit is the leaf's innermost field or body node (its template copies share it), else the leaf;
         universal and neutral leaves of one unit are separate units. Keys look like ``"n4:universal"``.
@@ -2722,9 +2691,6 @@ class ConceptGraph:
             unit = groups[-1].split("@")[0] if groups else node.node_id
             key = f"{unit}:{kind}"
             out.setdefault(key, (kind, [], node.orientation))[1].append(node.node_id)
-        for node in self._body_nodes():
-            if _sized_body(node) and getattr(node, "role", None) == "imagined" and views.get(node.node_id):
-                out[f"{node.node_id}:size"] = ("size", [], None)
         return out
 
     def _resolve_motion(self, node: "ObjectNode"):
@@ -3322,7 +3288,7 @@ class ConceptGraph:
                     continue
                 n = 1 + max((k[-1] for k in keys if k != base), default=0)
                 tok = node.token(base + ("s", n))
-                tok.position, tok.extent, tok.span = list(first.home), list(first.extent), first.span
+                tok.position, tok.extent = list(first.home), list(first.extent)
                 tok.anchor, tok.home = first.anchor, list(first.home)
 
     def _move_substance(self, root_id: str) -> None:

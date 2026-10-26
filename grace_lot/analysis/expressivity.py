@@ -103,21 +103,16 @@ def program_of(src: str):
 
 def render(program: str, frames: int, states="all", size: int = SIZE) -> list:
     """[(joint state, (frames, channels, 12, 12) boards)] for every joint state of the unknown-motion units, or
-    the one at index ``states``. The sizes of bodies of unknown size (standing motion) are averaged over (weighted by
-    their prior): a body's size is uncertainty about what is drawn, as soft edges drew it, not another scenario."""
+    the one at index ``states``."""
     from grace_lot.lot_adapter.adapter import motion_combinations, rollout
     p = program_of(program)
-    groups = {}                                   # motion states -> [(all states, weight)]
-    for c, w in motion_combinations(p, size):
-        groups.setdefault(tuple(sorted((k, v) for k, v in c.items() if not k.endswith(":size"))), []).append((c, w))
-    keys = list(groups)
+    combos = [c for c, _ in motion_combinations(p, size)]
     if states != "all":
-        keys = [keys[min(int(states), len(keys) - 1)]]
+        combos = [combos[min(int(states), len(combos) - 1)]]
     out = []
-    for key in keys:
-        total = sum(w for _, w in groups[key])
-        v = sum(w / total * (lambda r: r if r.ndim == 4 else r[:, None])(rollout(p, frames, size, c)) for c, w in groups[key])
-        out.append((dict(key), v))
+    for c in combos:
+        v = rollout(p, frames, size, c)
+        out.append((c, v if v.ndim == 4 else v[:, None]))
     return out
 
 

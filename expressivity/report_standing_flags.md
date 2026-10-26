@@ -28,22 +28,22 @@ ___   ???   ############
 
 ## PASS: containment, prototype: U container, object inside
 
-`(parallel bottom/V periphery/H (template center/H (body universal/H)))`  
+`(parallel bottom/V periphery/H (template center/H (template center/V (body universal/H))))`  
 should match; matches the sketch  
-The intended prototype: bottom and side walls, and a body placed in the central slot.
+The intended prototype: bottom and side walls, and a body placed in the central slot. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
+Outside the search grammar: depth 6, more than max_depth = 5
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####??#?####
-            ####??#?####
-            ####??#?####
-            ####??#?####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -61,13 +61,13 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -77,13 +77,13 @@ state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -93,81 +93,81 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   #X#   ####????####
-            ####???#####
             ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####????####
-#o#   #?#   ####????####
-###   #X#   ####?#######
-            #######?####
+#o#   ###   ####????####
+#o#   ###   ####????####
+###   #X#   ############
+            ############
+            ############
+            ############
             ####????####
             ####????####
             ####....####
             ####....####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 ## PASS: containment, sand: the object is a strip moving randomly
@@ -181,13 +181,13 @@ Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -197,13 +197,13 @@ state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -213,101 +213,101 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   #X#   ####????####
-            ####???#####
             ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####????####
-#o#   #?#   ####????####
-###   #X#   ####?#######
-            #######?####
+#o#   ###   ####????####
+#o#   ###   ####????####
+###   #X#   ############
+            ############
+            ############
+            ############
             ####????####
             ####????####
             ####....####
             ####....####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 ## PASS: containment, variant: the container flipped upside down (Π)
 
-`(template top/V* (parallel bottom/V periphery/H (template center/H (body universal/H))))`  
+`(template top/V* (parallel bottom/V periphery/H (template center/H (template center/V (body universal/H)))))`  
 should match; matches the sketch  
-Your variant: the whole U as material in a top/V* template, which should turn it into a Π.
+Your variant: the whole U as material in a top/V* template, which should turn it into a Π. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 5
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ###   ###   ############
-#o#   #?#   ############
+#o#   ###   ############
 #o#   #?#   ############
             ############
-            ####?#??####
-            ####?#??####
-            ####?#??####
-            ####?#??####
+            ############
+            ############
+            ############
+            ############
             ####????####
             ####????####
             ####????####
@@ -317,13 +317,13 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ###   ###   ############
-#o#   #?#   ############
+#o#   ###   ############
 #o#   #?#   ############
             ############
-            ####?#??####
-            ####?#??####
-            ####?#??####
-            ####?#??####
+            ############
+            ############
+            ############
+            ############
             ####????####
             ####????####
             ####????####
@@ -341,13 +341,13 @@ Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
-#o#   #?#   ####....####
+#o#   ###   ####....####
 ###   ###   ####....####
             ####....####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ####?##?####
+            ####?##?####
+            ####?##?####
+            ####?##?####
             ############
             ############
             ############
@@ -365,12 +365,12 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #*#   #.#   ####....####
-#*#   #?#   ####....####
+#*#   ###   ####....####
 ###   ###   ####....####
             ####....####
             ####????####
-            ####????####
-            ####????####
+            ############
+            ############
             ####????####
             ############
             ############
@@ -386,8 +386,8 @@ state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ####....####
             ####????####
             ####....####
-            ####????####
-            #####?#?####
+            ############
+            ############
             ############
             ############
             ############
@@ -396,22 +396,22 @@ state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 
 ## PASS: containment, variant: container opening to the right (⊏)
 
-`(parallel periphery/V bottom/H (template center/V (body universal/V)))`  
+`(parallel periphery/V bottom/H (template center/V (template center/H (body universal/V))))`  
 should match; matches the sketch  
-Top and bottom walls, a left wall; the object in the middle.
+Top and bottom walls, a left wall; the object in the middle. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/H).
 
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
+Outside the search grammar: depth 6, more than max_depth = 5
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ###   ###   ############
-#oo   #??   ############
+#oo   ##?   ############
 ###   ###   ############
             ############
-            ####????????
-            ####????????
             ########????
-            ####????????
+            ########????
+            ########????
+            ########????
             ############
             ############
             ############
@@ -514,12 +514,12 @@ Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #_#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
             ####????####
-            ####????####
-            ####????####
+            ############
+            ############
             ####????####
             ############
             ############
@@ -538,12 +538,12 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
             ####????####
-            ####????####
-            ####????####
+            ############
+            ############
             ####????####
             ############
             ############
@@ -559,8 +559,8 @@ state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ####????####
             ####????####
             ####....####
-            ####????####
-            #####?#?####
+            ############
+            ############
             ############
             ############
             ############
@@ -621,18 +621,18 @@ Outside the search grammar: .1.0.1: a serial_v at depth 4; at depth 4 and below 
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   X#X   ##..##??????
-#o#   X#X   ##..##??????
-###   ##X   ##..##??????
-            ##..##??????
-            ##..##??????
-            ##..##??????
-            ##..##??????
-            ##..##??????
-            ######??????
-            ######??????
-            ######??????
-            ######??????
+#o#   X##   ##..##??##??
+#o#   X##   ##..##??##??
+###   ###   ##..##??##??
+            ##..##??##??
+            ##..##??##??
+            ##..##??##??
+            ##..##??##??
+            ##..##??##??
+            ######??##??
+            ######??##??
+            ######??##??
+            ######??##??
 ```
 
 ## PASS: basket, superposed: surrounded, with a bottom
@@ -752,13 +752,13 @@ Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -776,13 +776,13 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -792,13 +792,13 @@ state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -808,81 +808,81 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   #X#   ####????####
-            ####???#####
             ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####????####
-#o#   #?#   ####????####
-###   #X#   ####?#######
-            #######?####
+#o#   ###   ####????####
+#o#   ###   ####????####
+###   #X#   ############
+            ############
+            ############
+            ############
             ####????####
             ####????####
             ####....####
             ####....####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####?#######
-#o#   #?#   ############
-###   #X#   ####????####
-            ####?##?####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 ## PASS: containment, sand: a ball moving in the hollowed basket
@@ -896,13 +896,13 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
-#o#   #?#   ####....####
+#o#   ###   ####....####
 ###   ###   ####....####
             ####....####
-            ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -912,13 +912,13 @@ state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | en
 state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
-#o#   #?#   ####....####
+#o#   ###   ####....####
 ###   ###   ####....####
             ####....####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -928,81 +928,81 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 state {'n11:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
-#o#   #?#   ####....####
-###   #X#   ####...?####
-            ####.???####
-            ####.???####
+#o#   ###   ####....####
+###   #X#   ####....####
+            ####....####
             ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n11:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####....####
-#o#   #?#   ####...?####
-###   #X#   ####???#####
-            ####????####
+#o#   ###   ####....####
+###   #X#   ############
+            ############
+            ############
+            ############
             ####????####
             ####????####
             ####....####
             ####....####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+            ####....####
+            ####....####
 ```
 
 state {'n11:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####????####
-#o#   #?#   ####???#####
-###   #X#   ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n11:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####????####
-#o#   #?#   ####???#####
-###   #X#   ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 state {'n11:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #?#   ####????####
-#o#   #?#   ####???#####
-###   #X#   ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
-            ####????####
+#o#   #X#   ############
+#o#   #X#   ############
+###   #X#   ############
+            ############
+            ############
+            ############
+            ############
+            ############
+            ####....####
+            ####....####
+            ####....####
+            ####....####
 ```
 
 ## PASS: containment, sand: the superposed basket, packed to the edge, holds a small ball
@@ -1016,13 +1016,13 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -1032,13 +1032,13 @@ state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            ####????####
-            #####???####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -1056,12 +1056,12 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ###   ###   ############
-#o#   #.#   ############
+#o#   #?#   ############
 ###   ###   ############
             ############
             ####....####
-            ####????####
-            ####????####
+            ############
+            ############
             ####....####
             ############
             ############
@@ -1072,13 +1072,13 @@ state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | en
 state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ###   ###   ############
-#o#   #.#   ############
+#o#   #?#   ############
 ###   ###   ############
             ############
             ####....####
             ####....####
-            ####????####
-            #####???####
+            ############
+            ############
             ############
             ############
             ############
@@ -1087,38 +1087,38 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 
 ## PASS: containment, anchored: the object moves around inside
 
-`(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* universal/V*))))`  
+`(parallel (field (parallel bottom/V periphery/H)) (template center/H (template center/V (body (parallel center/V universal/H* universal/V*)))))`  
 should match; matches the sketch  
-The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
+The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 5
 
-state {'n10:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ####????####
+            ############
+            ############
+            ####????####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
 #o#   #?#   ####????####
 ###   ###   ####????####
             ####????####
             ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ####....####
             ############
             ############
-            ############
-            ############
-```
-
-state {'n10:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   #?#   ####????####
-#o#   #?#   ####????####
-###   ###   ####????####
-            ####????####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
             ############
             ############
             ############
@@ -1127,38 +1127,38 @@ state {'n10:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 
 ## PASS: containment, anchored: the object is a strip moving randomly
 
-`(parallel (field (parallel bottom/V periphery/H)) (template center/H (body universal/H* universal/V* center/V)))`  
+`(parallel (field (parallel bottom/V periphery/H)) (template center/H (template center/V (body universal/H* universal/V* center/V))))`  
 should match; matches the sketch  
-The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
+The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: .1.0.0: a parallel at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
+Outside the search grammar: depth 6, more than max_depth = 5
 
-state {'n10:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ####????####
+            ############
+            ############
+            ####????####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
 #o#   #?#   ####????####
 ###   ###   ####????####
             ####????####
             ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ####....####
             ############
             ############
-            ############
-            ############
-```
-
-state {'n10:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   #?#   ####????####
-#o#   #?#   ####????####
-###   ###   ####????####
-            ####????####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
             ############
             ############
             ############
@@ -1176,12 +1176,12 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n15:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
-#o#   #?#   ####....####
+#o#   ###   ####....####
 ###   ###   ####....####
             ####....####
             ####????####
-            ####????####
-            ####????####
+            ############
+            ############
             ####????####
             ############
             ############
@@ -1197,8 +1197,8 @@ state {'n15:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
             ####....####
             ####????####
             ####....####
-            ####????####
-            #####?#?####
+            ############
+            ############
             ############
             ############
             ############
@@ -1211,7 +1211,7 @@ state {'n15:universal': 'b'}, frame 3: sketch | engine at sketch resolution | en
 #o#   #X#   ####....####
 ###   ###   ####....####
             ####....####
-            ####?...####
+            ####....####
             ####....####
             ####....####
             ####????####
@@ -1227,7 +1227,7 @@ state {'n15:universal': 'b'}, frame 6: sketch | engine at sketch resolution | en
 #o#   #X#   ####....####
 ###   ###   ####....####
             ####....####
-            ####?...####
+            ####....####
             ####....####
             ####....####
             ####????####
@@ -1243,7 +1243,7 @@ state {'n15:universal': 'b'}, frame 9: sketch | engine at sketch resolution | en
 #o#   #X#   ####....####
 ###   ###   ####....####
             ####....####
-            ####?...####
+            ####....####
             ####....####
             ####....####
             ####????####
@@ -1259,7 +1259,7 @@ state {'n15:universal': 'b'}, frame 12: sketch | engine at sketch resolution | e
 #o#   #X#   ####....####
 ###   ###   ####....####
             ####....####
-            ####?...####
+            ####....####
             ####....####
             ####....####
             ####????####
@@ -1275,7 +1275,7 @@ state {'n15:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
 #o#   #X#   ####....####
 ###   ###   ####....####
             ####....####
-            ####?...####
+            ####....####
             ####....####
             ####....####
             ####????####
@@ -1296,12 +1296,12 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
             ####????####
-            ####????####
-            ####????####
+            ############
+            ############
             ####????####
             ############
             ############
@@ -1317,8 +1317,8 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
             ####????####
             ####????####
             ####....####
-            ####????####
-            #####?#?####
+            ############
+            ############
             ############
             ############
             ############
@@ -1327,38 +1327,38 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 
 ## PASS: containment, anchored: a ball moving in the superposed basket
 
-`(parallel (field (parallel periphery/H bottom/V)) (template center/H (body (parallel center/V universal/H* universal/V*))))`  
+`(parallel (field (parallel periphery/H bottom/V)) (template center/H (template center/V (body (parallel center/V universal/H* universal/V*)))))`  
 should match; matches the sketch  
-The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
+The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 5
 
-state {'n10:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
+```
+#o#   #?#   ####????####
+#o#   ###   ####????####
+###   ###   ####????####
+            ####????####
+            ####????####
+            ############
+            ############
+            ####????####
+            ############
+            ############
+            ############
+            ############
+```
+
+state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
 #o#   #?#   ####????####
 ###   ###   ####????####
             ####????####
             ####????####
-            ####??#?####
-            ####??#?####
-            ####????####
+            ####....####
             ############
             ############
-            ############
-            ############
-```
-
-state {'n10:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   #?#   ####????####
-#o#   #?#   ####????####
-###   ###   ####????####
-            ####????####
-            ####????####
-            ####????####
-            #####???####
-            #####???####
             ############
             ############
             ############
@@ -1576,13 +1576,13 @@ Outside the search grammar: depth 6, more than max_depth = 5
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            ####??#?####
-            ####????####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -1592,13 +1592,13 @@ state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | en
 state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####????####
-            ####????####
-            ####????####
-            #####???####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -1823,14 +1823,14 @@ state {'n12:universal': 'a'}, frame 15: sketch | engine at sketch resolution | e
                               ........###??###........
                               ........###??###........
                               ........###??###........
-                              ........###??###........
-                              ........###??###........
                               ........########........
                               ........########........
                               ........########........
-                              ........###??###........
-                              ........###??###........
-                              ........###??###........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
                               ........########........
                               ........########........
                               ........########........
@@ -1851,14 +1851,14 @@ state {'n12:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
                               ........###??###........
                               ........###??###........
                               ........###??###........
-                              ........###??###........
-                              ........###??###........
-                              ........###?####........
-                              ........###?####........
-                              ........###?####........
-                              ........###??###........
-                              ........###??###........
-                              ........###??###........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
+                              ........########........
                               ........########........
                               ........########........
                               ........########........
@@ -1869,24 +1869,24 @@ state {'n12:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
                               ........########........
 ```
 
-## PASS: basket, a body filling its slot is an object with room, not a solid block
+## PASS: basket, an object with room is a body the program places in a smaller slot
 
-`(parallel periphery/H bottom/V (template center/H (body universal/H)))`  
+`(parallel periphery/H bottom/V (template center/H (template center/V (body universal/H))))`  
 should match; matches the sketch  
-Soft edges: the size of the body is uncertain, so it is drawn at its core and leaves room around it.
+Soft edges: the size of the body is uncertain, so it is drawn at its core and leaves room around it. (A body that fills its slot is drawn like a solid block of that shape; it still moves as a unit.)
 
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
+Outside the search grammar: depth 6, more than max_depth = 5
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
+#o#   ###   ####????####
 ###   ###   ####????####
             ####????####
-            ####??#?####
-            ####??#?####
-            ####??#?####
-            ####??#?####
+            ############
+            ############
+            ############
+            ############
             ############
             ############
             ############
@@ -1967,16 +1967,16 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 *.*   ?.?   ????....????
 ***   ???   ????....????
-*o*   ???   ????....????
+*#*   ?#?   ????....????
             ????....????
             ????????????
             ????????????
             ????????????
             ????????????
-            ????????????
-            ????????????
-            ??????#?????
-            ????????????
+            ????####????
+            ????####????
+            ????####????
+            ????####????
 ```
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
@@ -1985,10 +1985,10 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ***   ?.?   ????....????
 ***   ?.?   ????....????
             ????....????
-            ????...?????
-            ????...?????
-            ????...?????
-            ????...?????
+            ????....????
+            ????....????
+            ????....????
+            ????....????
             ????....????
             ????....????
             ????....????
@@ -2046,21 +2046,21 @@ Outside the search grammar: depth 8, more than max_depth = 5
 state {'n14:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
 ```
 *****__*****   #??#........   ###..###................
-*****__*****   ##?#........   ###..###................
+*****__*****   ####........   ###..###................
 *****__*****   ####........   ###..###................
                               ###..###................
                               ###..###................
                               ###..###................
                               ###..###................
                               ###..###................
-                              ###??###................
-                              ###??###................
-                              ####?###................
-                              ####?###................
-                              ####?###................
-                              ###??###................
-                              ###??###................
-                              ###??###................
+                              ########................
+                              ########................
+                              ########................
+                              ########................
+                              ########................
+                              ########................
+                              ########................
+                              ########................
                               ########................
                               ########................
                               ########................
@@ -2074,21 +2074,21 @@ state {'n14:universal': 'a'}, frame 15: sketch | engine at sketch resolution | e
 state {'n14:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
 ```
 *****__*****   ........#??#   ................###..###
-*****__*****   ........#?##   ................###..###
+*****__*****   ........####   ................###..###
 *****__*****   ........####   ................###..###
                               ................###..###
                               ................###..###
                               ................###..###
                               ................###..###
                               ................###..###
-                              ................###??###
-                              ................###??###
-                              ................###?####
-                              ................###?####
-                              ................###?####
-                              ................###??###
-                              ................###??###
-                              ................###??###
+                              ................########
+                              ................########
+                              ................########
+                              ................########
+                              ................########
+                              ................########
+                              ................########
+                              ................########
                               ................########
                               ................########
                               ................########
@@ -2149,7 +2149,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 
 `(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))))`  
 should match; matches the sketch  
-Each tick a new body appears at home while the last rises, so a line grows up out of the field. Its width is unknown (a size per run), so at home, where each size sits differently, the line reads as content with room.
+Each tick a new body appears at home while the last rises, so a line grows up out of the field.
 
 Outside the search grammar: depth 7, more than max_depth = 5
 
@@ -2163,10 +2163,10 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 *****__*****   ????????????   ????????????
 *****__*****   ????????????   ????????????
 *****__*****   ????????????   ????????????
-************   ????????????   ????????????
-************   ????????????   ????????????
-************   ????????????   ????????????
-************   ????????????   ????????????
+************   ?????##?????   ?????##?????
+************   ?????##?????   ?????##?????
+************   ?????##?????   ?????##?????
+************   ?????##?????   ?????##?????
 ```
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
@@ -2179,10 +2179,10 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 *****##*****   ?????##?????   ?????##?????
 *****##*****   ?????##?????   ?????##?????
 *****##*****   ?????##?????   ?????##?????
-*****oo*****   ????????????   ????????????
-*****oo*****   ????????????   ????????????
-*****oo*****   ????????????   ????????????
-************   ????????????   ????????????
+*****##*****   ?????##?????   ?????##?????
+*****##*****   ?????##?????   ?????##?????
+*****##*****   ?????##?????   ?????##?????
+************   ?????##?????   ?????##?????
 ```
 
 ## PASS: growth, contrast: a body beside a field, not in it, rises alone
@@ -2195,10 +2195,10 @@ Outside the search grammar: depth 6, more than max_depth = 5
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
+*#*   ?#?   ?????##?????
+*#*   ?#?   ?????##?????
 *#*   ?X?   ?????##?????
-*#*   ?X?   ?????#??????
-*#*   ?X?   ?????#??????
-*#*   ?X?   ????????????
+*#*   ?X?   ?????##?????
 *#*   ?X?   ?????..?????
 *?*   ?X?   ?????..?????
             ?????..?????
@@ -2350,10 +2350,10 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ************   ????????????   ????????????
 ************   ????????????   ????????????
 ************   ????????????   ????????????
-****####****   ????XXXX?###   ????....?###
-****####****   ????XXXX?###   ????....?###
-****####****   ????XXXX???#   ????....???#
-****####****   ????XXXX????   ????....????
+****####****   ????XXXX####   ????....####
+****####****   ????XXXX####   ????....####
+****####****   ????XXXX####   ????....####
+****####****   ????XXXX####   ????....####
 ************   ????????????   ????????????
 ************   ????????????   ????????????
 ************   ????????????   ????????????
@@ -2459,24 +2459,24 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 
 `(serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) neutral/V neutral/V)`  
 should match; matches the sketch  
-A push is passed along: the pushed block pushes the one ahead. None may leave the board, so at the edge the row stops, pusher included. The blocks' widths are unknown (a size per run), so the averaged board shows the packed row with uncertain edges.
+A push is passed along: the pushed block pushes the one ahead. None may leave the board, so at the edge the row stops, pusher included, the blocks side by side.
 
 Outside the search grammar: .1: serial_h has 6 children; it may have 1 to 3; .1.0.0: a parallel at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
-************   ........??#?   ........??#?
-************   ........??#?   ........??#?
-************   ........?###   ........?###
-************   ........?###   ........?###
-________*###   .......??###   .......??###
-________*###   .......??###   .......??###
-________*###   .......??###   .......??###
-________*###   .......??###   .......??###
-************   ........?###   ........?###
-************   ........?###   ........?###
-************   ........??#?   ........??#?
-************   ........??#?   ........??#?
+************   ......######   ......######
+************   ......######   ......######
+************   ......######   ......######
+************   ......######   ......######
+____**######   ......######   ......######
+____**######   ......######   ......######
+____**######   ......######   ......######
+____**######   ......######   ......######
+************   ......######   ......######
+************   ......######   ......######
+************   ......######   ......######
+************   ......######   ......######
 ```
 
 ## PASS: pushing, a ball pushes a sand pile across open ground; at the edge the pile keeps its shape
@@ -2489,18 +2489,18 @@ Outside the search grammar: .1: serial_h has 6 children; it may have 1 to 3; .1.
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
-************   ........??..   ........??..
-************   ........??..   ........??..
-************   ........??..   ........??..
-************   ........??..   ........??..
-________**##   ........?###   ........?###
-________**##   ........?###   ........?###
-________**##   ........?###   ........?###
-________**##   ........?###   ........?###
-************   ........??..   ........??..
-************   ........??..   ........??..
-************   ........??..   ........??..
-************   ........??..   ........??..
+************   ........##..   ........##..
+************   ........##..   ........##..
+************   ........##..   ........##..
+************   ........##..   ........##..
+________**##   ........####   ........####
+________**##   ........####   ........####
+________**##   ........####   ........####
+________**##   ........####   ........####
+************   ........##..   ........##..
+************   ........##..   ........##..
+************   ........##..   ........##..
+************   ........##..   ........##..
 ```
 
 ## PASS: support, prototype: object resting on a floor
@@ -2512,13 +2512,13 @@ Floor in the bottom strip, the object in the strip just above it, empty above.
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ...   ...   ............
-ooo   ???   ............
+ooo   ?#?   ............
 ###   ###   ............
             ............
-            ????????????
-            ????????????
-            ?????##?????
-            ????????????
+            ????####????
+            ????####????
+            ????####????
+            ????####????
             ############
             ############
             ############
@@ -2536,12 +2536,12 @@ Outside the search grammar: .1.1.0: a parallel at depth 4; at depth 4 and below 
 state {'n5:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ...   ...   ............
-ooo   ???   ............
+ooo   ###   ............
 ###   ###   ............
             ............
             ????????????
-            ????????????
-            ????????????
+            ############
+            ############
             ????????????
             ############
             ############
@@ -2552,12 +2552,12 @@ ooo   ???   ............
 state {'n5:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ...   ...   ............
-ooo   ???   ............
+ooo   ###   ............
 ###   ###   ............
             ............
             ????????????
-            ????????????
-            ????????????
+            ############
+            ############
             ????????????
             ############
             ############
@@ -2573,10 +2573,10 @@ A gap between the floor and the object.
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
-...   XXX   ????????????
-ooo   XXX   ????????????
-###   ###   ?????##?????
-            ????????????
+...   XXX   ????####????
+ooo   XXX   ????####????
+###   ###   ????####????
+            ????####????
             ............
             ............
             ............
@@ -2596,13 +2596,13 @@ The surface is above the object: suspension, not support.
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ...   XXX   ############
-ooo   ???   ############
+ooo   ?#?   ############
 ###   XXX   ############
             ############
-            ????????????
-            ????????????
-            ?????##?????
-            ????????????
+            ????####????
+            ????####????
+            ????####????
+            ????####????
             ............
             ............
             ............

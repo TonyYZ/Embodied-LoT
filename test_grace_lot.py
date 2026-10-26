@@ -1445,29 +1445,30 @@ class StandingMotionTests(unittest.TestCase):
         self.assertTrue((stuff[0][6, 4:8] == 0.5).all() and (stuff[9][6, 4:8] < 0.4).all())   # resolved where it went
         self.assertTrue((fog[9][6, 4:8] == 0.5).all())                                           # a field re-asserts
 
-    def test_a_ball_of_unknown_size_is_rigid_in_each_size_realization(self):
+    def test_the_program_states_a_bodys_size(self):
         from grace_lot.analysis.expressivity import program_of
         from grace_lot.lot_adapter.adapter import motion_combinations
         from grace_lot.lot_adapter.program import compile_program
         from embodied_lot import FieldNode
-        src = "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* universal/V*))))"
-        combos = motion_combinations(program_of(src), 12)
-        self.assertEqual(sorted({c[0][k] for c in combos for k in c[0] if k.endswith(":size")}), ["1", "1/3", "2/3"])
+        ball = "(body (parallel center/V universal/H* universal/V*))"
         moved = {}
-        for states, w in combos:
+        for name, slot in (("fills its slot", f"(template center/H {ball})"),
+                           ("smaller slot", f"(template center/H (template center/V {ball}))")):
+            src = f"(parallel (field (parallel bottom/V periphery/H)) {slot})"
+            combos = motion_combinations(program_of(src), 12)
+            self.assertEqual(len(combos), 2)                                     # the direction only: no size unknown
             g = compile_program(program_of(src))
             g.grid = (12, 12)
             g.reset_gates()
             g.assign_roles()
-            g.motion_states = states
+            g.motion_states = combos[0][0]
             tok = next(t for t in g._tokens().values() if not isinstance(t.node, FieldNode))
             start, extent = list(tok.position), list(tok.extent)
             for _ in range(6):
                 g.step()
-            self.assertEqual(tok.extent, extent)                                 # rigid: its size never changes
-            size = next(v for k, v in states.items() if k.endswith(":size"))
-            moved[size] = moved.get(size, False) or tok.position != start
-        self.assertEqual(moved, {"1": False, "2/3": True, "1/3": True})          # room only when smaller than its slot
+            self.assertEqual(tok.extent, extent)                                 # rigid
+            moved[name] = tok.position != start
+        self.assertEqual(moved, {"fills its slot": False, "smaller slot": True})
 
     def test_a_conveyor_carries_stuff_every_tick(self):
         v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")

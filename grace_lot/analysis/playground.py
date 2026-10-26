@@ -65,9 +65,9 @@ EXAMPLES += [
     ("a basket by superposition (surrounded, with a bottom)", "(parallel periphery/H bottom/V out)"),
     ("a basket by hollowing a block", "(parallel universal/H (template center/H upper/V void/H) out)"),
     ("a ball in a sand basket (packed to the board's edge, the sand holds)",
-     "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)"),
+     "(parallel periphery/H bottom/V (template center/H center/V (serial_v (serial_h (body (parallel universal/H universal/H* universal/V*)) void/V) void/H)) out)"),
     ("a ball beside a field basket (the walls hold)",
-     "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)"),
+     "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (serial_v (serial_h (body (parallel universal/H universal/H* universal/V*)) void/V) void/H)) out)"),
     ("a plant (a source field under upward motion)",
      "(parallel (template bottom/V center/H (field universal/H)) bottom/V* out)"),
     ("a spawner (a field holding a rising body)",
@@ -103,9 +103,8 @@ EXAMPLES += [
      "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)"),
     ("through fog (a field) the path closes behind",
      "(parallel (serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H) out)"),
-    ("a ball of unknown size in fixed walls (pick its size: full, it cannot move; smaller, it has room)",
-     "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* "
-     "universal/V*))) out)"),
+    ("a ball that fills its slot in a closed box cannot move (the program states its size)",
+     "(parallel (field (parallel periphery/H bottom/V top/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)"),
     ("periphery motion gathers two strips at the centre",
      "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)"),
 ]
@@ -246,7 +245,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
     prog, issues, g = prepare(src, cfg_path, lot)
     static = embodied_lot.STATIC_FIELDS and embodied_lot.PURE_CLAIMS
     units = {k: kind for k, (kind, _, _) in sorted(g.unknown_motion_units().items())}
-    options = {"universal": ["a", "b"], "neutral": ["still", "a", "b"], "size": ["1", "2/3", "1/3"]}
+    options = {"universal": ["a", "b"], "neutral": ["still", "a", "b"]}
     states = {k: states.get(k, options[kind][0]) for k, kind in units.items()}
     states = {k: v if v in options[units[k]] else options[units[k]][0] for k, v in states.items()}
     g.motion_states = dict(states)
@@ -401,16 +400,13 @@ def _examples() -> list:
 def offline_page(cfg_path: str, ticks: int = 24) -> str:
     """The board-first page with every example's runs built in (each joint state of its unknown motion, ``ticks``
     ticks, under its own language switches), so it plays without the server: a phone, an e-mail attachment. Programs
-    and switches other than the examples' cannot run offline; the page says so. An example with more than 9 joint
-    states keeps only those where all its bodies of unknown size have one size."""
+    and switches other than the examples' cannot run offline; the page says so."""
     runs = []
     for e in _examples():
         lot = {k: bool(e["lot"].get(k, False)) for k in SEMANTICS}
         first = record(e["program"], ticks, {}, cfg_path, lot)
         options = [dict(zip([u["key"] for u in first["units"]], c))
                    for c in itertools.product(*[u["options"] for u in first["units"]])]
-        if len(options) > 9:                     # many bodies of unknown size: built in with one size for all
-            options = [o for o in options if len({v for k, v in o.items() if k.endswith(":size")}) <= 1]
         for states in options:
             d = first if states == {u["key"]: u["state"] for u in first["units"]} else record(e["program"], ticks, states, cfg_path, lot)
             d.pop("snapshots", None)                     # the graph viewer's, not shown on this page

@@ -199,21 +199,13 @@ $('program').value = BOOT.examples[0].program;
 showSemantics();
 
 const OFFLINE = null;          // the offline copy (playground --offline) puts every example's runs here
-let lastSize = null;           // the size last picked in the menu (offline: some examples have one size for all)
 
 function offlineRun() {         // the built-in run of this example, switches and motion states
   const prog = $('program').value.trim(), same = r => r.program === prog && BOOT.semantics.every(k => !!r.lot[k] === !!lot[k]);
   const runs = OFFLINE.runs.filter(same);
   if (!runs.length) return {error: 'This offline copy only has the examples built in, with their own switches. '
     + 'To run other programs or switches, start the playground server (python -m grace_lot.analysis.playground).'};
-  const find = () => runs.find(r => Object.entries(r.states).every(([k, v]) => states[k] === undefined || states[k] === v));
-  let hit = find();
-  if (!hit && lastSize) {                      // built in with one size for all bodies: give them all the one picked
-    Object.keys(states).forEach(k => { if (k.endsWith(':size')) states[k] = lastSize; });
-    hit = find();
-  }
-  return hit ? hit.run : {error: 'This combination is not built into the offline copy: here every body takes the same '
-    + 'size. Pick one size for all of them (or run the playground server for any combination).'};
+  return (runs.find(r => Object.entries(r.states).every(([k, v]) => states[k] === undefined || states[k] === v)) || runs[0]).run;
 }
 
 async function run() {
@@ -252,7 +244,7 @@ function showUnits() {
   if (!D.units.length) { $('units').innerHTML = ''; return; }
   $('units').innerHTML = '<span class="muted" style="font-size:.88rem">Unknown motion, this realization:</span> ' + D.units.map(u =>
     `<label>${esc(u.key)} <select data-key="${esc(u.key)}">${u.options.map(o => `<option${o === u.state ? ' selected' : ''}>${o}</option>`).join('')}</select></label>`).join('');
-  $('units').querySelectorAll('select').forEach(s => s.onchange = () => { states[s.dataset.key] = s.value; if (s.dataset.key.endsWith(':size')) lastSize = s.value; run(); });
+  $('units').querySelectorAll('select').forEach(s => s.onchange = () => { states[s.dataset.key] = s.value; run(); });
 }
 
 function board(svg, img, f, overlays) {

@@ -37,8 +37,7 @@ def _state_signature(graph) -> tuple:
 def motion_combinations(program: P, size: int) -> list:
     """Every joint state of the program's unknown-motion units, with its prior weight.
 
-    universal*: "a" / "b" (one way or the other), 1/2 each; neutral*: "still" 1/2, "a" 1/4, "b" 1/4; a body of
-    unknown size (standing motion): "1", "2/3", "1/3", 1/3 each.
+    universal*: "a" / "b" (one way or the other), 1/2 each; neutral*: "still" 1/2, "a" 1/4, "b" 1/4.
     A program without unknown motion has one combination, ``({}, 1.0)``. Memoised per program and semantics.
     """
     key = (as_program(program), size, _semantics())
@@ -55,19 +54,17 @@ _combination_cache: "OrderedDict[tuple, list]" = OrderedDict()
 
 def _motion_combinations(program: P, size: int) -> list:
     import itertools
-    import embodied_lot as E
-    tree = as_program(program).tree
-    if not any(q.params[2] and E.TRIGRAM_PATTERNS[q.params[0]] in E._UNKNOWN_MOTION for q in leaves(tree)) \
-            and not (E._standing() and E.SOFT_EDGES and any(q.kind == "body" for _, q in nodes(tree))):
-        return [({}, 1.0)]                        # no unknown motion and no body of unknown size: nothing to compile
+    from embodied_lot import _UNKNOWN_MOTION, TRIGRAM_PATTERNS
+    if not any(q.params[2] and TRIGRAM_PATTERNS[q.params[0]] in _UNKNOWN_MOTION
+               for q in leaves(as_program(program).tree)):
+        return [({}, 1.0)]                        # no unknown-motion leaf: nothing to compile
     graph = compile_program(program)
     graph.grid = (size, size)
     graph.reset_gates()
     if graph.dynamics == "gameboard":
         graph.assign_roles()
     units = sorted(graph.unknown_motion_units().items())
-    opts = {"universal": [("a", 0.5), ("b", 0.5)], "neutral": [("still", 0.5), ("a", 0.25), ("b", 0.25)],
-            "size": [(k, 1.0 / 3.0) for k in ("1", "2/3", "1/3")]}
+    opts = {"universal": [("a", 0.5), ("b", 0.5)], "neutral": [("still", 0.5), ("a", 0.25), ("b", 0.25)]}
     out = []
     for choice in itertools.product(*[opts[kind] for _, (kind, _, _) in units]):
         out.append(({key: c[0] for (key, _), c in zip(units, choice)}, float(np.prod([c[1] for c in choice]))))
