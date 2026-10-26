@@ -14,7 +14,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `flow_perception` | Observers see motion (optical flow) with its direction; a dashed edge into a motion leaf acts in the same tick (26 Oct) |
 | `multi_part_units` | Grammar: a body or field holds several children, no parallel needed (one node and one level less; 26 Oct) |
 | `contour_claims` | A lone figure band claims a line, not the whole band: a basket is an outline (26 Oct) |
-| `motion_claims` | void* pins what is in its region, neutral* un-knows a pin, universal* leaves moving content alone (26 Oct) |
+| `motion_claims` | Motion leaves are claims (still 0, unknown 0.5, moving 1) composed like content: pins, dilution, fields outrank (26-27 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -238,22 +238,28 @@ pushing into one shoves the mass ahead as a growing pile (each shove copies, and
 closes behind it, like a membrane. Open: there is now no way to state an immovable substance away from the edge (a
 rock in mid-air, an anchored post). That needs its own representation, to be decided.
 
-**Motion claims (`motion_claims`, 26 Oct).** The centre-axis motion leaves claim motion as the centre-axis content
-leaves claim content, and compose the same way (the more specific claim wins):
+**Motion claims (`motion_claims`, 26-27 Oct).** Motion leaves claim motion as content leaves claim content, on
+one scale, and compose the same way: siblings average by strength, the more specific claim pulls the cell to its
+value, and a field's claims outrank what they cover.
 
-| leaf | claims | acts on what is in its region |
+| leaf | claims | value |
 | --- | --- | --- |
-| `void*` (gate g) | there is no motion here | pinned: it resists any push of strength up to g |
-| `neutral*` | whether there is motion here is unknown | nothing of its own; more specific than a `void*`, it lifts the pin |
-| `universal*` (gate g) | there is some motion here, direction unknown | content already moving along its axis satisfies it; content at rest is pushed in the drawn direction, at rate g |
+| `void*` | there is no motion here | 0 (still) |
+| `neutral*` | whether there is motion here is unknown | 0.5 |
+| `universal*`, `bottom/H*`, ... | there is motion here (universal: direction unknown) | 1 (moving) |
 
-A push is as strong as what drives it (an order's rate: the driving leaf's gate). A chain of pushed things moves only
-if no part of it is pinned at least as strongly: a `void*` at gate 1 never yields. The pin belongs to the place, not
-to what was there first, so an empty `void*` region is a tar pit: a ball rolls in and is held. This is how a program
-states an immovable thing: a rock is `(field universal/H void/H*)`, and `(template center/V neutral/H*)` inside it
-opens a pushable band. `neutral*` is no longer drawn by lot (still, or moving one way or the other); "I don't know
-whether it moves" now defers to whatever else acts there, as `neutral` defers in content. Static `neutral` and
-`neutral*` are the same claim in the two realms.
+A cell's composed value v decides what happens to its content. Leaning still (v < 0.5), it is pinned with strength
+1 - 2v: a push of no more strength (the driving leaf's gate) cannot move it, nor the chain it belongs to. Leaning
+moving (v > 0.5), each leaf there drives it at its own gate times the share of motion left after `void*` and
+`neutral*` dilute it ((2v - 1) over what the moving claims alone make). At 0.5 it is neither: free to be pushed. So
+`neutral*` dilutes motion and stillness alike, as `neutral` dilutes yang and yin: a sibling `neutral*` halves a
+body's speed, a sibling `void*` cancels its drive (no pin either), opposite leaves cancel, a nested `neutral*` makes
+a dead spot on a conveyor. `universal*` leaves content already moving along its axis alone, and `neutral*` is no
+longer drawn by lot.
+
+Because fields outrank, the place decides: an empty `void*` field is a tar pit that holds even a self-mover, a
+`neutral*` field stops self-motion inside it (a fog of motion), and a rock is `(field universal/H void/H*)`. Moving
+claims outranking moving claims change nothing: a cart on a conveyor still adds its own motion to the conveyor's.
 
 **Contour claims (`contour_claims`, 26 Oct).** Words for parts of a space are vague: "a bottom" says something
 salient is in the lower third, not that the lower third is solid; nobody pictures a basket as three slabs. And what is

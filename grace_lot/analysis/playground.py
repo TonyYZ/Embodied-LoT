@@ -84,7 +84,7 @@ EXAMPLES = [
     ("a pinned rock (a field claiming no motion, void*) stops the ball",
      "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field universal/H void/H*) "
      "void/V void/V void/V) out)"),
-    ("neutral* un-knows the pin in a band: the ball pushes through there, the rest of the rock holds",
+    ("neutral* un-knows the pin in a band: the ball pushes in, then stops there (the field's unknown motion outranks its own); the rest of the rock holds",
      "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field universal/H void/H* "
      "(template center/V neutral/H*)) void/V void/V void/V) out)"),
     ("a tar pit (an empty void* region): the ball rolls in and is held",

@@ -297,13 +297,15 @@ MULTI_PART_UNITS = False
 # are regions, not claims, and stay whole bands. With False, every figure band is claimed whole (earlier runs).
 CONTOUR_CLAIMS = False
 
-# Motion claims (needs STANDING_MOTION). The centre-axis motion leaves claim motion as the others claim content:
-# void* that there is none (what is in its region is pinned: it resists a push of no more strength than the leaf's
-# gate, and what enters it is held there too, a tar pit), neutral* that it is unknown (it claims nothing of its own,
-# but where it is more specific than a void* it lifts the pin, as neutral un-knows content), universal* that there is
-# some (content already moving satisfies it; only content at rest is pushed, in the drawn direction). Stillness
-# claims compose by specificity, as content claims do. neutral* is then no longer drawn by lot. With False, void* and
-# neutral* give no orders and neutral* is drawn as still or moving (earlier runs).
+# Motion claims (needs STANDING_MOTION). Motion leaves claim motion as content leaves claim content, on one scale:
+# void* that there is none (0), neutral* that it is unknown (0.5), every other motion leaf that there is some (1;
+# universal* in an unknown direction). They compose exactly as content claims do: siblings average by strength, the
+# more specific claim pulls the cell to its value, and a field's claims outrank what they cover (``_motion_field``). Where a cell leans still (v < 0.5) what is in
+# it is pinned with strength 1 - 2v: it resists any push no stronger, and what enters is held too (a tar pit). Where it
+# leans moving (v > 0.5) each leaf drives its content at its own rate (its gate) times the share of motion left after
+# void* and neutral* dilute it there ((2v - 1) over what the moving claims alone make). So neutral* dilutes motion and stillness alike, as neutral dilutes yang and yin. universal* leaves content
+# already moving along its axis alone. neutral* is no longer drawn by lot. With False, void* and neutral* give no
+# orders and neutral* is drawn as still or moving (earlier runs).
 MOTION_CLAIMS = False
 
 
@@ -2138,6 +2140,8 @@ class ConceptGraph:
                         out.update(n.node_id for n in walk(t))
             return out
         in_templates = self._meta("in_templates", build_templates) if ORIENTING_TEMPLATES else set()
+        if _motion_claims():
+            self._motion_field(views, in_templates)
         for node in self._nodes.values():
             if not (isinstance(node, ObjectNode) and node.is_dynamic
                     and getattr(node, "role", None) == "imagined") or node.node_id in in_templates:
@@ -2351,6 +2355,7 @@ class ConceptGraph:
         R, C = _grid_index((H, W))
         none = np.zeros((H, W), dtype=bool)
         src = S.get("src", {})
+        drive = S.get("drive") if _motion_claims() else None                # MOTION_CLAIMS: composed rates
         loose = (S["s"] > 0) & (S["v"] > 0.5)
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
@@ -2394,6 +2399,12 @@ class ConceptGraph:
                 marks = S["marks"].get(key, np.zeros((H, W), dtype=bool)) & space
                 fresh_m = stuff & space & ~marks
                 S["marks"][key] = marks | fresh_m    # emitted copies carry the mark; the reset unmarks field cells
+            scale = {}
+            if drive is not None:                # MOTION_CLAIMS: as strongly as the composed claims drive it there
+                scale = {b.node_id: float(drive[space & bodies_at[b.node_id][2]].max(initial=0.0)) for b in fresh}
+                fresh = [b for b in fresh if scale[b.node_id] > 1e-9]
+                fresh_m = fresh_m & (drive > 1e-9)
+            k = lambda b: scale.get(b.node_id, 1.0)
             if kind in ("bulk", "gradient"):
                 norm = float(np.hypot(*motion))
                 if norm < 1e-12:
@@ -2413,14 +2424,14 @@ class ConceptGraph:
                     if fresh_m.any():
                         S["orders"].append([fresh_m.copy(), axis, sign, span, rate, 0.0, 0.0])
                     for b in fresh:
-                        self._push_body(b, bodies_at, axis, sign * rate, node_id=node.node_id)
+                        self._push_body(b, bodies_at, axis, sign * rate * k(b), node_id=node.node_id)
                 elif kind == "gradient":                                # layers from the leading edge
                     levels = sorted(set(coord[fresh_m].tolist()), reverse=sign > 0)
                     for j, v in enumerate(levels):
                         S["orders"].append([fresh_m & (coord == v), axis, sign, span, rate, 0.0, j / a])
                     lead = lambda b: -sign * float(np.nonzero(bodies_at[b.node_id][2])[axis].mean())
                     for j, b in enumerate(sorted(fresh, key=lead)):
-                        self._push_body(b, bodies_at, axis, sign * rate, node_id=node.node_id, delay=j / a)
+                        self._push_body(b, bodies_at, axis, sign * rate * k(b), node_id=node.node_id, delay=j / a)
                 else:                                                   # out / in: the two halves
                     for half in (-1, 1):
                         part = fresh_m & (np.sign(coord + 0.5 - centre) == half)
@@ -2438,22 +2449,28 @@ class ConceptGraph:
                         side = np.sign(float(np.nonzero(bodies_at[b.node_id][2])[axis].mean()) + 0.5 - centre)
                         if side:
                             go = side if kind == "out" else -side
-                            self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
+                            self._push_body(b, bodies_at, axis, go * rate * k(b), node_id=node.node_id, half=True)
+            if drive is not None:                # the substance orders, split by how strongly each cell is driven
+                level, new = np.round(drive, 3), S["orders"][n_orders:]
+                S["orders"][n_orders:] = [[o[0] & (level == lv), *o[1:4], o[4] * lv, *o[5:]]
+                                          for o in new for lv in np.unique(level[o[0]]) if lv > 0]
             if _standing():
                 for o in S["orders"][n_orders:]:
                     o.append(key)
 
-    def _motion_pins(self, views) -> None:
-        """MOTION_CLAIMS: each tree's stillness claims this tick. void* claims there is no motion in its region
-        (strength its gate), neutral* that it is unknown; a body's leaf claims where the body is. They compose as content
-        claims do, the more specific over the more general, and a cell's pin is how far its claim leans to stillness
-        (2v - 1): what is in the cell resists a push of no more strength (``_held``), whatever came there."""
+    def _motion_field(self, views, in_templates=frozenset()) -> None:
+        """MOTION_CLAIMS: each tree's motion claims this tick, composed as content claims are (strength: the leaf's
+        gate; a body's leaf claims where the body is): void* none (0), neutral* unknown (0.5), any other motion leaf
+        some (1). A cell's pin is how far it leans still (1 - 2v): what is in it resists a push of no more strength
+        (``_held``), whatever came there. Its drive is how far it leans moving (2v - 1), as a share of what the moving
+        claims alone would make it: each leaf there moves its content at its own rate times that share
+        (``_issue_substance``), so void* and neutral* dilute motion and leaves of different strength keep theirs."""
         parents, units, tree = self._parents(), self._tokens(), self.tree_index()
-        claims = defaultdict(list)
+        claims, fields = defaultdict(list), set()
         for node in self._nodes.values():
             name = PATTERN_TO_NAME.get(getattr(node, "pattern", None))
-            if not (isinstance(node, ObjectNode) and node.is_dynamic and name in ("void", "neutral")
-                    and getattr(node, "role", None) == "imagined"):
+            if not (isinstance(node, ObjectNode) and node.is_dynamic and getattr(node, "role", None) == "imagined"
+                    and node.node_id not in in_templates):
                 continue
             a, anc = node.gate, node
             while parents.get(anc.node_id):
@@ -2468,13 +2485,21 @@ class ConceptGraph:
                 holder = getattr(units.get(own[-1]), "node", units.get(own[-1])) if own else None
                 if holder is not None and not isinstance(holder, FieldNode):
                     space = space & self._own_figure(root, holder)
+                elif holder is not None:
+                    fields.add(node.node_id)              # a field's claims outrank what they cover, as in content
                 if space.any():
-                    claims[root].append((space, 1.0 if name == "void" else 0.5, a, space, node.node_id, False))
+                    claims[root].append((space, {"void": 0.0, "neutral": 0.5}.get(name, 1.0), a, space,
+                                         node.node_id, False))
         for S in getattr(self, "_sub", {}).values():
-            S["pin"] = None
+            S["pin"] = S["drive"] = None
         for rid, cs in claims.items():
-            v, _ = _claim_values(cs, tuple(self.grid))
-            self._substance(rid)["pin"] = np.maximum(0.0, 2.0 * v - 1.0)
+            v, _ = _claim_values(cs, tuple(self.grid), fields)
+            moving = [c for c in cs if c[1] == 1.0]          # what the moving claims alone would drive
+            m = (2.0 * _claim_values(moving, tuple(self.grid), fields)[0] - 1.0 if moving
+                 else np.zeros(tuple(self.grid)))
+            S = self._substance(rid)
+            S["pin"] = np.maximum(0.0, 1.0 - 2.0 * v)
+            S["drive"] = np.where(m > 1e-9, np.maximum(0.0, 2.0 * v - 1.0) / np.maximum(m, 1e-9), 0.0)
 
     def _push_body(self, body, bodies_at, axis: int, signed_rate: float, node_id: str = "",
                    delay: float = 0.0, half: bool = False, jitter: bool = False) -> None:
@@ -2551,8 +2576,6 @@ class ConceptGraph:
         bodies = [b for b in self._tokens().values() if b.position is not None
                   and not (STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(b, "node", None), FieldNode))]
         self._pending, self._strength = {}, {}   # this tick's own moves (and how strongly driven), all taken first
-        if _motion_claims():
-            self._motion_pins(self.node_views(self.grid) if views is None else views)
         for body in bodies:
             net = self._pending[body.node_id] = [0, 0]
             for order in body.orders:
@@ -2882,7 +2905,7 @@ class ConceptGraph:
         for node in self._nodes.values():
             kind = _UNKNOWN_MOTION.get(node.pattern) if isinstance(node, ObjectNode) else None
             if kind == "neutral" and _motion_claims():
-                continue                         # a claim of unknown stillness (_motion_pins), not drawn by lot
+                continue                         # a claim that motion is unknown (_motion_field), not drawn by lot
             if kind is None or not node.is_dynamic or getattr(node, "role", None) != "imagined":
                 continue
             meta = self.view_meta(node.node_id) if views.get(node.node_id) else []
@@ -2898,7 +2921,7 @@ class ConceptGraph:
         if kind is None:
             return node
         if kind == "neutral" and _motion_claims():
-            return None                          # it orders nothing; it only lifts pins (_motion_pins)
+            return None                          # it orders nothing; it only dilutes (_motion_field)
         unit = self._motion_unit(node.node_id)
         state = getattr(self, "motion_states", {}).get(f"{unit}:{kind}", "a" if kind == "universal" else "still")
         if state == "still":
