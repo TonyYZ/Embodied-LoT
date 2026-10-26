@@ -198,6 +198,12 @@ alternative considered, solidity for objects and places only with bare stuff pas
 solids and non-solid substances differently: Hespos, Ferry & Rips 2009; Huntley-Fenner, Carey & Solimando 2002), was
 not adopted: it would have made sand neither block nor be pushed.
 
+One value per cell serves both what resists (passability) and what can be told (visibility); fog reads unknown on both.
+Separating them in the cell (a substance and a visibility value) was considered and not adopted: the distinction is
+available through channels instead, since a program may have any number of input and output trees. A visual tree
+reads fog as unknown, a haptic tree as empty; each tree has its own space, and keeping two descriptions of one thing
+in step (a ball blocked in the haptic tree, seen in the visual one) is the program's work, through dashed edges.
+
 ## 5c. Flow perception (`flow_perception`, 26 Oct)
 
 **A gap found.** On the gameboard, observers were given the drawing only: the motion field was never filled, so a
