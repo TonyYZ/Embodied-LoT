@@ -2222,6 +2222,41 @@ class ConceptGraph:
                             go = side if kind == "out" else -side
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
 
+    def _unit_figures(self, root: str):
+        """STANDING_MOTION: every unit of a tree (bodies, not fields): its board cells, where it more likely than not
+        is (else where it most likely is), and how likely it is at each cell."""
+        units = self._tokens()
+        node_of = lambda b: getattr(units[b], "node", units[b])
+
+        def figure(u, cells):
+            v, c = self._paint_only_values(root, self._own_content(u))
+            solid = (_claimed_value(v, c) > 0.5) & cells
+            likely = solid & (c > 0.5)
+            fig = likely if likely.any() or not solid.any() else solid & (c >= c[solid].max() - 1e-9)
+            return fig, np.where(solid, c, 0.0)
+        win = {b: cells for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()
+               if cells.any() and self.tree_index().get(node_of(b).node_id) == root and not isinstance(node_of(b), FieldNode)}
+        own, cover = {}, {}
+        for b, cells in win.items():
+            own[b], cover[b] = figure(node_of(b), cells)
+        return win, own, cover
+
+    def _home_clear(self, node, first) -> bool:
+        """STANDING_MOTION with SOLID_FIGURE: may a field spawn a copy of ``node`` at ``first``'s home? Only where nothing
+        solid is: no unit (copies of the body included) and no substance more likely there than not (unknown is clear;
+        the fields' own claims are not in the way of what they hold)."""
+        H, W = self.grid
+        root = self.tree_index()[node.node_id]
+        was, first.position = first.position, list(first.home)
+        r0, r1, c0, c1 = first.window(H, W)
+        first.position = was
+        home = np.zeros((H, W), dtype=bool)
+        home[r0:r1, c0:c1] = True
+        S = self._substance(root)
+        if (home & (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]).any():
+            return False
+        return not any((home & fig).any() for fig in self._unit_figures(root)[1].values())
+
     def _own_figure(self, root_id: str, node) -> np.ndarray:
         """STANDING_MOTION: where a body's own content is figure."""
         v, c = self._paint_only_values(root_id, self._own_content(node))
@@ -2550,7 +2585,7 @@ class ConceptGraph:
         cell to pass one half, where it most likely is). A body pushes what
         it would move into: a unit, with everything inside it (a body pushing the unit it is inside is carried along),
         and through it whatever that unit would move into; stuff as a run (``_stuff_run``). Nothing may leave the board
-        or enter a field's figure; instances of one body pass through each other.
+        or enter a field's figure. Copies of one body are solid to each other, as any two bodies are.
 
         A move resolves what made it possible: the uncertain stuff
         it passes through (unknown, not substance more likely than not) is resolved by Bayes when it leaves a cell:
@@ -2560,18 +2595,7 @@ class ConceptGraph:
         units, groups = self._tokens(), getattr(self, "_unit_groups", {})
         node_of = lambda b: getattr(units[b], "node", units[b])
         root = self.tree_index()[node_of(body.node_id).node_id]
-
-        def figure(u, cells):                    # where the unit more likely than not is (else where it most likely
-            v, c = self._paint_only_values(root, self._own_content(u))   # is), and how likely it is at each cell
-            solid = (_claimed_value(v, c) > 0.5) & cells
-            likely = solid & (c > 0.5)
-            fig = likely if likely.any() or not solid.any() else solid & (c >= c[solid].max() - 1e-9)
-            return fig, np.where(solid, c, 0.0)
-        win = {b: cells for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()
-               if cells.any() and self.tree_index().get(node_of(b).node_id) == root and not isinstance(node_of(b), FieldNode)}
-        own, cover = {}, {}
-        for b, cells in win.items():
-            own[b], cover[b] = figure(node_of(b), cells)
+        win, own, cover = self._unit_figures(root)
         inside = lambda b, a: a in groups.get(b, ())                          # unit b is inside unit a
         none = np.zeros((H, W), dtype=bool)
         group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
@@ -2593,8 +2617,7 @@ class ConceptGraph:
                     return None
                 moving.append(x)
                 push |= foot & stuff & ~g
-                queue += [y for y in own if y not in moving and not inside(y, x) and node_of(y) is not node_of(x)
-                          and (foot & own[y] & ~g).any()]
+                queue += [y for y in own if y not in moving and not inside(y, x) and (foot & own[y] & ~g).any()]
             if push.any() and _stuff_run(S, push, *d)[1].any():
                 return None                                                   # stuff in the way cannot move
             return moving, push
@@ -3364,7 +3387,8 @@ class ConceptGraph:
     def _spawn_bodies(self) -> None:
         """STATIC_FIELDS: a field re-asserts the bodies it holds. For each spawning body and template position,
         instances that came to the same place in the same state merge; then, if none is at home, a new instance is
-        placed there, as the first one was."""
+        placed there, as the first one was. STANDING_MOTION with SOLID_FIGURE: only once its home is clear
+        (``_home_clear``), so copies never overlap; a spawner whose home is blocked produces nothing until it clears."""
         same = lambda t: (tuple(round(v, 9) for v in t.position), tuple(tuple(o) for o in t.orders),
                           tuple(round(v, 6) for v in t.jitter + t.drive))
         for node in self._spawners():
@@ -3385,6 +3409,8 @@ class ConceptGraph:
                 keys = _spawned(node, base, node.instances)
                 if any(np.allclose(node.instances[k].position, first.home) for k in keys):
                     continue
+                if _standing() and SOLID_FIGURE and not self._home_clear(node, first):
+                    continue                     # its home is not clear: nothing new appears inside something solid
                 n = 1 + max((k[-1] for k in keys if k != base), default=0)
                 tok = node.token(base + ("s", n))
                 tok.position, tok.extent = list(first.home), list(first.extent)

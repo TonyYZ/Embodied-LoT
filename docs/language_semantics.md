@@ -206,6 +206,14 @@ available through channels instead, since a program may have any number of input
 reads fog as unknown, a haptic tree as empty; each tree has its own space, and keeping two descriptions of one thing
 in step (a ball blocked in the haptic tree, seen in the visual one) is the program's work, through dashed edges.
 
+**Copies are solid, and a spawner waits for a clear home (26 Oct).** Copies of one body were exempt from solidity
+(they passed through each other, and a field spawned a new one as soon as none sat exactly at home, so a departing copy
+and the new one overlapped). Now copies are solid to each other like any two bodies, and a field spawns a new copy only
+when its home is clear: no unit and no substance more likely there than not (unknown counts as clear; the field's own
+claims are not in the way of what it holds). A spawner whose home is blocked produces nothing until it clears, as a
+hive whose entrance is blocked lets no bee out; nothing new appears inside something solid, so one solidity rule holds
+everywhere. Streams are spaced by the body's own size.
+
 ## 5c. Flow perception (`flow_perception`, 26 Oct)
 
 **A gap found.** On the gameboard, observers were given the drawing only: the motion field was never filled, so a
