@@ -164,7 +164,9 @@ reading; a truck that sows along its path takes the motion leaf directly in its 
 **Pushing is passed along (with `solid_figure`).** A body that moves into anything pushes it: a unit, with
 everything inside it (a body pushing the unit it is inside is carried along), and through it whatever that unit would
 move into; stuff as a run, cell by cell along the line. All of it moves together if it can, else nothing does: none
-may leave the board or enter a field's figure, and stuff pressed from both sides in one tick holds. A unit's solid
+may leave the board or enter a field's figure, and stuff pressed from both sides in one tick holds. A tick is one
+moment: every unit's own move is taken first, and a pushed unit already moving the same way this tick moves once
+(two bodies in file stay touching; the leader is not pushed and driven both). A unit's solid
 part is as before (its figure above 0.75; an agent of uncertain extent's core where it leans figure, or all of it if
 too small for a core), so soft edges shape the drawing, not contact. Consequences: a row of blocks pushed to the
 edge stops side by side; stuff is never piled up or lost (conveyed sand keeps its width; a fountain's column, each

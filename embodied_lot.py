@@ -2479,13 +2479,11 @@ class ConceptGraph:
         """
         homes = self._moving_bodies(self.node_views(self.grid) if views is None else views, cells=False)
         self._solid_cache, self._moves = {}, Counter()     # solidity maps, valid until something else moves
-        for body in self._tokens().values():
-            if body.position is None:
-                continue
-            if STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(body, "node", None), FieldNode):
-                continue                              # a field never moves itself (a body around it can)
-            H, W = homes[body.node_id][1] if body.node_id in homes else self.grid
-            net = [0, 0]
+        bodies = [b for b in self._tokens().values() if b.position is not None
+                  and not (STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(b, "node", None), FieldNode))]
+        self._pending = {}                    # this tick's own moves, all taken before any is made (one tick at once)
+        for body in bodies:
+            net = self._pending[body.node_id] = [0, 0]
             for order in body.orders:
                 if len(order) > 6 and order[6] >= 1 - 1e-9:     # queued: waits its turn
                     order[6] -= 1
@@ -2505,6 +2503,9 @@ class ConceptGraph:
                 step = max(-1, min(1, math.trunc(drive[ax])))
                 net[ax] += step
                 drive[ax] -= step
+        for body in bodies:
+            H, W = homes[body.node_id][1] if body.node_id in homes else self.grid
+            net = self._pending[body.node_id]
             if SOLID_FIGURE and any(net) and (H, W) == tuple(self.grid):
                 net = self._chain_move(body, net) if _standing() else self._solid_step(body, net)
             moved = [self._clamped_shift(body, axis, net[axis], n) for axis, n in ((0, H), (1, W))]
@@ -2674,6 +2675,10 @@ class ConceptGraph:
                 if x == body.node_id:
                     continue                                                  # the caller moves the body itself
                 tok = units[x]
+                own_move = getattr(self, "_pending", {}).get(tok.node_id)
+                for axis in (0, 1):            # a pushed unit already moving this way this tick: the push is its move
+                    if own_move and own_move[axis] * d[axis] > 0:
+                        own_move[axis] -= d[axis] if abs(own_move[axis]) >= abs(d[axis]) else own_move[axis]
                 for axis, n in ((0, H), (1, W)):
                     size = max(1, round(tok.extent[axis] * n))
                     tok.position[axis] = (round(tok.position[axis] * n - size / 2) + d[axis] + size / 2) / n
