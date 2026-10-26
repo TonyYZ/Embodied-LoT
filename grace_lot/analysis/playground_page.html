@@ -59,6 +59,7 @@ svg{display:block;max-width:100%;height:auto}
 .stage figure{margin:0}
 .controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
 .controls button{min-width:40px;min-height:36px}
+.gridtoggle{font-size:.9rem;white-space:nowrap}
 .controls input[type=range]{flex:1 1 200px}
 .tick{font-variant-numeric:tabular-nums;font-weight:600;min-width:64px}
 .forest{overflow-x:auto}
@@ -92,6 +93,7 @@ svg{display:block;max-width:100%;height:auto}
     <span class="tick" id="tick"></span>
     <input type="range" id="scrub" min="0" value="0" aria-label="Tick">
     <select id="speed" aria-label="Speed"><option value="700">slow</option><option value="350" selected>normal</option><option value="150">fast</option></select>
+    <label class="muted gridtoggle"><input type="checkbox" id="gridlines" checked> grid</label>
   </div>
   <div class="row units" id="units"></div>
   <div class="legend">
@@ -252,6 +254,9 @@ function showUnits() {
   $('units').querySelectorAll('select').forEach(s => s.onchange = () => { states[s.dataset.key] = s.value; run(); });
 }
 
+let gridLines = true;           // cell lines on the boards (the "grid" switch; remembered in this browser)
+try { gridLines = localStorage.getItem('v7-grid') !== 'off'; } catch (e) {}
+
 function board(svg, img, f, overlays) {
   const N = D.grid, C = 20, P = 2;
   svg.innerHTML = '';
@@ -260,9 +265,11 @@ function board(svg, img, f, overlays) {
   el('rect', {x: 0, y: 0, width: N * C, height: N * C, fill: css('--panel'), stroke: css('--line')}, g);
   for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
     const v = img[r][c], k = Math.abs(v - 0.5) * 2;
-    const cell = el('rect', {x: c * C + .5, y: r * C + .5, width: C - 1, height: C - 1, rx: 2,
+    const cell = el('rect', {...(gridLines ? {x: c * C + .5, y: r * C + .5, width: C - 1, height: C - 1, rx: 2,
+                                              stroke: css('--line'), 'stroke-width': .5}
+                                           : {x: c * C, y: r * C, width: C, height: C}),   // no lines: edge to edge
       fill: k < 0.02 ? 'transparent' : v > 0.5 ? `rgba(${css('--cell')},${(0.85 * k).toFixed(3)})` : css('--yin'),
-      'fill-opacity': v < 0.5 && k >= 0.02 ? (0.85 * k).toFixed(3) : 1, stroke: css('--line'), 'stroke-width': .5}, g);
+      'fill-opacity': v < 0.5 && k >= 0.02 ? (0.85 * k).toFixed(3) : 1}, g);
     el('title', {}, cell).textContent = `row ${r}, column ${c}: ${fmt(v)}`;
   }
   if (!overlays) return;
@@ -389,6 +396,12 @@ $('program').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrl
 $('play').onclick = play;
 $('first').onclick = () => { stop(); t = 0; render(); };
 $('prev').onclick = () => { stop(); t = Math.max(0, t - 1); render(); };
+$('gridlines').checked = gridLines;
+$('gridlines').onchange = () => {
+  gridLines = $('gridlines').checked;
+  try { localStorage.setItem('v7-grid', gridLines ? 'on' : 'off'); } catch (e) {}
+  render();
+};
 $('next').onclick = () => { stop(); t = Math.min(D.frames.length - 1, t + 1); render(); };
 $('scrub').oninput = e => { stop(); t = +e.target.value; render(); };
 $('speed').onchange = () => { if (timer) { stop(); play(); } };
