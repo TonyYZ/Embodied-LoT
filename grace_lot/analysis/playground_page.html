@@ -193,7 +193,7 @@ function showSemantics() {
 BOOT.examples.forEach((e, i) => { const o = document.createElement('option'); o.value = i; o.textContent = e.title; $('examples').appendChild(o); });
 $('examples').onchange = () => {
   const e = BOOT.examples[+$('examples').value];
-  $('program').value = e.program; states = {};
+  $('program').value = e.program; states = {}; t = 0;     // a new example starts at its first tick
   lot = Object.keys(e.lot || {}).length ? {...BOOT.lot, ...e.lot} : {...BOOT.lot};
   showSemantics(); run();
 };
