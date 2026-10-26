@@ -729,3 +729,17 @@ The larger cap scores 18.0 nats higher, higher on every manner (most on bowing, 
 not only constraining the search. It still binds for 18% of the posterior at 32 nodes. Since 24 was used for
 every earlier comparison (including the current language's 1212.6), languages should be compared at the same,
 larger cap.
+
+## Standing motion at cap 32 (lambda = 1.0)
+
+All five flags (standing motion with discrete orders, as of ad91af9; the later blocking-at-one-half change alters 1
+of 200 fitted programs), same search and validation actors:
+
+| Language (cap 32) | Held-out density | Recognition | bowing | jumping | scurrying | shuffling | swinging |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| four flags | 1236.0 | 0.96 | 193.2 | 199.3 | 385.0 | 291.4 | 167.1 |
+| five flags (standing motion) | 1232.4 | 0.96 | 189.2 | 198.0 | 386.8 | 291.5 | 166.9 |
+
+A tie (3.6 nats lower, within what separate searches vary by; lower on bowing, about equal elsewhere): the locomotion
+data do not involve what standing motion changes (held bodies, carriers, pushing, timing). The old language at cap 32
+(job 89299) runs next.

@@ -1420,7 +1420,7 @@ class StandingMotionTests(unittest.TestCase):
     def test_the_self_observing_oscillator_swings_back(self):
         from grace_lot.analysis import playground as PG
         src = next(e[1] for e in PG.EXAMPLES if e[0] == "Self-observing oscillator")
-        d = PG.record(src, 24, {}, "configs/grace_v7_parts.toml", PG.STANDING)
+        d = PG.record(src, 24, {}, "configs/grace_v7_parts.toml", PG.CURRENT)
         cols = [float((np.array(f["drawn"]) > 0.6).nonzero()[1].mean()) for f in d["frames"]]
         steps = np.sign(np.diff(cols))
         turns = np.diff(steps[steps != 0])

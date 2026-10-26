@@ -77,13 +77,13 @@ state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
-###   ###   ####????####
+#o#   #?#   #####???####
+###   ###   #####???####
             ####????####
-            ######??####
-            ####????####
-            ####????####
-            ######??####
+            ####...?####
+            #####???####
+            #####???####
+            ####...?####
             ############
             ############
             ############
@@ -93,10 +93,10 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   ###   ####????####
-###   #X#   ####????####
+#o#   ###   ####??.#####
+###   #X#   ####??.#####
             ####????####
-            ####??######
+            ####?...####
             ############
             ############
             ############
@@ -108,14 +108,14 @@ state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | eng
 
 state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   ###   ####????####
 #o#   #?#   ####????####
+#o#   #?#   ####??.#####
 ###   #X#   ############
             ############
             ############
             ############
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -125,13 +125,13 @@ state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -141,13 +141,13 @@ state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -157,13 +157,13 @@ state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | en
 state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -197,13 +197,13 @@ state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
-###   ###   ####????####
+#o#   #?#   #####???####
+###   ###   #####???####
             ####????####
-            ######??####
-            ####????####
-            ####????####
-            ######??####
+            ####...?####
+            #####???####
+            #####???####
+            ####...?####
             ############
             ############
             ############
@@ -213,10 +213,10 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   ###   ####????####
-###   #X#   ####????####
+#o#   ###   ####??.#####
+###   #X#   ####??.#####
             ####????####
-            ####??######
+            ####?...####
             ############
             ############
             ############
@@ -228,14 +228,14 @@ state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | eng
 
 state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   ###   ####????####
 #o#   #?#   ####????####
+#o#   #?#   ####??.#####
 ###   #X#   ############
             ############
             ############
             ############
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -245,13 +245,13 @@ state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -261,13 +261,13 @@ state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -277,13 +277,13 @@ state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | en
 state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -358,14 +358,14 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 
 `(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)`  
 should match; matches the sketch  
-Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside.
+Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside. Pressing on, it moves as small as it must be, so where exactly it is grows uncertain (drawn faintly).
 
 Outside the search grammar: depth 6, more than max_depth = 5
 
 state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #.#   ####....####
-#o#   #?#   ####....####
+#*#   #.#   ####....####
+#*#   #?#   ####....####
 ###   ###   ####....####
             ####....####
             ####????####
@@ -380,14 +380,14 @@ state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 
 state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   #.#   ####....####
-#o#   #?#   ####....####
+#*#   #.#   ####....####
+#*#   #?#   ####....####
 ###   ###   ####....####
             ####....####
             ####????####
-            ####??.?####
-            #####?.?####
-            #####???####
+            ####?..?####
+            ####...?####
+            #####.??####
             ############
             ############
             ############
@@ -558,9 +558,9 @@ state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 ###   ###   ####????####
             ####????####
             ####????####
-            ####??.?####
-            #####?.?####
-            #####???####
+            ####?..?####
+            ####...?####
+            #####.??####
             ############
             ############
             ############
@@ -792,13 +792,13 @@ state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   #?#   ####????####
-###   ###   ####????####
+#o#   #?#   #####???####
+###   ###   #####???####
             ####????####
-            ######??####
-            ####????####
-            ####????####
-            ######??####
+            ####...?####
+            #####???####
+            #####???####
+            ####...?####
             ############
             ############
             ############
@@ -808,10 +808,10 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   ###   ####????####
-###   #X#   ####????####
+#o#   ###   ####??.#####
+###   #X#   ####??.#####
             ####????####
-            ####??######
+            ####?...####
             ############
             ############
             ############
@@ -823,14 +823,14 @@ state {'n8:universal': 'b'}, frame 3: sketch | engine at sketch resolution | eng
 
 state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
-#o#   ###   ####????####
 #o#   #?#   ####????####
+#o#   #?#   ####??.#####
 ###   #X#   ############
             ############
             ############
             ############
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -840,13 +840,13 @@ state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -856,13 +856,13 @@ state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | eng
 state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -872,13 +872,13 @@ state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | en
 state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -912,13 +912,13 @@ state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | en
 state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #X#   ####....####
-#o#   #X#   ####....####
-###   ###   ####....####
+#o#   #X#   ####?...####
+###   ###   ####?...####
             ####....####
-            ####???.####
-            ####???.####
-            ####???.####
-            ####???.####
+            ####....####
+            ####?...####
+            ####?...####
+            ####....####
             ############
             ############
             ############
@@ -928,13 +928,13 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 state {'n11:universal': 'a'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #X#   ####....####
-#o#   #X#   ####....####
-###   ###   ####....####
+#o#   #X#   ####?...####
+###   ###   ####?...####
             ####....####
-            ####???.####
-            ####???.####
-            ####???.####
-            ####???.####
+            ####....####
+            ####?...####
+            ####?...####
+            ####....####
             ############
             ############
             ############
@@ -944,13 +944,13 @@ state {'n11:universal': 'a'}, frame 6: sketch | engine at sketch resolution | en
 state {'n11:universal': 'a'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #X#   ####....####
-#o#   #X#   ####....####
-###   ###   ####....####
+#o#   #X#   ####?...####
+###   ###   ####?...####
             ####....####
-            ####???.####
-            ####???.####
-            ####???.####
-            ####???.####
+            ####....####
+            ####?...####
+            ####?...####
+            ####....####
             ############
             ############
             ############
@@ -960,13 +960,13 @@ state {'n11:universal': 'a'}, frame 9: sketch | engine at sketch resolution | en
 state {'n11:universal': 'a'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #X#   ####....####
-#o#   #X#   ####....####
-###   ###   ####....####
+#o#   #X#   ####?...####
+###   ###   ####?...####
             ####....####
-            ####???.####
-            ####???.####
-            ####???.####
-            ####???.####
+            ####....####
+            ####?...####
+            ####?...####
+            ####....####
             ############
             ############
             ############
@@ -976,13 +976,13 @@ state {'n11:universal': 'a'}, frame 12: sketch | engine at sketch resolution | e
 state {'n11:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #X#   ####....####
-#o#   #X#   ####....####
-###   ###   ####....####
+#o#   #X#   ####?...####
+###   ###   ####?...####
             ####....####
-            ####???.####
-            ####???.####
-            ####???.####
-            ####???.####
+            ####....####
+            ####?...####
+            ####?...####
+            ####....####
             ############
             ############
             ############
@@ -1008,10 +1008,10 @@ state {'n11:universal': 'b'}, frame 0: sketch | engine at sketch resolution | en
 state {'n11:universal': 'b'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
-#o#   ###   ####....####
-###   #X#   ####....####
+#o#   ###   ####...#####
+###   #X#   ####...#####
             ####....####
-            ####.???####
+            ####....####
             ############
             ############
             ############
@@ -1024,13 +1024,13 @@ state {'n11:universal': 'b'}, frame 3: sketch | engine at sketch resolution | en
 state {'n11:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####....####
-#o#   #?#   ####....####
+#o#   #?#   ####...#####
 ###   #X#   ############
             ############
             ############
             ############
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -1040,13 +1040,13 @@ state {'n11:universal': 'b'}, frame 6: sketch | engine at sketch resolution | en
 state {'n11:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -1056,13 +1056,13 @@ state {'n11:universal': 'b'}, frame 9: sketch | engine at sketch resolution | en
 state {'n11:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -1072,13 +1072,13 @@ state {'n11:universal': 'b'}, frame 12: sketch | engine at sketch resolution | e
 state {'n11:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   ###   ############
-#o#   #?#   ############
+#o#   #.#   ############
 ###   #X#   ############
             ############
-            ####.???####
-            ####.???####
-            ####.???####
-            ####.???####
+            ####....####
+            ####....####
+            ####....####
+            ####....####
             ####....####
             ####....####
             ####....####
@@ -1112,13 +1112,13 @@ state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | eng
 state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
-#o#   ###   ####????####
+#o#   #?#   ####????####
 ###   ###   ####????####
             ####????####
-            ####?##?####
-            ############
-            ############
-            ####?##?####
+            ####??..####
+            ####?..?####
+            ####....####
+            #####..?####
             ############
             ############
             ############
@@ -1157,8 +1157,8 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
             ############
             ####....####
             ####....####
-            ####??..####
-            ####??..####
+            ####....####
+            #####...####
             ############
             ############
             ############
@@ -2553,18 +2553,18 @@ Outside the search grammar: .1: serial_h has 6 children; it may have 1 to 3; .1.
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
-************   ..??....??..   ..??....??..
-************   ..??....??..   ..??....??..
-************   ..??....??..   ..??....??..
-************   ..??....??..   ..??....??..
-________**##   ........??##   ........??##
-________**##   ........??##   ........??##
-________**##   ........??##   ........??##
-________**##   ........??##   ........??##
-************   ..??....??..   ..??....??..
-************   ..??....??..   ..??....??..
-************   ..??....??..   ..??....??..
-************   ..??....??..   ..??....??..
+************   ..??........   ..??........
+************   ..??........   ..??........
+************   ..??........   ..??........
+************   ..??........   ..??........
+________**##   ..........##   ..........##
+________**##   ..........##   ..........##
+________**##   ..........##   ..........##
+________**##   ..........##   ..........##
+************   ..??........   ..??........
+************   ..??........   ..??........
+************   ..??........   ..??........
+************   ..??........   ..??........
 ```
 
 ## PASS: support, prototype: object resting on a floor

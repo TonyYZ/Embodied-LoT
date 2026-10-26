@@ -40,79 +40,74 @@ _lock = Lock()                       # the engine's semantics are module flags: 
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
 # STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
 SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion")
-NEW = {k: True for k in SEMANTICS[:4]}
-STANDING = {**NEW, "standing_motion": True}
+CURRENT = {k: True for k in SEMANTICS}        # the language the examples and a fresh page run in: keep it current
 
 EXAMPLES = [
-    ("One body glides", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)", STANDING),
+    ("One body glides, clearing its path through unexplored stuff", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"),
     ("Two bodies in file",
-     "(parallel (serial_h (body (parallel center/V bottom/H*)) (body (parallel center/V bottom/H*)) neutral/H) out)",
-     STANDING),
+     "(parallel (serial_h (body (parallel center/V bottom/H*)) (body (parallel center/V bottom/H*)) neutral/H) out)"),
     ("A field does not drive itself (its motion carries its stuff out)",
-     "(parallel (serial_v (field (parallel center/V bottom/V*)) out) out)", STANDING),
-    ("A body drives itself", "(parallel (serial_v (body (parallel center/V bottom/V*)) out) out)", STANDING),
+     "(parallel (serial_v (field (parallel center/V bottom/V*)) out) out)"),
+    ("A body drives itself", "(parallel (serial_v (body (parallel center/V bottom/V*)) out) out)"),
     ("Template copies, each its own instance (each copy's stuff carried up)",
-     "(parallel (serial_v (template periphery/H (field center/V)) out) (serial_h bottom/V* out out))", STANDING),
-    ("Unknown direction (universal)", "(parallel center/V universal/V* out)", STANDING),
-    ("Unknown whether it moves (neutral)", "(parallel center/H neutral/V* out)", STANDING),
-    ("Known still (void)", "(parallel center/V void/V* out)", STANDING),
-    ("A tree gating another tree", "(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0", STANDING),
-    ("Measure tree", "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0", STANDING),
+     "(parallel (serial_v (template periphery/H (field center/V)) out) (serial_h bottom/V* out out))"),
+    ("Unknown direction (universal)", "(parallel center/V universal/V* out)"),
+    ("Unknown whether it moves (neutral)", "(parallel center/H neutral/V* out)"),
+    ("Known still (void)", "(parallel center/V void/V* out)"),
+    ("A tree gating another tree", "(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0"),
+    ("Measure tree", "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0"),
     ("Self-observing oscillator",
      "(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) out) "
-     "| .0.0.1>.0.0.0 .0.1.1>.0.1.0", STANDING),
+     "| .0.0.1>.0.0.0 .0.1.1>.0.1.0"),
 ]
-# Examples of the new language: (title, program, flags); without flags, the config's (old) language.
+# More examples: (title, program[, flags]); without flags, CURRENT.
 EXAMPLES += [
-    ("New: a basket by superposition (surrounded, with a bottom)", "(parallel periphery/H bottom/V out)", NEW),
-    ("New: a basket by hollowing a block", "(parallel universal/H (template center/H upper/V void/H) out)", NEW),
-    ("New: a ball in a sand basket (it breaks the walls)",
-     "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)", NEW),
-    ("New: a ball beside a field basket (the walls hold)",
-     "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)", NEW),
-    ("New: a plant (a source field under upward motion)",
-     "(parallel (template bottom/V center/H (field universal/H)) bottom/V* out)", NEW),
-    ("New: a spawner (a field holding a rising body)",
-     "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))) out)", NEW),
-    ("New: a drain (a void field swallows a rising body)",
-     "(parallel (template top/V center/H (field void/H)) (template bottom/V center/H (body (parallel universal/H bottom/V*))) out)", NEW),
-    ("New: a fountain (a field with motion inside)",
-     "(parallel (template bottom/V center/H (field (parallel universal/H bottom/V*))) void/V out)", NEW),
-    ("New: a rigid box (a body carrying a field), pushed by the ball inside",
+    ("a basket by superposition (surrounded, with a bottom)", "(parallel periphery/H bottom/V out)"),
+    ("a basket by hollowing a block", "(parallel universal/H (template center/H upper/V void/H) out)"),
+    ("a ball in a sand basket (packed to the board's edge, the sand holds)",
+     "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)"),
+    ("a ball beside a field basket (the walls hold)",
+     "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)"),
+    ("a plant (a source field under upward motion)",
+     "(parallel (template bottom/V center/H (field universal/H)) bottom/V* out)"),
+    ("a spawner (a field holding a rising body)",
+     "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))) out)"),
+    ("a drain (a void field swallows a rising body)",
+     "(parallel (template top/V center/H (field void/H)) (template bottom/V center/H (body (parallel universal/H bottom/V*))) out)"),
+    ("a fountain (a field with motion inside)",
+     "(parallel (template bottom/V center/H (field (parallel universal/H bottom/V*))) void/V out)"),
+    ("a rigid box (a body carrying a field), pushed by the ball inside",
      "(parallel (serial_h void/V (body (parallel (field (parallel periphery/H bottom/V)) (template center/H center/V "
-     "(body (parallel universal/H universal/H*))))) void/V) out)", NEW),
-    ("New: contraction piles up at the centre",
-     "(parallel (template center/H center/V universal/H) periphery/V* out)", NEW),
-    ("Standing: a body carrying a field with motion drives itself",
-     "(parallel (serial_h void/V (body universal/H (field bottom/H*)) void/V) out)", STANDING),
-    ("Standing: a bubble machine pushes out the bodies it holds",
-     "(parallel (serial_h void/V (serial_v void/H (field (parallel top/H* (body universal/H))) void/H) void/V) out)",
-     STANDING),
-    ("Standing: a conveyor carries a cart all the way",
-     "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)", STANDING),
-    ("Standing: a ball moves a hollow box only by pushing its walls",
+     "(body (parallel universal/H universal/H*))))) void/V) out)"),
+    ("contraction cannot squeeze a solid block",
+     "(parallel (template center/H center/V universal/H) periphery/V* out)"),
+    ("a body carrying a field with motion drives itself",
+     "(parallel (serial_h void/V (body universal/H (field bottom/H*)) void/V) out)"),
+    ("a bubble machine pushes out the bodies it holds",
+     "(parallel (serial_h void/V (serial_v void/H (field (parallel top/H* (body universal/H))) void/H) void/V) out)"),
+    ("a conveyor carries a cart all the way",
+     "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)"),
+    ("a ball moves a hollow box only by pushing its walls",
      "(parallel (serial_h void/V (body (parallel (field (parallel periphery/H bottom/V)) (template center/H center/V "
-     "(body (parallel universal/H bottom/H*))))) void/V) out)", STANDING),
-    ("Standing: a body riding in a moving body is driven as well as carried",
+     "(body (parallel universal/H bottom/H*))))) void/V) out)"),
+    ("a body riding in a moving body is driven as well as carried",
      "(parallel (serial_h void/V (body (parallel bottom/V bottom/H* (template center/V center/H (body universal/H)))) "
-     "void/V void/V) out)", STANDING),
-    ("Standing: a pusher drives a row of blocks against the edge, where they pack",
+     "void/V void/V) out)"),
+    ("a pusher drives a row of blocks against the edge, where they pack",
      "(parallel (serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) "
-     "neutral/V neutral/V) out)", STANDING),
-    ("Standing: a ball pushes a sand pile across open ground",
+     "neutral/V neutral/V) out)"),
+    ("a ball pushes a sand pile across open ground",
      "(parallel (serial_h void/V (body (parallel universal/H bottom/H*)) (serial_v void/H universal/H void/H) void/V void/V "
-     "void/V) out)", STANDING),
-    ("Standing: conveyed stuff pushes resting stuff; none is lost",
-     "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)", STANDING),
-    ("Standing: a glider through unexplored stuff clears its path",
-     "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)", STANDING),
-    ("Standing: through fog (a field) the path closes behind",
-     "(parallel (serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H) out)", STANDING),
-    ("Standing: a ball in fixed walls moves as small as it must be",
+     "void/V) out)"),
+    ("conveyed stuff pushes resting stuff; none is lost",
+     "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)"),
+    ("through fog (a field) the path closes behind",
+     "(parallel (serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H) out)"),
+    ("a ball in fixed walls moves as small as it must be",
      "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* "
-     "universal/V*))) out)", STANDING),
-    ("Standing: periphery motion gathers two strips at the centre",
-     "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)", STANDING),
+     "universal/V*))) out)"),
+    ("periphery motion gathers two strips at the centre",
+     "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)"),
 ]
 
 
@@ -400,7 +395,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
 
 
 def _examples() -> list:
-    return [{"title": e[0], "program": e[1], "lot": e[2] if len(e) > 2 else {}} for e in EXAMPLES]
+    return [{"title": e[0], "program": e[1], "lot": e[2] if len(e) > 2 else CURRENT} for e in EXAMPLES]
 
 
 def offline_page(cfg_path: str, ticks: int = 24) -> str:
@@ -436,7 +431,7 @@ def visualizer_page(cfg_path: str, lot: dict = None) -> str:
 def page(cfg_path: str, lot: dict = None) -> str:
     html = Path(__file__).with_name("playground_page.html").read_text(encoding="utf-8")
     data = json.dumps({"examples": _examples(), "config": cfg_path, "semantics": list(SEMANTICS),
-                       "lot": {k: bool((lot or {}).get(k, False)) for k in SEMANTICS}})
+                       "lot": {k: bool((lot if lot else CURRENT).get(k, False)) for k in SEMANTICS}})
     return html.replace("__BOOT__", data.replace("</", r"<\/"))
 
 

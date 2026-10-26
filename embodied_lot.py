@@ -2494,8 +2494,9 @@ class ConceptGraph:
         or enter a field's figure; instances of one body pass through each other.
 
         A move resolves what made it possible. If an agent of uncertain extent cannot move as it might be, it moves as
-        it must be: its placements narrow to those the move fits (``GroupToken.placements``), clear of fields, the board's
-        edge and every cell another unit might cover (two uncertain bodies would settle nothing). And the uncertain stuff
+        it must be: its placements narrow to those the move fits (``GroupToken.placements``), clear of fields, substance
+        it could not push, the board's edge and every cell another unit might cover (two uncertain bodies would settle
+        nothing). (Narrowing is tried only once the push has failed.) And the uncertain stuff
         it passes through (unknown, not substance more likely than not) is resolved by Bayes when it leaves a cell:
         covering the cell meant it held no substance, so its chance of substance becomes p x (1 - c), c the most likely
         the unit covered it while there (fields re-assert their claims, so a fog closes again behind)."""
@@ -2550,7 +2551,7 @@ class ConceptGraph:
             r0, c0 = rows.min(), cols.min()
             places = _placements(rows.max() + 1 - r0, cols.max() + 1 - c0)
             allowed = tok.placements if tok.placements is not None else frozenset(range(len(places)))
-            walls = fixed | np.logical_or.reduce([cover[y] > 0 for y in own if y != body.node_id      # all another
+            walls = fixed | stuff | np.logical_or.reduce([cover[y] > 0 for y in own if y != body.node_id   # all another
                                                   and not inside(y, body.node_id)                    # unit might
                                                   and node_of(y) is not node_of(body.node_id)] + [none])    # cover
             fits = set()

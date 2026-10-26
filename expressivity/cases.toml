@@ -95,11 +95,11 @@ concept = "containment"
 name = "sand: U from strips, packed to the edge, holds the object"
 program = "(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
+note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside. Pressing on, it moves as small as it must be, so where exactly it is grows uncertain (drawn faintly)."
 [case.boards]
 all = """
-#o#
-#o#
+#*#
+#*#
 ###
 """
 
