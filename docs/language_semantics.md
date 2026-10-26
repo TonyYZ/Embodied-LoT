@@ -11,6 +11,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `soft_edges` | A body's size and place in its region are uncertain: drawn as an average over placements (earlier languages; not part of the current one) |
 | `static_fields` | Bare leaves are stuff, bodies are objects, fields are places re-asserted every tick |
 | `standing_motion` | Every motion leaf acts every tick on everything in its region; self-motion is a special case (25 Oct) |
+| `flow_perception` | Observers see motion (optical flow) with its direction; a dashed edge into a motion leaf acts in the same tick (26 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -185,8 +186,36 @@ a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths:
   unknown like motion, rigid but three times the runs per body, about twice the cost of a likelihood.) A body that
   fills its slot is drawn like a solid block of that shape; it still moves and is pushed as one unit.
 
-The current language is pure claims, solid figure, static fields and standing motion (soft edges do nothing under
-standing motion, where the program states a body's size, so they are not part of it). The expressivity suite passes 61/61 in it (thirteen cases restated to these semantics, three added).
+The current language is pure claims, solid figure, static fields, standing motion and flow perception (soft edges do
+nothing under standing motion, where the program states a body's size, so they are not part of it). The expressivity suite passes 61/61 in it (thirteen cases restated to these semantics, three added).
+
+## 5c. Flow perception (`flow_perception`, 26 Oct)
+
+**A gap found.** On the gameboard, observers were given the drawing only: the motion field was never filled, so a
+moving pattern (top*, center*, periphery* ...) observed the static picture as its static pattern would. 71 of 300
+fitted programs (24%) have a moving pattern among their observers; in every fit so far these saw no motion.
+
+**The change.** Each tick the engine records how far every cell's content moved (a moved unit's cells get its shift,
+moved substance its own): its own optical flow, which observers see the next tick. A moving pattern observes it with
+sign, band by band: top*/bottom* everything one way, center* away from its centre, periphery* towards it, universal*
+moving either way, void* still, neutral* unknown. A dashed edge into a motion leaf acts in the tick its sources
+perceive, so a rule can act before the next move. On fitted programs it changes nothing (0 of 200 differ; the same
+likelihood values) and costs about 5%.
+
+**Solidity stated by a program (an experiment).** With built-in solidity off, two bodies approaching each other and a
+rule "converging (periphery*) with no gap left (universal over the middle) switches on a push apart (a field center*)"
+can be written in the language, and mostly keeps the bodies apart. Three limits showed:
+- Pressure without movement is invisible to flow: once pressed together the bodies stop, the converging observer goes
+  quiet, and the rule lets go; they lurch together for a tick, which shows motion again. A dashed edge from the push
+  to itself (hysteresis) helps but does not remove it.
+- The push apart is as strong as its gate, a mean of graded observations (about 0.6 here), against each body's own push
+  at full strength: a leak of one tick of overlap now and then, and small bounces.
+- The rule is specific to a layout (an axis, a region, these two bodies) and adds nodes and edges to every program that
+  needs it; solidity for any two objects anywhere is not one short rule.
+So a stated rule can express particular, flexible contact (a heavy body that does not budge, a soft one that yields),
+while general non-interpenetration is cheaper and exact as a core assumption, in line with infants: an early
+all-or-none expectation that objects do not pass through each other, refined later by learned variables such as the
+size of the hitter (Kotovsky & Baillargeon 1998). Demos: "solidity stated by the program" and "no solidity at all".
 
 ## 6. Results
 

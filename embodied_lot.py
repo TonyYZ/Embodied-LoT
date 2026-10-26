@@ -276,6 +276,15 @@ def _standing() -> bool:
     return STANDING_MOTION and STATIC_FIELDS and PURE_CLAIMS
 
 
+# Flow perception (gameboard). Observers see motion, not only the drawing: each tick records how far every cell's content
+# moved (bodies and substance: the engine's own optical flow), and a moving pattern observes it with sign, band by band
+# (top*/bottom*: everything one way; center*: away from its centre; periphery*: towards it; universal*: moving either
+# way; void*: still; neutral*: unknown). A dashed edge into a motion leaf acts in the tick its sources perceive, so a
+# rule like "converging, with no gap left: push apart" can act before the next move. With False, observers are given
+# the drawing only, and a moving pattern observes it as its static pattern would (earlier runs).
+FLOW_PERCEPTION = False
+
+
 def _spawned(node, ikey: tuple, instances) -> List[tuple]:
     """STATIC_FIELDS: the keys of a unit's instances at template position ``ikey``: the first, then those a field
     spawned (``ikey + ("s", n)``)."""
@@ -959,9 +968,44 @@ class ObjectNode(Node):
             means.append(float(values.sum()) / values.size if values.size > 0 else 0.0)   # == values.mean()
         return means
 
+    def _flow_match(self, field: ReceptiveField) -> float:
+        """FLOW_PERCEPTION: how well the motion in view matches this trigram's motion, band by band and signed (cells
+        per tick along its axis): bulk motion everything one way, out away from the centre, in towards it (its centre
+        band is not checked), universal any motion, void none, neutral unknown."""
+        name = PATTERN_TO_NAME.get(self.pattern)
+        if name == "neutral":
+            return 0.5
+        kind = _MOTION_KIND.get(name)
+        axis = 0 if self.orientation == Orientation.VERTICAL else 1
+        centre = (field.height if axis == 0 else field.width) / 2.0
+        bulk = float(np.sign(BodyNode._template_motion(self)[axis]))
+        sims = []
+        for i in range(self.n_bands):
+            r0, r1, c0, c1 = band_region(field.region, i, self.n_bands, self.orientation)
+            m = field.motion[r0:r1, c0:c1, axis]
+            if not m.size:
+                continue
+            seen = float(m.sum()) / m.size
+            if kind == "random":
+                sims.append(min(1.0, abs(seen)))
+                continue
+            if name == "void":
+                expected = 0.0
+            elif kind in ("bulk", "gradient"):
+                expected = bulk
+            else:
+                side = float(np.sign(((r0 + r1) if axis == 0 else (c0 + c1)) / 2.0 - centre))
+                if side == 0:
+                    continue                             # in / out: the centre band does not move
+                expected = side if kind == "out" else -side
+            sims.append(1.0 - min(1.0, abs(seen - expected)))
+        return _mean(sims) if sims else 0.0
+
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         if field is None:
             self.activation = self.gate
+        elif FLOW_PERCEPTION and self.is_dynamic and field.motion is not None:
+            self.activation = self.gate * self._flow_match(field)
         elif PURE_CLAIMS and len(set(self.pattern)) == 1:      # centre axis: the substance in every band
             target = self.pattern[0]
             sims = [1.0 - 2.0 * abs(obs - 0.5) if target == 0.5 else 1.0 - abs(obs - target)
@@ -1938,7 +1982,9 @@ class ConceptGraph:
         absolute grid coordinates. An observer with several views (it sits in a template's
         content) takes their weighted mean. Observers with an input window keep scanning it.
         """
-        shared = ReceptiveField(self._imagery if self._imagery is not None else blank_board(self.grid))
+        flow = getattr(self, "_flow", {}) if FLOW_PERCEPTION else {}
+        shared = ReceptiveField(self._imagery if self._imagery is not None else blank_board(self.grid),
+                                sum(flow.values()) if flow else None)
         spaces = getattr(self, "_spaces", None) or {}
         tree = self.tree_index() if SEPARATE_TREE_SPACES else {}
         views = self.node_views(self.grid) if views is None else views
@@ -1949,7 +1995,8 @@ class ConceptGraph:
             board = shared
             if SEPARATE_TREE_SPACES:                          # an observer sees only its own tree's space
                 own = spaces.get(tree.get(node.node_id))
-                board = ReceptiveField(own if own is not None else blank_board(self.grid))
+                board = ReceptiveField(own if own is not None else blank_board(self.grid),
+                                       flow.get(tree.get(node.node_id)) if FLOW_PERCEPTION else None)
             vs = views.get(node.node_id, [])
             if not vs:
                 for n in walk(node):
@@ -2341,7 +2388,9 @@ class ConceptGraph:
                       tuple((o[0].tobytes(), o[1], o[2], o[3], round(o[4], 6), round(o[5], 6), round(o[6], 6))
                             for o in S["orders"]), S["passed"].tobytes() if "passed" in S else b"")
                      for rid, S in sorted(getattr(self, "_sub", {}).items()))
-        return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ()) + ((subs,) if subs else ())
+        flow = tuple(sorted((k, v.tobytes()) for k, v in getattr(self, "_flow", {}).items())) if FLOW_PERCEPTION else ()
+        return (out, jit, (self._tick if random_now else 0)) + ((groups,) if groups else ()) + ((subs,) if subs else ()) \
+            + ((flow,) if flow else ())
 
     def _move_bodies_gameboard(self, views=None) -> None:
         """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
@@ -2719,10 +2768,12 @@ class ConceptGraph:
         result = self._scan()
         views = self.node_views(self.grid)      # unchanged until the bodies move
         self._perceive(views)
+        self._gate_motion_now()
         self._issue_orders(views)
         if GROUPING_NODES:
             self._drive_bodies(views)
         self._propagate_delayed()
+        before = self._flow_begin()
         self._move_bodies_gameboard(views)
         if STATIC_FIELDS and PURE_CLAIMS:
             for rid in list(getattr(self, "_sub", {})):
@@ -2731,9 +2782,52 @@ class ConceptGraph:
             self._spawn_bodies()
         elif MOTION_KINDS:
             self._move_mass()
+        self._flow_end(before)
         self._spaces, self._imagery = self._render_all()
         self._tick += 1
         return result
+
+    def _gate_motion_now(self) -> None:
+        """FLOW_PERCEPTION: a dashed edge into a motion leaf sets its gate in the tick its sources perceive (the mean of
+        their activations), so the motion it switches on is ordered before the next move."""
+        if not FLOW_PERCEPTION:
+            return
+        sources: Dict[str, List[Node]] = defaultdict(list)
+        for edge in self._dashed:
+            if isinstance(edge.target, ObjectNode) and edge.target.is_dynamic:
+                sources[edge.target.node_id].append(edge.source)
+        for nid, srcs in sources.items():
+            self._nodes[nid].gate = _clamp(_mean([s.activation for s in srcs]))
+
+    def _unit_cells(self) -> Dict[str, np.ndarray]:
+        return {b: cells for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()}
+
+    def _flow_begin(self):
+        """FLOW_PERCEPTION: before a tick's moves, where every unit is (and a clean slate for the substance's flow)."""
+        if not FLOW_PERCEPTION:
+            return None
+        for S in getattr(self, "_sub", {}).values():
+            S["flow"] = np.zeros(tuple(self.grid) + (2,))
+        return self._unit_cells()
+
+    def _flow_end(self, before) -> None:
+        """FLOW_PERCEPTION: this tick's optical flow per tree, (H, W, 2) cells moved per cell: a moved unit's cells get
+        its shift, moved substance its own; observers see it next tick (``_perceive``)."""
+        if before is None:
+            return
+        H, W = self.grid
+        tree, units, flow = self.tree_index(), self._tokens(), {}
+        for b, cells in self._unit_cells().items():
+            old = before.get(b)
+            if old is None or not old.any() or not cells.any():
+                continue
+            d = np.argwhere(cells).min(axis=0) - np.argwhere(old).min(axis=0)
+            if d.any():
+                flow.setdefault(tree.get(getattr(units[b], "node", units[b]).node_id), np.zeros((H, W, 2)))[cells] = d
+        for rid, S in getattr(self, "_sub", {}).items():
+            if S.get("flow") is not None and S["flow"].any():
+                flow[rid] = flow.get(rid, np.zeros((H, W, 2))) + S["flow"]
+        self._flow = flow
 
     def evaluate_against(self, field: ReceptiveField, at_node_id: Optional[str] = None,
                          modality: str = "retina", detach_after: bool = True) -> float:
@@ -3337,6 +3431,8 @@ class ConceptGraph:
         rows, cols, tr, tc = rows[ok], cols[ok], tr[ok], tc[ok]
         if not rows.size:
             return
+        if S.get("flow") is not None:            # FLOW_PERCEPTION: this tick's optical flow of the substance
+            S["flow"][tr, tc] = (dy, dx)
         av, aw = src_v[rows, cols].copy(), src_s[rows, cols].copy()
         S["v"][rows, cols], S["s"][rows, cols], S["moved"][rows, cols] = 0.0, aw, False   # left behind: empty
         pv, pw, pm = S["v"][tr, tc], S["s"][tr, tc], S["moved"][tr, tc]

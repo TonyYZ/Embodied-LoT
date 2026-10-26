@@ -39,7 +39,7 @@ GRID = 12
 _lock = Lock()                       # the engine's semantics are module flags: one run at a time
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
 # STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
-SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion")
+SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion", "flow_perception")
 CURRENT = {k: k != "soft_edges" for k in SEMANTICS}   # the language the examples and a fresh page run in: keep it
                                                        # current (soft edges do nothing under standing motion)
 
@@ -106,6 +106,13 @@ EXAMPLES += [
      "(parallel (serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H) out)"),
     ("a ball that fills its slot in a closed box cannot move (the program states its size)",
      "(parallel (field (parallel periphery/H bottom/V top/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))) out)"),
+    ("solidity stated by the program (built-in solidity off): converging with no gap left switches on a push apart",
+     "(parallel (serial_h (body (parallel universal/H bottom/H*)) void/V void/V (body (parallel universal/H top/H*))) "
+     "periphery/H* (template center/H universal/H) (field center/H*) out) | .1>.3.0 .2.1>.3.0 .3.0>.3.0",
+     {**CURRENT, "solid_figure": False}),
+    ("no solidity at all (built-in solidity off, no rule): the bodies run into each other",
+     "(parallel (serial_h (body (parallel universal/H bottom/H*)) void/V void/V (body (parallel universal/H top/H*))) out)",
+     {**CURRENT, "solid_figure": False}),
     ("periphery motion gathers two strips at the centre",
      "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)"),
 ]
@@ -295,6 +302,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
         g._scan()
         views = g.node_views(g.grid)
         g._perceive(views)
+        g._gate_motion_now()
         perception = {r.node_id: round(float(r.activation), 3) for r in g._observer_roots}
         measures = {m.node_id: round(float(m.activation), 3) for m in getattr(g, "_measures", [])}
         masks = g.view_masks((GRID, GRID))
@@ -322,6 +330,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
         gate_changes = [{"node": n.node_id, "from": round(gates_before[n.node_id], 3), "to": round(n.gate, 3)}
                         for n in g.nodes if n.node_id in pos and abs(n.gate - gates_before[n.node_id]) > 1e-6]
         offsets = {k: st["off"].copy() for k, st in g._mass.items()}
+        flow_from = g._flow_begin()
         g._move_bodies_gameboard(views)
         substance, spawned, resets = [], [], []
         if static:                                   # move substance, re-assert fields, spawn held bodies
@@ -340,6 +349,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
                          for k, b in before_sub.items()]
         elif embodied_lot.MOTION_KINDS:
             g._move_mass()
+        g._flow_end(flow_from)
         mass = [{"tree": g.roots.index(g[k]) if k in g._nodes else k,
                  "cells": int(np.any(st["off"] != offsets.get(k, 0), axis=-1).sum())} for k, st in g._mass.items()]
         g._spaces, g._imagery = g._render_all()
