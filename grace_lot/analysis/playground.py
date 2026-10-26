@@ -401,16 +401,22 @@ def _examples() -> list:
 def offline_page(cfg_path: str, ticks: int = 24) -> str:
     """The board-first page with every example's runs built in (each joint state of its unknown motion, ``ticks``
     ticks, under its own language switches), so it plays without the server: a phone, an e-mail attachment. Programs
-    and switches other than the examples' cannot run offline; the page says so."""
+    and switches other than the examples' cannot run offline; the page says so. An example with more than 9 joint
+    states keeps only those where all its bodies of unknown size have one size."""
     runs = []
     for e in _examples():
         lot = {k: bool(e["lot"].get(k, False)) for k in SEMANTICS}
         first = record(e["program"], ticks, {}, cfg_path, lot)
         options = [dict(zip([u["key"] for u in first["units"]], c))
                    for c in itertools.product(*[u["options"] for u in first["units"]])]
+        if len(options) > 9:                     # many bodies of unknown size: built in with one size for all
+            options = [o for o in options if len({v for k, v in o.items() if k.endswith(":size")}) <= 1]
         for states in options:
             d = first if states == {u["key"]: u["state"] for u in first["units"]} else record(e["program"], ticks, states, cfg_path, lot)
             d.pop("snapshots", None)                     # the graph viewer's, not shown on this page
+            if len(d["roots"]) == 1:                     # one tree: its space is the drawn board (shown only for several)
+                for f in d["frames"]:
+                    f["spaces"] = {}
             runs.append({"program": e["program"], "lot": lot, "states": states, "run": d})
     html = page(cfg_path).replace(
         "Type a program and step it on the 12×12 gameboard. The server runs the real engine",
