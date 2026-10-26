@@ -62,7 +62,7 @@ svg{display:block;max-width:100%;height:auto}
 .controls input[type=range]{flex:1 1 200px}
 .tick{font-variant-numeric:tabular-nums;font-weight:600;min-width:64px}
 .forest{overflow-x:auto}
-.forest svg{max-width:none;width:100%;min-width:560px}
+.forest svg{max-width:none;margin:0 auto}
 .phases{list-style:none;padding:0;margin:0;font-size:.9rem}
 .phases li{padding:6px 0;border-top:1px solid var(--line)}
 .phases li:first-child{border-top:0}
@@ -287,6 +287,7 @@ function tree(f) {
   const DX = 92, DY = 84, PX = 56, PY = 50;
   const W = (Math.max(...xs) + 1) * DX + PX, H = Math.max(...ys) * DY + 2 * PY + 40;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W); svg.setAttribute('height', H);     // its natural size: labels stay readable, not huge
   const pos = {}; D.nodes.forEach(n => pos[n.id] = [PX + n.x * DX, PY + 20 + n.y * DY]);
   const defs = el('defs', {}, svg);
   const m = el('marker', {id: 'arr', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse'}, defs);
