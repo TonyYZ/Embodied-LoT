@@ -177,10 +177,12 @@ a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths:
   it held no substance, so its chance becomes p x (1 - c), c the most likely the body covered it while there. Someone
   crossing a dark room clears their route, not the room. A field re-asserts its claims every tick, so fog or water
   closes again behind.
-- The body: an agent of uncertain extent that cannot move as it might be moves as it must be. Its placements narrow
-  to those the move fits, clear of fields, the board's edge and every cell another unit might cover (a ball heard
-  rattling in a box is smaller than the box). Two uncertain bodies settle nothing between them, so a collision with
-  another body never narrows; the push is passed along instead.
+- The body is rigid; its size is an unknown of the run, like unknown motion. An agent of uncertain extent is, in each
+  realization, its whole region, or 2/3 or 1/3 of it centred (1/3 each); within a run it is crisp and never changes,
+  moving until it touches something. (A first version narrowed a body's possible extent whenever a move needed it to
+  be smaller; in imagination that is self-fulfilling, since nothing observed the move, and a body pressed into a
+  corner shrank to a cell. It was dropped.) The likelihood mixes the size realizations as it mixes unknown motion;
+  the expressivity suite judges a sketch on the board averaged over sizes, which is what soft edges used to draw.
 
 The expressivity suite passes 61/61 with all five flags (thirteen cases restated to these semantics, three added).
 

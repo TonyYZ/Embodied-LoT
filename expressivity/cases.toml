@@ -647,7 +647,7 @@ concept = "growth"
 name = "a spawner: a field holding a rising thin body emits a growing line"
 program = "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))))"
 frames = [0, 11]
-note = "Each tick a new body appears at home while the last rises, so a line grows up out of the field."
+note = "Each tick a new body appears at home while the last rises, so a line grows up out of the field. Its width is unknown (a size per run), so at home, where each size sits differently, the line reads as content with room."
 [case.boards]
 "0" = """
 *****__*****
@@ -672,9 +672,9 @@ note = "Each tick a new body appears at home while the last rises, so a line gro
 *****##*****
 *****##*****
 *****##*****
-*****##*****
-*****##*****
-*****##*****
+*****oo*****
+*****oo*****
+*****oo*****
 ************
 """
 
@@ -878,10 +878,10 @@ expect = "differ"
 
 [[case]]
 concept = "pushing"
-name = "a pusher drives a row of blocks against the edge, where they pack"
+name = "a pusher drives a row of blocks against the edge, where they stop side by side"
 program = "(serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) neutral/V neutral/V)"
 frames = [11]
-note = "A push is passed along: the pushed block pushes the one ahead. None may leave the board; the blocks' widths are uncertain, so as the pusher keeps pushing, its moves resolve them (and itself) as thin as they must be, and the row packs against the edge."
+note = "A push is passed along: the pushed block pushes the one ahead. None may leave the board, so at the edge the row stops, pusher included. The blocks' widths are unknown (a size per run), so the averaged board shows the packed row with uncertain edges."
 [case.boards]
 "11" = """
 ************

@@ -93,7 +93,7 @@ EXAMPLES += [
     ("a body riding in a moving body is driven as well as carried",
      "(parallel (serial_h void/V (body (parallel bottom/V bottom/H* (template center/V center/H (body universal/H)))) "
      "void/V void/V) out)"),
-    ("a pusher drives a row of blocks against the edge, where they pack",
+    ("a pusher drives a row of blocks against the edge, where they stop side by side",
      "(parallel (serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) "
      "neutral/V neutral/V) out)"),
     ("a ball pushes a sand pile across open ground",
@@ -103,7 +103,7 @@ EXAMPLES += [
      "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)"),
     ("through fog (a field) the path closes behind",
      "(parallel (serial_h (body (parallel center/V bottom/H*)) (field neutral/H) neutral/H) out)"),
-    ("a ball in fixed walls moves as small as it must be",
+    ("a ball of unknown size in fixed walls (pick its size: full, it cannot move; smaller, it has room)",
      "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* "
      "universal/V*))) out)"),
     ("periphery motion gathers two strips at the centre",
@@ -186,28 +186,6 @@ def _cells(mask) -> list:
     return [[int(r), int(c)] for r, c in zip(rows, cols)]
 
 
-def outline(g, node, masks: dict):
-    """A body's outline on the board: its region, but for an instance whose moves narrowed its possible extent
-    (``GroupToken.placements``), only the cells those placements cover."""
-    m = masks.get(node.node_id)
-    narrowed = [t for t in getattr(node, "instances", {}).values() if getattr(t, "placements", None) is not None]
-    if m is None or not narrowed:
-        return m
-    at, out = g._moving_bodies(g.node_views(g.grid)), m.copy()
-    for t in narrowed:
-        cells = at.get(t.node_id, (None, None, None))[2]
-        if cells is None or not cells.any():
-            continue
-        out &= ~cells
-        rows, cols = np.nonzero(cells)
-        r0, c0 = rows.min(), cols.min()
-        places = embodied_lot._placements(rows.max() + 1 - r0, cols.max() + 1 - c0)
-        for k in t.placements:
-            hs, ws, dy, dx, _ = places[k]
-            out[r0 + dy:r0 + dy + hs, c0 + dx:c0 + dx + ws] = True
-    return out
-
-
 def _order(o) -> dict:
     return {"axis": "vertical" if o[0] == 0 else "horizontal", "direction": int(np.sign(o[1])),
             "cells": round(float(o[2]), 2), "rate": round(float(o[3]), 3), "credit": round(float(o[4]), 3),
@@ -268,7 +246,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
     prog, issues, g = prepare(src, cfg_path, lot)
     static = embodied_lot.STATIC_FIELDS and embodied_lot.PURE_CLAIMS
     units = {k: kind for k, (kind, _, _) in sorted(g.unknown_motion_units().items())}
-    options = {"universal": ["a", "b"], "neutral": ["still", "a", "b"]}
+    options = {"universal": ["a", "b"], "neutral": ["still", "a", "b"], "size": ["1", "2/3", "1/3"]}
     states = {k: states.get(k, options[kind][0]) for k, kind in units.items()}
     states = {k: v if v in options[units[k]] else options[units[k]][0] for k, v in states.items()}
     g.motion_states = dict(states)
@@ -388,7 +366,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
             "role": {n.node_id: getattr(n, "role", "imagined") for n in g.nodes if n.node_id in pos},
             "observers": [{"id": nid, "value": v, **board_cells(nid, masks)} for nid, v in perception.items()],
             "measures": [{"id": nid, "value": v, **board_cells(nid, masks)} for nid, v in measures.items()],
-            "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(outline(g, n, moved))}
+            "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(moved[n.node_id])}
                       for n in movers if n.node_id in moved],
             "tokens": [{"id": u.node_id, "kind": u.node.node_type, "drive": drives[u.node_id],
                         "orders": [_order(o) for o in u.orders]} for u in tokens],
@@ -437,7 +415,15 @@ def offline_page(cfg_path: str, ticks: int = 24) -> str:
     html = page(cfg_path).replace(
         "Type a program and step it on the 12×12 gameboard. The server runs the real engine",
         "Pick an example and step it on the 12×12 gameboard. This offline copy holds runs of the real engine")
-    data = json.dumps({"ticks": ticks, "runs": runs}, separators=(",", ":"))
+    def coarse(x):                               # two decimals are plenty to look at, and halve the page
+        if isinstance(x, float):
+            return round(x, 2)
+        if isinstance(x, list):
+            return [coarse(v) for v in x]
+        if isinstance(x, dict):
+            return {k: coarse(v) for k, v in x.items()}
+        return x
+    data = json.dumps(coarse({"ticks": ticks, "runs": runs}), separators=(",", ":"))
     return html.replace("const OFFLINE = null;", "const OFFLINE = " + data.replace("</", r"<\/") + ";")
 
 

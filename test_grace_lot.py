@@ -1387,15 +1387,28 @@ class StandingMotionTests(unittest.TestCase):
 
     def test_a_field_pushes_out_the_body_it_holds_and_spawns_another(self):
         v = self.boards("(serial_h void/V (field (parallel bottom/H* (body universal/H))) void/V)")
-        self.assertTrue((v[8][:, 4:8] > 0.6).all())                                 # a new one at home (soft edges)
-        self.assertTrue((v[8][:, 8:10] > 0.6).all())                                # the first one pushed out
+        self.assertTrue((v[8][4:8, 5:7] > 0.5).all())                               # a new one at home (any size)
+        self.assertTrue((v[8][4:8, 8:10] > 0.5).all())                              # the first one pushed out
 
     def test_self_motion_is_the_standing_rule_on_the_bodys_own_content(self):
         import embodied_lot
-        src = "(serial_h void/V (body universal/H bottom/H*) void/V)"
-        standing = self.boards(src)
+        from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.program import compile_program
+
+        def path():
+            g = compile_program(program_of("(serial_h void/V (body universal/H bottom/H*) void/V)"))
+            g.grid = (12, 12)
+            g.reset_gates()
+            g.assign_roles()
+            tok = next(iter(g._tokens().values()))
+            out = []
+            for _ in range(9):
+                g.step()
+                out.append(tok.window(12, 12))
+            return out
+        standing = path()
         embodied_lot.STANDING_MOTION = False                                    # the agent's own drive
-        self.assertTrue(np.array_equal(standing, self.boards(src)))
+        self.assertEqual(standing, path())
 
     def test_a_pushed_row_of_blocks_stops_side_by_side_at_the_edge(self):
         from grace_lot.analysis.expressivity import program_of
@@ -1432,22 +1445,29 @@ class StandingMotionTests(unittest.TestCase):
         self.assertTrue((stuff[0][6, 4:8] == 0.5).all() and (stuff[9][6, 4:8] < 0.4).all())   # resolved where it went
         self.assertTrue((fog[9][6, 4:8] == 0.5).all())                                           # a field re-asserts
 
-    def test_a_ball_in_fixed_walls_moves_as_small_as_it_must_be(self):
+    def test_a_ball_of_unknown_size_is_rigid_in_each_size_realization(self):
         from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.adapter import motion_combinations
         from grace_lot.lot_adapter.program import compile_program
-        g = compile_program(program_of("(parallel (field (parallel bottom/V periphery/H)) (template center/H (body "
-                                       "(parallel center/V universal/H* universal/V*))))"))
-        g.grid = (12, 12)
-        g.reset_gates()
-        g.assign_roles()
-        g.motion_states = {k: "a" for k in g.unknown_motion_units()}
         from embodied_lot import FieldNode
-        tok = next(t for t in g._tokens().values() if not isinstance(t.node, FieldNode))
-        start = list(tok.position)
-        for _ in range(6):
-            g.step()
-        self.assertNotEqual(tok.position, start)                                 # it moved inside the walls
-        self.assertIsNotNone(tok.placements)                                     # by being smaller than it might be
+        src = "(parallel (field (parallel bottom/V periphery/H)) (template center/H (body (parallel center/V universal/H* universal/V*))))"
+        combos = motion_combinations(program_of(src), 12)
+        self.assertEqual(sorted({c[0][k] for c in combos for k in c[0] if k.endswith(":size")}), ["1", "1/3", "2/3"])
+        moved = {}
+        for states, w in combos:
+            g = compile_program(program_of(src))
+            g.grid = (12, 12)
+            g.reset_gates()
+            g.assign_roles()
+            g.motion_states = states
+            tok = next(t for t in g._tokens().values() if not isinstance(t.node, FieldNode))
+            start, extent = list(tok.position), list(tok.extent)
+            for _ in range(6):
+                g.step()
+            self.assertEqual(tok.extent, extent)                                 # rigid: its size never changes
+            size = next(v for k, v in states.items() if k.endswith(":size"))
+            moved[size] = moved.get(size, False) or tok.position != start
+        self.assertEqual(moved, {"1": False, "2/3": True, "1/3": True})          # room only when smaller than its slot
 
     def test_a_conveyor_carries_stuff_every_tick(self):
         v = self.boards("(parallel (field bottom/H*) (serial_h universal/V void/V void/V void/V))")
