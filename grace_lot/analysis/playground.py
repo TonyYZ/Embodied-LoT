@@ -40,7 +40,7 @@ _lock = Lock()                       # the engine's semantics are module flags: 
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
 # STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
 SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion", "flow_perception",
-             "multi_part_units", "contour_claims", "motion_claims")
+             "multi_part_units", "contour_claims", "motion_claims", "open_edge")
 CURRENT = {k: k != "soft_edges" for k in SEMANTICS}   # the language the examples and a fresh page run in: keep it
                                                        # current (soft edges do nothing under standing motion)
 
@@ -72,10 +72,17 @@ EXAMPLES = [
      "(parallel periphery/H bottom/V out)"),
     ("a basket by hollowing a block",
      "(parallel universal/H (template center/H upper/V void/H) out)"),
-    ("a ball in a sand basket (packed to the board's edge, the sand holds)",
+    ("a ball in a sand basket pinned in place (void*): the sand holds, the ball stays inside",
+     "(parallel periphery/H bottom/V void/V* (template center/H center/V (serial_v (serial_h (body universal/H "
+     "universal/H* universal/V*) void/V) void/H)) out)"),
+    ("a ball in a loose sand basket pushes the sand off the board (nothing pins it; the edge is open)",
      "(parallel periphery/H bottom/V (template center/H center/V (serial_v (serial_h (body universal/H "
      "universal/H* universal/V*) void/V) void/H)) out)"),
-    ("a ball beside a field basket (the walls hold: the board's edge backs them)",
+    ("a ball in a basket of pinned fields (each wall a field with void*) stays inside",
+     "(parallel (serial_h (field universal/H void/H*) void/V void/V void/V void/V (field universal/H void/H*)) "
+     "(serial_v (field universal/H void/H*) void/H void/H void/H void/H void/H) (template center/H center/V "
+     "(serial_v (serial_h (body universal/H universal/H* universal/V*) void/V) void/H)) out)"),
+    ("a ball beside a field basket pushes through a wall and leaves; the wall heals behind (nothing pins it)",
      "(parallel (field periphery/H bottom/V) (template center/H center/V (serial_v (serial_h (body universal/H"
      " universal/H* universal/V*) void/V) void/H)) out)"),
     ("a ball pushes into a free-standing wall (a field): the mass piles up ahead, the wall closes behind",
@@ -108,7 +115,7 @@ EXAMPLES = [
      "(parallel (serial_h void/V (body universal/H (field bottom/H*)) void/V) out)"),
     ("a bubble machine pushes out the bodies it holds",
      "(parallel (serial_h void/V (serial_v void/H (field top/H* (body universal/H)) void/H) void/V) out)"),
-    ("a conveyor carries a cart all the way",
+    ("a conveyor carries a cart all the way, and off the board",
      "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)"),
     ("a ball crosses a roomy box, then moves it only by pushing its wall",
      "(parallel (serial_h (body (field periphery/H bottom/V) (template center/H center/V (body universal/H "
@@ -116,17 +123,17 @@ EXAMPLES = [
     ("a body riding in a moving body is carried, not driven twice",
      "(parallel (serial_h void/V (body bottom/V bottom/H* (template center/V center/H (body universal/H))) "
      "void/V void/V) out)"),
-    ("a pusher drives a row of blocks against the edge, where they stop side by side",
+    ("a pusher drives a row of blocks against a pinned wall, where they stop side by side",
      "(parallel (serial_h (body universal/H bottom/H*) (body universal/H) neutral/V (body universal/H) "
-     "neutral/V neutral/V) out)"),
-    ("a ball pushes a sand pile across open ground",
+     "neutral/V (field universal/V void/V*)) out)"),
+    ("a ball pushes a sand pile across open ground and off the board",
      "(parallel (serial_h void/V (body universal/H bottom/H*) (serial_v void/H universal/H void/H) void/V "
      "void/V void/V) out)"),
-    ("conveyed stuff pushes resting stuff; none is lost",
+    ("conveyed stuff pushes resting stuff; none is squeezed, and what reaches the edge leaves the board",
      "(parallel (serial_h (field bottom/H*) void/V) (serial_h universal/V void/V universal/V) out)"),
     ("through fog (a field) the path closes behind",
      "(parallel (serial_h (body center/V bottom/H*) (field neutral/H) neutral/H) out)"),
-    ("a ball in a closed box (walls drawn as outlines) moves until it meets a wall",
+    ("a ball in a closed box (walls drawn as outlines) pushes through a wall and leaves; the wall heals behind",
      "(parallel (field periphery/H bottom/V top/V) (template center/H center/V (body universal/H universal/H* "
      "universal/V*)) out)"),
     ("solidity stated by the program (built-in solidity off): converging with no gap left switches on a push "

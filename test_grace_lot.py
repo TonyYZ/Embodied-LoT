@@ -1364,6 +1364,55 @@ class StaticFieldsTests(unittest.TestCase):
         self.assertTrue((v[11][5:7, 4:8] > 0.75).all() and (v[11][[4, 7], 4:8] < 0.25).all())
 
 
+class MotionClaimsTests(unittest.TestCase):
+    """lot.motion_claims and lot.open_edge: motion leaves as claims (pins, dilution, fields outrank); an open board."""
+
+    def setUp(self):
+        import embodied_lot
+        self.saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        for k in ("PURE_CLAIMS", "SOLID_FIGURE", "STATIC_FIELDS", "STANDING_MOTION", "CONTOUR_CLAIMS", "MOTION_CLAIMS",
+                  "OPEN_EDGE"):
+            setattr(embodied_lot, k, True)
+        embodied_lot.SOFT_EDGES = False
+
+    def tearDown(self):
+        import embodied_lot
+        vars(embodied_lot).update(self.saved)
+
+    def row(self, src, frames=7, r=5):
+        from grace_lot.analysis.expressivity import render
+        return render(src, frames, 0)[0][1][:, 0, r]
+
+    BALL = "(serial_v void/H (body universal/H bottom/H*) void/H)"
+
+    def test_a_pinned_rock_stops_a_ball_a_loose_wall_does_not(self):
+        rock = self.row(f"(serial_h {self.BALL} void/V (field universal/H void/H*) void/V void/V void/V)")
+        loose = self.row(f"(serial_h {self.BALL} void/V (field universal/H) void/V void/V void/V)")
+        self.assertTrue((rock[6][6:] < 0.25).all())                  # nothing got past the rock
+        self.assertTrue((loose[6][6:9] > 0.75).all())                # the loose wall's mass was pushed on
+
+    def test_a_sibling_neutral_star_halves_the_speed_a_sibling_void_star_stops_it(self):
+        lead = lambda v: int((v > 0.75).nonzero()[0].max())
+        alone = self.row("(serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V void/V void/V void/V void/V)")
+        half = self.row("(serial_h (serial_v void/H (body universal/H bottom/H* neutral/H*) void/H) void/V void/V void/V "
+                        "void/V void/V)")
+        still = self.row("(serial_h (serial_v void/H (body universal/H bottom/H* void/H*) void/H) void/V void/V void/V "
+                         "void/V void/V)")
+        self.assertEqual(lead(alone[6]) - lead(alone[0]), 6)
+        self.assertEqual(lead(half[6]) - lead(half[0]), 3)
+        self.assertEqual(lead(still[6]), lead(still[0]))
+
+    def test_a_tar_pit_field_holds_a_self_mover(self):
+        v = self.row(f"(serial_h {self.BALL} void/V (field void/H*) void/V void/V void/V)")
+        self.assertTrue((v[6][6:] < 0.25).all())
+
+    def test_an_open_edge_lets_a_body_leave_drawn_cut_off(self):
+        v = self.row("(serial_h void/V void/V (serial_v void/H (body (serial_h universal/H void/H) bottom/H*) void/H))", 6)
+        self.assertTrue((v[1][9:11] > 0.75).all() and v[1][11] < 0.25)   # its shape, not squeezed
+        self.assertTrue((v[3][11] > 0.75))                                  # half of it still on the board
+        self.assertTrue((v[5] < 0.25).all())                                # gone past the edge
+
+
 class StandingMotionTests(unittest.TestCase):
     """lot.standing_motion: motion outside a body acts every tick on everything in its region."""
 

@@ -313,6 +313,25 @@ def _motion_claims() -> bool:
     return MOTION_CLAIMS and _standing()
 
 
+# An open board (needs STANDING_MOTION). The board is the part of an imagined space being drawn, not a box: nothing
+# bounces off its edge. A body may move past it: it keeps its place and its orders, is drawn cut off at the edge (not
+# squeezed), and can come back; nothing on the board acts on it while none of it is there (no imagery reaches it).
+# Mass that leaves is gone: stuff has no identity to keep track of off the board. What traps anything is substance
+# (pinned by void*, MOTION_CLAIMS), not the rim. With False, the rim holds: nothing leaves the board (earlier runs).
+OPEN_EDGE = False
+
+
+def _open_edge() -> bool:
+    return OPEN_EDGE and _standing()
+
+
+def _clip(region: "Region", shape: Tuple[int, int]) -> "Region":
+    """The part of ``region`` on an H x W canvas (OPEN_EDGE: a body's window may reach past the board)."""
+    H, W = shape
+    r0, r1, c0, c1 = region
+    return min(max(r0, 0), H), min(max(r1, 0), H), min(max(c0, 0), W), min(max(c1, 0), W)
+
+
 def _lone_bands(pattern) -> set:
     """CONTOUR_CLAIMS: the figure bands with no figure band beside them (each a salient presence, claimed as a line)."""
     fig = [b > 0.5 for b in pattern]
@@ -494,7 +513,8 @@ def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray
             break
         run |= ahead
     lands = lambda m: _moved_mask(m, -dy, -dx)                # the cells whose target is in m
-    blocked = run & (~lands(np.ones_like(run)) | lands(against & ~run) | _held(S, drive))
+    off = np.zeros_like(run) if _open_edge() else ~lands(np.ones_like(run))   # OPEN_EDGE: it may leave the board
+    blocked = run & (off | lands(against & ~run) | _held(S, drive))
     while True:
         more = run & lands(blocked) & ~blocked
         if not more.any():
@@ -1239,13 +1259,16 @@ class BodyNode(StructureNode):
             return None
         self._ensure_support_from_field(field)
         root = ReceptiveField(field._root_activation, field._root_motion)
-        return root.subfield(*self.window(*root.shape))
+        return root.subfield(*_clip(self.window(*root.shape), root.shape))
 
     def window(self, H: int, W: int) -> Region:
         """The body's rectangle in an H x W root field, clamped to the field edges."""
         cy, cx = self.position
         eh, ew = self.extent
         h_px, w_px = max(1, round(eh * H)), max(1, round(ew * W))
+        if _open_edge():                       # past the board: its whole window, cut off where it is drawn
+            r0, c0 = round(cy * H - h_px / 2), round(cx * W - w_px / 2)
+            return r0, r0 + h_px, c0, c0 + w_px
         if TREE_SIZED_BODIES:                  # position is the exact centre: the window starts at centre - size/2
             r0, c0 = max(0, round(cy * H - h_px / 2)), max(0, round(cx * W - w_px / 2))
         else:
@@ -1427,7 +1450,7 @@ class GroupToken:
         if self.anchor is not None:
             dr, dc = region[0] - self.anchor[0], region[2] - self.anchor[1]
             r0, r1, c0, c1 = r0 + dr, r1 + dr, c0 + dc, c1 + dc
-        return max(0, r0), min(fh, r1), max(0, c0), min(fw, c1)
+        return (r0, r1, c0, c1) if _open_edge() else (max(0, r0), min(fh, r1), max(0, c0), min(fw, c1))
 
 
 class GroupNode(BodyNode):
@@ -2611,7 +2634,7 @@ class ConceptGraph:
                 size = max(1, round(body.extent[axis] * n))
                 if TREE_SIZED_BODIES:                    # move the window's start cell; keep it on the board
                     start = round(body.position[axis] * n - size / 2) + net[axis]
-                    start = min(max(start, 0), n - size)
+                    start = start if _open_edge() else min(max(start, 0), n - size)
                     body.position[axis] = (start + size / 2) / n
                     continue
                 cell = round(body.position[axis] * n) + net[axis]
@@ -2750,7 +2773,7 @@ class ConceptGraph:
                     continue                                                  # carried by a moving unit
                 g = group(x)
                 foot = _moved_mask(g, *d)
-                if foot.sum() < g.sum() or (g & held).any():
+                if (foot.sum() < g.sum() and not _open_edge()) or (g & held).any():
                     return None                                               # off the board, or pinned
                 if not groups.get(x) and [self._clamped_shift(units[x], a, d[a], n) for a, n in ((0, H), (1, W))] != list(d):
                     return None
@@ -2811,7 +2834,10 @@ class ConceptGraph:
 
     @staticmethod
     def _clamped_shift(body, axis: int, d: int, n: int) -> int:
-        """How many cells a move of ``d`` along ``axis`` actually shifts the body (it stays on the board)."""
+        """How many cells a move of ``d`` along ``axis`` actually shifts the body (it stays on the board, unless
+        OPEN_EDGE)."""
+        if _open_edge():
+            return d
         size = max(1, round(body.extent[axis] * n))
         if TREE_SIZED_BODIES:
             start = round(body.position[axis] * n - size / 2)
@@ -3196,7 +3222,8 @@ class ConceptGraph:
             frame_yang, frame_yin, frame_left, frame_claims = cv[0], cv[1], cv[5], cv[6]
             cv[:] = saved
             frames[0] -= 1
-            r0, r1, c0, c1 = slot
+            r0, r1, c0, c1 = _clip(slot, cv[0].shape)                    # the part of the slot on the canvas
+            rows, cols = (a[r0 - slot[0]:r1 - slot[0], c0 - slot[2]:c1 - slot[2]] for a in (rows, cols))
             cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
             cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
             cv[5][r0:r1, c0:c1] *= frame_left[rows, cols]
@@ -3360,8 +3387,9 @@ class ConceptGraph:
                     mask = np.zeros(cv[0].shape, dtype=bool)
                     for i, bit in enumerate(node.pattern):
                         if pure or bit > 0.5:
-                            r0, r1, c0, c1 = (_band_line(region, i, node.n_bands, node.orientation) if i in lone
-                                              else band_region(region, i, node.n_bands, node.orientation))
+                            r0, r1, c0, c1 = _clip(_band_line(region, i, node.n_bands, node.orientation) if i in lone
+                                                   else band_region(region, i, node.n_bands, node.orientation),
+                                                   cv[0].shape)
                             mask[r0:r1, c0:c1] = True
                             cv[0][r0:r1, c0:c1] *= 1.0 - w * _clamp(2 * bit - 1)
                             cv[1][r0:r1, c0:c1] *= 1.0 - w * _clamp(1 - 2 * bit)
@@ -3369,7 +3397,7 @@ class ConceptGraph:
                         claim(mask, float(node.pattern[0]) if pure else 1.0, w, node.node_id)
                     return
                 for i, bit in enumerate(node.pattern):
-                    r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
+                    r0, r1, c0, c1 = _clip(band_region(region, i, node.n_bands, node.orientation), cv[0].shape)
                     w = _clamp(weight * node.gate)
                     if UNKNOWN_BACKGROUND:
                         cv[0][r0:r1, c0:c1] *= 1.0 - w * _clamp(2 * bit - 1)
@@ -3609,9 +3637,12 @@ class ConceptGraph:
         rows, cols = np.nonzero(cells & (src_s > 0))
         tr, tc = rows + dy, cols + dx
         ok = (tr >= 0) & (tr < H) & (tc >= 0) & (tc < W)
+        out = ~ok if _open_edge() else np.zeros_like(ok)     # OPEN_EDGE: what leaves the board is gone
+        lr, lc = rows[out], cols[out]
         rows, cols, tr, tc = rows[ok], cols[ok], tr[ok], tc[ok]
-        if not rows.size:
+        if not rows.size and not lr.size:
             return
+        S["v"][lr, lc], S["s"][lr, lc], S["moved"][lr, lc] = 0.0, src_s[lr, lc], False      # left behind: empty
         if S.get("flow") is not None:            # FLOW_PERCEPTION: this tick's optical flow of the substance
             S["flow"][tr, tc] = (dy, dx)
         av, aw = src_v[rows, cols].copy(), src_s[rows, cols].copy()
@@ -3622,7 +3653,7 @@ class ConceptGraph:
         S["s"][tr, tc] = np.where(both, 1.0 - (1.0 - pw) * (1.0 - aw), aw)
         S["moved"][tr, tc] = True
         gone = np.zeros((H, W), dtype=bool)
-        gone[rows, cols] = True
+        gone[rows, cols] = gone[lr, lc] = True
 
         def follow(m):
             out = m & ~gone

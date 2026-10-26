@@ -15,6 +15,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `multi_part_units` | Grammar: a body or field holds several children, no parallel needed (one node and one level less; 26 Oct) |
 | `contour_claims` | A lone figure band claims a line, not the whole band: a basket is an outline (26 Oct) |
 | `motion_claims` | Motion leaves are claims (still 0, unknown 0.5, moving 1) composed like content: pins, dilution, fields outrank (26-27 Oct) |
+| `open_edge` | The board's edge is open: bodies may leave and come back, mass that leaves is gone; substance traps, not the rim (27 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -260,6 +261,25 @@ longer drawn by lot.
 Because fields outrank, the place decides: an empty `void*` field is a tar pit that holds even a self-mover, a
 `neutral*` field stops self-motion inside it (a fog of motion), and a rock is `(field universal/H void/H*)`. Moving
 claims outranking moving claims change nothing: a cart on a conveyor still adds its own motion to the conveyor's.
+
+**An open board (`open_edge`, 27 Oct).** The board is the part of an imagined space being drawn, not a box: no one
+expects a thing to bounce back off the edge of a space they imagine, so the rim no longer holds anything. Imagined
+space is open, and what traps a thing is substance: a wall, a room, and now a pin (`void*`).
+
+- A body may move past the edge. It keeps its place and its orders, is drawn cut off where it crosses (not squeezed),
+  and can come back: objects are individuals, tracked out of view as infants track an object behind a screen. While
+  none of it is on the board nothing there acts on it (no imagery reaches it), so a body that drove itself off stays
+  just past the edge.
+- Mass that leaves is gone. Stuff has no identity to keep track of (infants who track an object through occlusion fail
+  to track a pile of sand poured behind a screen), and keeping it would need a board as wide as the rollout is long.
+  A field pushed off its region refills it, as always.
+- What held by the rim now needs a stated pin: a sand basket with a general `void*` holds a ball (the sand is pinned;
+  the ball's own motion, more specific, still moves it), a row of blocks stops against a pinned wall, a loose basket
+  is pushed off the board. A basket with no lid does not hold an object moving up: it rises out over the top.
+
+The demos and expressivity cases that leaned on the rim were restated this way (27 Oct): pins added, conveyors and
+carts judged when they reach the edge, the held objects judged in the state that does not rise, with a contrast for the
+one that does.
 
 **Contour claims (`contour_claims`, 26 Oct).** Words for parts of a space are vague: "a bottom" says something
 salient is in the lower third, not that the lower third is solid; nobody pictures a basket as three slabs. And what is

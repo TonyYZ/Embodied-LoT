@@ -172,7 +172,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 let D = null, t = 0, timer = null, states = {};
 
 $('cfg').textContent = BOOT.config;
-const SEM_LABEL = {pure_claims: 'pure claims', solid_figure: 'solid figure', soft_edges: 'soft edges', static_fields: 'static fields', standing_motion: 'standing motion', flow_perception: 'flow perception', multi_part_units: 'multi-part units', contour_claims: 'contour claims', motion_claims: 'motion claims'};
+const SEM_LABEL = {pure_claims: 'pure claims', solid_figure: 'solid figure', soft_edges: 'soft edges', static_fields: 'static fields', standing_motion: 'standing motion', flow_perception: 'flow perception', multi_part_units: 'multi-part units', contour_claims: 'contour claims', motion_claims: 'motion claims', open_edge: 'open edge'};
 const SEM_HELP = {
   pure_claims: 'void, neutral and universal claim the substance in every band; other patterns claim only their figure; a nested claim wins',
   solid_figure: 'moving bodies cannot enter substance; the edge of a body pushes what it touches',
@@ -182,7 +182,8 @@ const SEM_HELP = {
   flow_perception: 'observers see motion (optical flow) with its direction, and a dashed edge into a motion leaf acts in the same tick',
   multi_part_units: 'the grammar lets a body or field hold several children (no parallel needed): one node and one level less',
   contour_claims: 'a lone figure band (top, bottom, centre, each side of periphery) claims a line, not the whole band; upper and lower claim their two bands',
-  motion_claims: 'motion leaves are claims (void* still, neutral* unknown, others moving) composed like content: still pins, neutral* dilutes, fields outrank'};
+  motion_claims: 'motion leaves are claims (void* still, neutral* unknown, others moving) composed like content: still pins, neutral* dilutes, fields outrank',
+  open_edge: 'the board edge is open: bodies may leave and come back (kept off the board), mass that leaves is gone; substance traps, not the rim'};
 let lot = {...BOOT.lot};
 function showSemantics() {
   $('sem').innerHTML = '<span class="muted" style="font-size:.88rem">Semantics:</span> ' + BOOT.semantics.map(k =>
