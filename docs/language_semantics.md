@@ -132,7 +132,11 @@ ordered across the space and a body by its own extent, one cell per tick, commit
 diagram whose states can be enumerated, not a continuous simulation). Content that belongs to a body moves with that
 body (so solidity and contact apply); a body's own content is its leaves and its fields' (a field never moves
 itself, and a body it holds is not its content). Self-motion is the special case where the leaf's own body is in
-its space: the body moves, the leaf with it, and the leaf orders it again from there. Before (flag off), a motion
+its space: the body moves, the leaf with it, and the leaf orders it again from there. A leaf held by a body (not by a
+field inside it) acts only where that body is, its figure, not on the unknown rest of its frame (26 Oct): a body is
+pushed and moved through its figure, so it moves things through the same cells. Its frame, the region it was given,
+still sets its size and carries what it holds; only where its motion takes hold is the figure. A field's leaves act on
+the field's whole region, as a conveyor does. Before (flag off), a motion
 leaf in a body drove that body only, and any other motion leaf ordered content only when it entered its space, so
 neither the bodies a field holds nor the body carrying the field were moved. (A first version, 25 Oct, replaced the
 orders with a continuous push each tick; it lost the committed moves that, for example, carry a self-observing

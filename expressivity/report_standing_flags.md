@@ -2,7 +2,7 @@
 
 Semantics: pure_claims=true, solid_figure=true, static_fields=true, standing_motion=true, flow_perception=true, multi_part_units=true, contour_claims=true
 
-61 of 61 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
+57 of 61 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
 
 ## PASS: sanity, figure at the top
 
@@ -50,10 +50,10 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ############
 ```
 
-## PASS: containment, sand: the object moves around inside
+## FAIL: containment, sand: the object moves around inside
 
 `(parallel bottom/V periphery/H (template center/H (body center/V universal/H* universal/V*)))`  
-contrast (should not match); does not match the sketch  
+contrast (should not match); matches the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
@@ -88,74 +88,10 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ############
 ```
 
-state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????????#
-#o#   ???   #??????????#
-###   ?X?   #??????????#
-            #??????????#
-            #??????????#
-            #???...#####
-            #??????...##
-            #??????...##
-            #?????....##
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????????#
-#o#   ???   #??????????#
-###   ?X.   #??????#####
-            #??????...##
-            #??????...##
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????#####
-#o#   ???   #??????...##
-###   ?X.   #??????...##
-            #??????...##
-            #??????....#
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????#####
-#o#   ???   #??????...##
-###   ?X.   #??????...##
-            #??????...##
-            #??????....#
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-## PASS: containment, sand: the object is a strip moving randomly
+## FAIL: containment, sand: the object is a strip moving randomly
 
 `(parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V)))`  
-contrast (should not match); does not match the sketch  
+contrast (should not match); matches the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
@@ -188,70 +124,6 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             #??????????#
             #??????????#
             ############
-```
-
-state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????????#
-#o#   ???   #??????????#
-###   ?X?   #??????????#
-            #??????????#
-            #??????????#
-            #???...#####
-            #??????...##
-            #??????...##
-            #?????....##
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????????#
-#o#   ???   #??????????#
-###   ?X.   #??????#####
-            #??????...##
-            #??????...##
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????#####
-#o#   ???   #??????...##
-###   ?X.   #??????...##
-            #??????...##
-            #??????....#
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????#####
-#o#   ???   #??????...##
-###   ?X.   #??????...##
-            #??????...##
-            #??????....#
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
 ```
 
 ## PASS: containment, variant: the container flipped upside down (Π)
@@ -717,10 +589,10 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
             ############
 ```
 
-## PASS: containment, sand: a ball moving in the superposed basket
+## FAIL: containment, sand: a ball moving in the superposed basket
 
 `(parallel periphery/H bottom/V (template center/H (body center/V universal/H* universal/V*)))`  
-contrast (should not match); does not match the sketch  
+contrast (should not match); matches the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
@@ -755,74 +627,10 @@ state {'n8:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
             ############
 ```
 
-state {'n8:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????????#
-#o#   ???   #??????????#
-###   ?X?   #??????????#
-            #??????????#
-            #??????????#
-            #???...#####
-            #??????...##
-            #??????...##
-            #?????....##
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????????#
-#o#   ???   #??????????#
-###   ?X.   #??????#####
-            #??????...##
-            #??????...##
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????#####
-#o#   ???   #??????...##
-###   ?X.   #??????...##
-            #??????...##
-            #??????....#
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ???   #??????#####
-#o#   ???   #??????...##
-###   ?X.   #??????...##
-            #??????...##
-            #??????....#
-            #???...#####
-            #??????....#
-            #??????....#
-            #?????.....#
-            #????......#
-            #???.......#
-            ####.......#
-```
-
-## PASS: containment, sand: a ball moving in the hollowed basket
+## FAIL: containment, sand: a ball moving in the hollowed basket
 
 `(parallel universal/H (template center/H upper/V void/H) (template center/H (body center/V universal/H* universal/V*)))`  
-contrast (should not match); does not match the sketch  
+contrast (should not match); matches the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
@@ -855,70 +663,6 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
             ############
             ############
             ############
-```
-
-state {'n11:universal': 'b'}, frame 6: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   #?#   ####....####
-#o#   #?#   ####....####
-###   #X#   ############
-            ############
-            ############
-            ############
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-```
-
-state {'n11:universal': 'b'}, frame 9: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ###   ############
-#o#   #.#   ############
-###   #X#   ############
-            ############
-            ####....####
-            ############
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-```
-
-state {'n11:universal': 'b'}, frame 12: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ###   ############
-#o#   #.#   ############
-###   #X#   ############
-            ############
-            ####....####
-            ############
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-```
-
-state {'n11:universal': 'b'}, frame 15: sketch | engine at sketch resolution | engine 12 x 12
-```
-#o#   ###   ############
-#o#   #.#   ############
-###   #X#   ############
-            ############
-            ####....####
-            ############
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
-            ####....####
 ```
 
 ## PASS: containment, sand: the superposed basket, packed to the edge, holds a small ball

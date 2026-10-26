@@ -2345,6 +2345,10 @@ class ConceptGraph:
             stuff = loose | src.get(None, none) | src.get(mine, none)    # a carried field: only its own motion
             n_orders = len(S["orders"])
             if _standing():                      # everything whose substance is here, without an order from it
+                holder = getattr(units.get(own[-1]), "node", units.get(own[-1])) if own else None
+                if holder is not None and not isinstance(holder, FieldNode):
+                    space = space & self._own_figure(root_id, holder)   # a body's leaf acts where the body is
+                    stuff = stuff & space                                 # (its figure), not on its unknown frame
                 bodies = [units[b] for b, (_, _, cells) in sorted(bodies_at.items())
                           if not isinstance(getattr(units[b], "node", None), FieldNode) and (space & cells).any()
                           and (self._own_figure(root_id, getattr(units[b], "node", units[b])) & cells & space).any()]
