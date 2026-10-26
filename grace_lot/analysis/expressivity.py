@@ -29,7 +29,8 @@ sketch. A case file is TOML:
 A sketch is any grid of rows of equal length, top row first. Each character covers one block of the 12 x 12
 board (a 4 x 4 sketch covers 3 x 3 cells per character) and is checked against the block's mean value:
 
-    #  figure (yang): mean >= 0.75        .  ground (yin): mean <= 0.25
+    #  figure (yang): mean >= 0.75 (with contour claims: a row or column of the block is, a salient line)
+    .  ground (yin): mean <= 0.25
     ?  in between: unknown, or a block that is part figure    *  anything
     _  not figure: ground or unknown (mean <= 0.5)
     o  content with room around it: the cells of all o blocks together hold some content (leaning figure, > 0.5) and some
@@ -81,9 +82,16 @@ def blocks(board: np.ndarray, rows: int, cols: int) -> list:
 def mismatches(sketch: List[str], board: np.ndarray) -> np.ndarray:
     """(rows, cols) True where the board's block disagrees with the sketch. The o blocks are judged together:
     all of them are marked when their cells hold no content (> 0.5) or no room (< 0.75)."""
+    import embodied_lot
     c = coarse(board, len(sketch), len(sketch[0]))
     want = np.array([list(r) for r in sketch])
     got = np.vectorize(char)(c)
+    if embodied_lot.CONTOUR_CLAIMS:              # a sketch is as vague as words: # means something salient is there,
+        b = blocks(board, len(sketch), len(sketch[0]))   # a line of figure is enough
+        for i, j in zip(*np.nonzero((want == "#") & (got != "#"))):
+            blk = b[i][j]
+            if blk.size and max(blk.mean(axis=0).max(), blk.mean(axis=1).max()) >= FIGURE:
+                got[i, j] = "#"
     bad = (want != "*") & (want != "o") & (want != "_") & (want != got)
     bad |= (want == "_") & (c > 0.5 + 1e-9)
     if (want == "o").any():

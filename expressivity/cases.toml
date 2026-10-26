@@ -213,7 +213,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "contrast: object beside the container, not in it"
-program = "(serial_h (serial_h universal/V (serial_v universal/H void/H void/H) universal/V) (body center/H))"
+program = "(serial_h (serial_h universal/V (serial_v universal/H void/H void/H) universal/V) (template center/V (body universal/H)))"
 expect = "differ"
 note = "An empty U on the left, the object outside it on the right."
 [case.boards]
@@ -354,12 +354,21 @@ concept = "containment"
 name = "anchored: the object moves around inside"
 program = "(parallel (field bottom/V periphery/H) (template center/H (template center/V (body center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V)."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V). (Contour claims: the walls are lines at the edges, so the whole interior is inside.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+############
 """
 
 [[case]]
@@ -367,12 +376,21 @@ concept = "containment"
 name = "anchored: the object is a strip moving randomly"
 program = "(parallel (field bottom/V periphery/H) (template center/H (template center/V (body universal/H* universal/V* center/V))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V)."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V). (Contour claims: the walls are lines at the edges, so the whole interior is inside.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+############
 """
 
 [[case]]
@@ -407,12 +425,21 @@ concept = "containment"
 name = "anchored: a ball moving in the superposed basket"
 program = "(parallel (field periphery/H bottom/V) (template center/H (template center/V (body center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
-note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V)."
+note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V). (Contour claims: the walls are lines at the edges, so the whole interior is inside.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+#oooooooooo#
+############
 """
 
 [[case]]
@@ -665,16 +692,16 @@ note = "Each tick a new body appears at home while the last rises, so a line gro
 """
 "11" = """
 ************
-*****##*****
-*****##*****
-*****##*****
-*****##*****
-*****##*****
-*****##*****
-*****##*****
-*****##*****
-*****##*****
-*****##*****
+*****#******
+*****#******
+*****#******
+*****#******
+*****#******
+*****#******
+*****#******
+*****#******
+*****#******
+*****#******
 ************
 """
 

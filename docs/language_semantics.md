@@ -13,6 +13,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `standing_motion` | Every motion leaf acts every tick on everything in its region; self-motion is a special case (25 Oct) |
 | `flow_perception` | Observers see motion (optical flow) with its direction; a dashed edge into a motion leaf acts in the same tick (26 Oct) |
 | `multi_part_units` | Grammar: a body or field holds several children, no parallel needed (one node and one level less; 26 Oct) |
+| `contour_claims` | A lone figure band claims a line, not the whole band: a basket is an outline (26 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -187,8 +188,8 @@ a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths:
   unknown like motion, rigid but three times the runs per body, about twice the cost of a likelihood.) A body that
   fills its slot is drawn like a solid block of that shape; it still moves and is pushed as one unit.
 
-The current language is pure claims, solid figure, static fields, standing motion, flow perception and multi-part units
-(soft edges do
+The current language is pure claims, solid figure, static fields, standing motion, flow perception, multi-part units
+and contour claims (soft edges do
 nothing under standing motion, where the program states a body's size, so they are not part of it). The expressivity suite passes 61/61 in it (thirteen cases restated to these semantics, three added).
 
 **Fog is unknown, not non-solid substance (decision, 26 Oct).** All substance more likely there than not is solid;
@@ -213,6 +214,18 @@ when its home is clear: no unit and no substance more likely there than not (unk
 claims are not in the way of what it holds). A spawner whose home is blocked produces nothing until it clears, as a
 hive whose entrance is blocked lets no bee out; nothing new appears inside something solid, so one solidity rule holds
 everywhere. Streams are spaced by the body's own size.
+
+**Contour claims (`contour_claims`, 26 Oct).** Words for parts of a space are vague: "a bottom" says something
+salient is in the lower third, not that the lower third is solid; nobody pictures a basket as three slabs. And what is
+imagined should be what is recognised. So a mixed pattern claims what stands out in it. A figure band standing alone
+(top, bottom, the centre, each side of periphery) is a salient presence and claims one line of cells: along the region's
+edge for an edge band, through the axis for the middle band. Two adjacent figure bands (upper, lower) are one mass and
+claim both bands, saying nothing of the rest ("something floating above" says nothing about what is beneath). Pure
+patterns are unchanged (universal fills, void and neutral claim every band). Observing matches the same claims: a lone
+band is satisfied by a salient line anywhere in it, so the imagined outline is recognised, and so is any thin or thick
+floor. Template slots are regions, not claims, and stay whole bands. `(parallel periphery/H bottom/V)` is a thin U.
+The expressivity suite reads a sketch the same way (a # block holds a salient line). It changes what almost every
+program draws (196 of 200 fitted programs roll out differently), so fits in this language start afresh.
 
 ## 5c. Flow perception (`flow_perception`, 26 Oct)
 

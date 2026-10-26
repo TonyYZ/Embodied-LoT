@@ -289,6 +289,32 @@ FLOW_PERCEPTION = False
 # level less than (body (parallel ...)). Kept here so a run's semantics record it.
 MULTI_PART_UNITS = False
 
+# Contour claims (needs PURE_CLAIMS). A mixed pattern claims what stands out in it. A figure band standing alone (top,
+# bottom, centre, each side of periphery) is a salient presence: something there, not the whole band, so it claims one
+# line of cells, along the region's edge for an edge band and through the axis for the middle band (a basket is drawn
+# as an outline). Two adjacent figure bands (upper, lower) are one mass and claim their bands, saying nothing of the
+# rest. Observing matches the same claims: a lone band is satisfied by a salient line anywhere in it. Template slots
+# are regions, not claims, and stay whole bands. With False, every figure band is claimed whole (earlier runs).
+CONTOUR_CLAIMS = False
+
+
+def _lone_bands(pattern) -> set:
+    """CONTOUR_CLAIMS: the figure bands with no figure band beside them (each a salient presence, claimed as a line)."""
+    fig = [b > 0.5 for b in pattern]
+    return {i for i, f in enumerate(fig) if f and not (i > 0 and fig[i - 1]) and not (i + 1 < len(fig) and fig[i + 1])}
+
+
+def _band_line(region: "Region", i: int, n: int, orientation: "Orientation") -> "Region":
+    """CONTOUR_CLAIMS: band ``i``'s line: along the region's edge for an edge band, through the axis for a middle one."""
+    r0, r1, c0, c1 = band_region(region, i, n, orientation)
+    if r1 <= r0 or c1 <= c0:
+        return r0, r1, c0, c1
+    if orientation == Orientation.VERTICAL:              # vertical bands count from the bottom
+        row = r1 - 1 if i == 0 else r0 if i == n - 1 else (r0 + r1 - 1) // 2
+        return row, row + 1, c0, c1
+    col = c0 if i == 0 else c1 - 1 if i == n - 1 else (c0 + c1 - 1) // 2
+    return r0, r1, col, col + 1
+
 
 def _spawned(node, ikey: tuple, instances) -> List[tuple]:
     """STATIC_FIELDS: the keys of a unit's instances at template position ``ikey``: the first, then those a field
@@ -1019,10 +1045,22 @@ class ObjectNode(Node):
         elif all(v == 0.5 for v in self.pattern):
             self.activation = 0.5 * self.gate
         else:
-            sims = [1.0 - abs(obs - exp)
-                    for obs, exp in zip(self._band_means(field), self.pattern) if exp > 0]
+            means = self._band_means(field)
+            if CONTOUR_CLAIMS and PURE_CLAIMS:            # a lone band: a salient line anywhere in it will do
+                lone = _lone_bands(self.pattern)
+                means = [self._line_max(field, i) if i in lone else m for i, m in enumerate(means)]
+            sims = [1.0 - abs(obs - exp) for obs, exp in zip(means, self.pattern) if exp > 0]
             self.activation = self.gate * _mean(sims) if sims else 0.0
         return self.activation
+
+    def _line_max(self, field: ReceptiveField, i: int) -> float:
+        """CONTOUR_CLAIMS: the most salient line of band ``i`` (rows of a vertical pattern's band, columns of a
+        horizontal one's): the mean of its cells."""
+        r0, r1, c0, c1 = band_region(field.region, i, self.n_bands, self.orientation)
+        values = field.activation[r0:r1, c0:c1]
+        if not values.size:
+            return 0.0
+        return float(values.mean(axis=1 if self.orientation == Orientation.VERTICAL else 0).max())
 
     def __repr__(self) -> str:
         dyn = "dynamic" if self.is_dynamic else "static"
@@ -3209,10 +3247,12 @@ class ConceptGraph:
                     return                       # bare leaves are drawn once, into the substance grid
                 if cv[6] is not None:            # PURE_CLAIMS: centre axis claims every band, others their figure
                     pure, w = len(set(node.pattern)) == 1, _clamp(weight * node.gate)
+                    lone = _lone_bands(node.pattern) if CONTOUR_CLAIMS and not pure else set()
                     mask = np.zeros(cv[0].shape, dtype=bool)
                     for i, bit in enumerate(node.pattern):
                         if pure or bit > 0.5:
-                            r0, r1, c0, c1 = band_region(region, i, node.n_bands, node.orientation)
+                            r0, r1, c0, c1 = (_band_line(region, i, node.n_bands, node.orientation) if i in lone
+                                              else band_region(region, i, node.n_bands, node.orientation))
                             mask[r0:r1, c0:c1] = True
                             cv[0][r0:r1, c0:c1] *= 1.0 - w * _clamp(2 * bit - 1)
                             cv[1][r0:r1, c0:c1] *= 1.0 - w * _clamp(1 - 2 * bit)
