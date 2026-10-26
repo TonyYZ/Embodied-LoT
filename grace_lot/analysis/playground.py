@@ -98,9 +98,9 @@ EXAMPLES = [
      "(parallel (serial_h void/V (serial_v void/H (field top/H* (body universal/H)) void/H) void/V) out)"),
     ("a conveyor carries a cart all the way",
      "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)"),
-    ("a ball moves a hollow box only by pushing its walls",
-     "(parallel (serial_h void/V (body (field periphery/H bottom/V) (template center/H center/V (body "
-     "universal/H bottom/H*))) void/V) out)"),
+    ("a ball crosses a roomy box, then moves it only by pushing its wall",
+     "(parallel (serial_h (body (field periphery/H bottom/V) (template center/H center/V (body universal/H "
+     "bottom/H*))) void/V) out)"),
     ("a body riding in a moving body is driven as well as carried",
      "(parallel (serial_h void/V (body bottom/V bottom/H* (template center/V center/H (body universal/H))) "
      "void/V void/V) out)"),
