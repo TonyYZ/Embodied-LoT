@@ -321,6 +321,7 @@ const label = id => { const n = D.nodes.find(n => n.id === id); return n ? `${id
 const way = o => o.axis === 'vertical' ? (o.direction > 0 ? 'down' : 'up') : (o.direction > 0 ? 'right' : 'left');
 
 function phases(f) {
+  if (f.start) { $('phases').innerHTML = '<li><span class="k">Start</span>the board as the program draws it, before any tick runs; step or play to run the ticks</li>'; return; }
   const li = [], standing = D.semantics && D.semantics.standing_motion;
   const obs = f.observers.map(o => `<span class="tag-obs">${esc(label(o.id))}</span> sees ${fmt(o.value)}`)
     .concat(f.measures.map(o => `<span class="tag-meas">${esc(label(o.id))}</span> measures ${fmt(o.value)}`)).join('; ');
@@ -366,7 +367,7 @@ function render() {
   if (D.roots.length > 1) D.roots.forEach((r, i) => figure(b, `Tree ${i}'s own space`, f.spaces[r], f, true));
   D.roots.forEach((r, i) => { if (f.grids && f.grids[r]) figure(b, `Substance${D.roots.length > 1 ? ` (tree ${i})` : ''}: bare leaves and what motion carries`, f.grids[r], f, false); });
   const c = $('channels'); c.innerHTML = '';
-  const ch = D.channels[t + 1];
+  const ch = D.channels[t];
   ch.forEach((img, k) => figure(c, `window ${k} (${D.windows[k] || 'tree'})`, img, f, false));
   tree(f);
   phases(f);

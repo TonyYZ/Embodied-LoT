@@ -273,6 +273,26 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
     movers = [n for n in g.nodes if isinstance(n, BodyNode) and not isinstance(n, PlanNode)]
     windows = [w.node_id for w in g.windows()]
     bugs, frames, snapshots = [], [], []
+    g.assign_roles()                             # tick 0: the board as the program draws it, before any tick runs
+    spaces, drawn = g._render_all()              # (as the window rollout reads its first frame)
+    masks = g.view_masks((GRID, GRID))
+    snapshots.append(viewer_snapshot(g, "start", masks))
+    frames.append({
+        "t": 0, "start": True,
+        "seen": np.round(embodied_lot.blank_board((GRID, GRID)), 3).tolist(),
+        "drawn": np.round(drawn, 3).tolist(),
+        "spaces": {k: np.round(v, 3).tolist() for k, v in spaces.items()},
+        "activation": {n.node_id: round(float(n.activation), 3) for n in g.nodes if n.node_id in pos},
+        "gate": {n.node_id: round(float(n.gate), 3) for n in g.nodes if n.node_id in pos},
+        "role": {n.node_id: getattr(n, "role", "imagined") for n in g.nodes if n.node_id in pos},
+        "observers": [], "measures": [],
+        "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(masks[n.node_id])} for n in movers if n.node_id in masks],
+        "tokens": [{"id": u.node_id, "kind": u.node.node_type, "drive": [0.0, 0.0], "orders": []}
+                   for u in (g._group_tokens() if embodied_lot.GROUPING_NODES else [])],
+        "shifts": [], "mass": [], "issued": [], "onsets": [], "gate_changes": [], "acts": [], "stuff": [],
+        "substance": [], "resets": [], "spawned": [],
+        "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()} if static else {},
+    })
     for t in range(ticks):
         seen = g._imagery if g._imagery is not None else embodied_lot.blank_board((GRID, GRID))
         # the phases of ConceptGraph._step_gameboard, in its order
@@ -334,7 +354,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
                 and all(np.array_equal(g._spaces[k], twin._spaces[k]) for k in g._spaces)):
             bugs.append(f"tick {t}: the recorded board differs from ConceptGraph.step()")
         moved = g.view_masks((GRID, GRID))
-        snapshots.append(viewer_snapshot(g, f"tick {t}", moved))
+        snapshots.append(viewer_snapshot(g, f"tick {t + 1}", moved))
         shifts = []
         for n in movers:
             if n.node_id in masks and n.node_id in moved and masks[n.node_id].any() and moved[n.node_id].any():
@@ -342,7 +362,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
                 if (r0, c0) != (r1, c1):
                     shifts.append({"unit": n.node_id, "rows": int(r1 - r0), "cols": int(c1 - c0)})
         frames.append({
-            "t": t,
+            "t": t + 1,
             "seen": np.round(seen, 3).tolist(),
             "drawn": np.round(g._imagery, 3).tolist(),
             "spaces": {k: np.round(v, 3).tolist() for k, v in g._spaces.items()},
