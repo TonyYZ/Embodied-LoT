@@ -189,6 +189,15 @@ a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths:
 The current language is pure claims, solid figure, static fields, standing motion and flow perception (soft edges do
 nothing under standing motion, where the program states a body's size, so they are not part of it). The expressivity suite passes 61/61 in it (thirteen cases restated to these semantics, three added).
 
+**Fog is unknown, not non-solid substance (decision, 26 Oct).** All substance more likely there than not is solid;
+there is no visible but passable stuff. Fog or cloud is `(field neutral)`: passable (it claims no substance), it hides
+what is inside it, and it closes again behind what passes through (a field re-asserts itself). In Gibson's terms
+(1979) the environment is medium (it affords locomotion and carries information), substance (it resists) and the
+surfaces between; fog is the medium with its information degraded, which is what `neutral` (unknown) says. The
+alternative considered, solidity for objects and places only with bare stuff passable like water (infants treat
+solids and non-solid substances differently: Hespos, Ferry & Rips 2009; Huntley-Fenner, Carey & Solimando 2002), was
+not adopted: it would have made sand neither block nor be pushed.
+
 ## 5c. Flow perception (`flow_perception`, 26 Oct)
 
 **A gap found.** On the gameboard, observers were given the drawing only: the motion field was never filled, so a
