@@ -40,7 +40,7 @@ _lock = Lock()                       # the engine's semantics are module flags: 
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
 # STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
 SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion", "flow_perception",
-             "multi_part_units", "contour_claims")
+             "multi_part_units", "contour_claims", "motion_claims")
 CURRENT = {k: k != "soft_edges" for k in SEMANTICS}   # the language the examples and a fresh page run in: keep it
                                                        # current (soft edges do nothing under standing motion)
 
@@ -81,6 +81,15 @@ EXAMPLES = [
     ("a ball pushes into a free-standing wall (a field): the mass piles up ahead, the wall closes behind",
      "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field universal/H) void/V "
      "void/V void/V) out)"),
+    ("a pinned rock (a field claiming no motion, void*) stops the ball",
+     "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field universal/H void/H*) "
+     "void/V void/V void/V) out)"),
+    ("neutral* un-knows the pin in a band: the ball pushes through there, the rest of the rock holds",
+     "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field universal/H void/H* "
+     "(template center/V neutral/H*)) void/V void/V void/V) out)"),
+    ("a tar pit (an empty void* region): the ball rolls in and is held",
+     "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field void/H*) void/V void/V "
+     "void/V) out)"),
     ("a plant (a source field under upward motion)",
      "(parallel (template bottom/V center/H (field universal/H)) bottom/V* out)"),
     ("a spawner (a field holding a rising body)",

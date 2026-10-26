@@ -297,6 +297,19 @@ MULTI_PART_UNITS = False
 # are regions, not claims, and stay whole bands. With False, every figure band is claimed whole (earlier runs).
 CONTOUR_CLAIMS = False
 
+# Motion claims (needs STANDING_MOTION). The centre-axis motion leaves claim motion as the others claim content:
+# void* that there is none (what is in its region is pinned: it resists a push of no more strength than the leaf's
+# gate, and what enters it is held there too, a tar pit), neutral* that it is unknown (it claims nothing of its own,
+# but where it is more specific than a void* it lifts the pin, as neutral un-knows content), universal* that there is
+# some (content already moving satisfies it; only content at rest is pushed, in the drawn direction). Stillness
+# claims compose by specificity, as content claims do. neutral* is then no longer drawn by lot. With False, void* and
+# neutral* give no orders and neutral* is drawn as still or moving (earlier runs).
+MOTION_CLAIMS = False
+
+
+def _motion_claims() -> bool:
+    return MOTION_CLAIMS and _standing()
+
 
 def _lone_bands(pattern) -> set:
     """CONTOUR_CLAIMS: the figure bands with no figure band beside them (each a salient presence, claimed as a line)."""
@@ -464,11 +477,12 @@ def _solid_stuff(S: dict) -> np.ndarray:
     return np.where(S["s"] > 0, (S["v"] > 0.5), S["F"] & (S["fe"] > 0.5) & (S["fc"] > 0))
 
 
-def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
+def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None,
+               drive: float = 1.0) -> Tuple[np.ndarray, np.ndarray]:
     """STANDING_MOTION: substance moving by (dy, dx) pushes the substance ahead of it, a field's figure included.
     Returns the run (``cells`` and every substance cell in its way, transitively) and its blocked cells: those whose
-    target is off the board or in ``against`` (content pushing the other way), and those whose target is blocked.
-    Claims of absence are not pushed; they are replaced."""
+    target is off the board or in ``against`` (content pushing the other way), those pinned at least as strongly as
+    ``drive`` (MOTION_CLAIMS), and those whose target is blocked. Claims of absence are not pushed; they are replaced."""
     against = np.zeros_like(cells) if against is None else against & ~cells
     solid = _solid_stuff(S) & ~against
     run = cells.copy()
@@ -478,13 +492,19 @@ def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray
             break
         run |= ahead
     lands = lambda m: _moved_mask(m, -dy, -dx)                # the cells whose target is in m
-    blocked = run & (~lands(np.ones_like(run)) | lands(against & ~run))
+    blocked = run & (~lands(np.ones_like(run)) | lands(against & ~run) | _held(S, drive))
     while True:
         more = run & lands(blocked) & ~blocked
         if not more.any():
             break
         blocked |= more
     return run, blocked
+
+
+def _held(S: dict, drive: float) -> np.ndarray:
+    """MOTION_CLAIMS: the cells pinned at least as strongly as a push of strength ``drive`` (none without pins)."""
+    pin = S.get("pin")
+    return np.zeros(S["s"].shape, dtype=bool) if pin is None else (pin > 0) & (pin >= drive - 1e-9)
 
 
 def _shifted(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
@@ -2334,6 +2354,8 @@ class ConceptGraph:
         loose = (S["s"] > 0) & (S["v"] > 0.5)
         motion = BodyNode._template_motion(node)
         axis_vec = (1.0, 0.0) if node.orientation == Orientation.VERTICAL else (0.0, 1.0)
+        some = (_motion_claims() and isinstance(node, _AsMotion)          # universal*: "some motion here" (along its
+                and _UNKNOWN_MOTION.get(node._node.pattern) == "universal")   # axis), which moving content satisfies
         for key, (_, chain, rect) in keyed_views:
             space = _view_mask(self.grid, chain, rect)
             rows, cols = np.nonzero(space)
@@ -2345,6 +2367,8 @@ class ConceptGraph:
             stuff = loose | src.get(None, none) | src.get(mine, none)    # a carried field: only its own motion
             n_orders = len(S["orders"])
             if _standing():                      # everything whose substance is here, without an order from it
+                turned = _view_turn(chain, axis_vec)
+                ax = 0 if abs(turned[0]) > abs(turned[1]) else 1         # the leaf's axis on the board
                 holder = getattr(units.get(own[-1]), "node", units.get(own[-1])) if own else None
                 if holder is not None and not isinstance(holder, FieldNode):
                     space = space & self._own_figure(root_id, holder)   # a body's leaf acts where the body is
@@ -2355,8 +2379,10 @@ class ConceptGraph:
                 self._inside[key] = ids = {b.node_id for b in bodies}
                 groups = getattr(self, "_unit_groups", {})              # a unit carried by one this leaf drives
                 fresh = [b for b in bodies if not any(o[5] == node.node_id for o in b.orders)    # moves with it,
-                         and not ids & set(groups.get(b.node_id, ()))]                             # not twice
-                under_way = np.logical_or.reduce([o[0] for o in S["orders"] if o[7:] == [key]] + [none])
+                         and not ids & set(groups.get(b.node_id, ()))                              # not twice
+                         and not (some and any(o[0] == ax for o in b.orders))]
+                under_way = np.logical_or.reduce([o[0] for o in S["orders"]
+                                                  if (some and o[1] == ax) or o[7:] == [key]] + [none])
                 fresh_m = stuff & space & ~under_way
             else:
                 bodies = [units[b] for b, (_, _, cells) in bodies_at.items()
@@ -2416,6 +2442,39 @@ class ConceptGraph:
             if _standing():
                 for o in S["orders"][n_orders:]:
                     o.append(key)
+
+    def _motion_pins(self, views) -> None:
+        """MOTION_CLAIMS: each tree's stillness claims this tick. void* claims there is no motion in its region
+        (strength its gate), neutral* that it is unknown; a body's leaf claims where the body is. They compose as content
+        claims do, the more specific over the more general, and a cell's pin is how far its claim leans to stillness
+        (2v - 1): what is in the cell resists a push of no more strength (``_held``), whatever came there."""
+        parents, units, tree = self._parents(), self._tokens(), self.tree_index()
+        claims = defaultdict(list)
+        for node in self._nodes.values():
+            name = PATTERN_TO_NAME.get(getattr(node, "pattern", None))
+            if not (isinstance(node, ObjectNode) and node.is_dynamic and name in ("void", "neutral")
+                    and getattr(node, "role", None) == "imagined"):
+                continue
+            a, anc = node.gate, node
+            while parents.get(anc.node_id):
+                anc = parents[anc.node_id][0]
+                a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
+            if not a > ONSET_THRESHOLD:
+                continue
+            root, meta = tree[node.node_id], self.view_meta(node.node_id)
+            for k, (_, chain, rect) in enumerate(views.get(node.node_id, [])):
+                space = _view_mask(self.grid, chain, rect)
+                own = meta[k][1] if k < len(meta) else ()
+                holder = getattr(units.get(own[-1]), "node", units.get(own[-1])) if own else None
+                if holder is not None and not isinstance(holder, FieldNode):
+                    space = space & self._own_figure(root, holder)
+                if space.any():
+                    claims[root].append((space, 1.0 if name == "void" else 0.5, a, space, node.node_id, False))
+        for S in getattr(self, "_sub", {}).values():
+            S["pin"] = None
+        for rid, cs in claims.items():
+            v, _ = _claim_values(cs, tuple(self.grid))
+            self._substance(rid)["pin"] = np.maximum(0.0, 2.0 * v - 1.0)
 
     def _push_body(self, body, bodies_at, axis: int, signed_rate: float, node_id: str = "",
                    delay: float = 0.0, half: bool = False, jitter: bool = False) -> None:
@@ -2491,7 +2550,9 @@ class ConceptGraph:
         self._solid_cache, self._moves = {}, Counter()     # solidity maps, valid until something else moves
         bodies = [b for b in self._tokens().values() if b.position is not None
                   and not (STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(b, "node", None), FieldNode))]
-        self._pending = {}                    # this tick's own moves, all taken before any is made (one tick at once)
+        self._pending, self._strength = {}, {}   # this tick's own moves (and how strongly driven), all taken first
+        if _motion_claims():
+            self._motion_pins(self.node_views(self.grid) if views is None else views)
         for body in bodies:
             net = self._pending[body.node_id] = [0, 0]
             for order in body.orders:
@@ -2503,6 +2564,8 @@ class ConceptGraph:
                 order[4] -= k
                 order[2] -= k
                 net[order[0]] += order[1] * k
+                if k:
+                    self._strength[body.node_id] = max(self._strength.get(body.node_id, 0.0), min(1.0, order[3]))
             body.orders = [o for o in body.orders if o[2] > 0]
             for ax in (0, 1):                                    # random pushes (universal), whole cells
                 step = max(-1, min(1, math.trunc(body.jitter[ax])))
@@ -2653,6 +2716,8 @@ class ConceptGraph:
         group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
         S = self._substance(root)
         stuff = _solid_stuff(S) & ~np.logical_or.reduce(list(own.values()) + [none])   # a unit's own: pushed whole
+        drive = getattr(self, "_strength", {}).get(body.node_id, 1.0)
+        held = _held(S, drive)                                    # MOTION_CLAIMS: pinned too strongly to be pushed
 
         def plan(d):
             moving, push, queue = [], none.copy(), [body.node_id]
@@ -2662,14 +2727,14 @@ class ConceptGraph:
                     continue                                                  # carried by a moving unit
                 g = group(x)
                 foot = _moved_mask(g, *d)
-                if foot.sum() < g.sum():
-                    return None                                               # off the board
+                if foot.sum() < g.sum() or (g & held).any():
+                    return None                                               # off the board, or pinned
                 if not groups.get(x) and [self._clamped_shift(units[x], a, d[a], n) for a, n in ((0, H), (1, W))] != list(d):
                     return None
                 moving.append(x)
                 push |= foot & stuff & ~g
                 queue += [y for y in own if y not in moving and not inside(y, x) and (foot & own[y] & ~g).any()]
-            if push.any() and _stuff_run(S, push, *d)[1].any():
+            if push.any() and _stuff_run(S, push, *d, drive=drive)[1].any():
                 return None                                                   # stuff in the way cannot move
             return moving, push
 
@@ -2695,7 +2760,7 @@ class ConceptGraph:
                 if hasattr(self, "_moves"):
                     self._moves[node_of(x).node_id] += 1
             if push.any():
-                self._shift_substance(S, push, *d)
+                self._shift_substance(S, push, *d, drive=drive)
                 if hasattr(self, "_moves"):
                     self._moves["substance"] += 1
             was, now = np.ones((H, W)), np.ones((H, W))       # the chance no unit covers a cell, before / after
@@ -2816,6 +2881,8 @@ class ConceptGraph:
         out: Dict[str, Tuple[str, List[str], Orientation]] = {}
         for node in self._nodes.values():
             kind = _UNKNOWN_MOTION.get(node.pattern) if isinstance(node, ObjectNode) else None
+            if kind == "neutral" and _motion_claims():
+                continue                         # a claim of unknown stillness (_motion_pins), not drawn by lot
             if kind is None or not node.is_dynamic or getattr(node, "role", None) != "imagined":
                 continue
             meta = self.view_meta(node.node_id) if views.get(node.node_id) else []
@@ -2830,6 +2897,8 @@ class ConceptGraph:
         kind = _UNKNOWN_MOTION.get(node.pattern)
         if kind is None:
             return node
+        if kind == "neutral" and _motion_claims():
+            return None                          # it orders nothing; it only lifts pins (_motion_pins)
         unit = self._motion_unit(node.node_id)
         state = getattr(self, "motion_states", {}).get(f"{unit}:{kind}", "a" if kind == "universal" else "still")
         if state == "still":
@@ -3497,11 +3566,12 @@ class ConceptGraph:
         none = np.zeros(self.grid, dtype=bool)
         for o in fire:
             against = np.logical_or.reduce([q[0] for q in fire if q[1] == o[1] and q[2] == -o[2]] + [none])
-            self._shift_substance(S, o[0], o[2] if o[1] == 0 else 0, o[2] if o[1] == 1 else 0, against)
+            self._shift_substance(S, o[0], o[2] if o[1] == 0 else 0, o[2] if o[1] == 1 else 0, against, min(1.0, o[4]))
         S["orders"] = keep
 
     @staticmethod
-    def _shift_substance(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None) -> None:
+    def _shift_substance(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None,
+                         drive: float = 1.0) -> None:
         """Move the contents of ``cells`` by (dy, dx). A field cell gives a copy of its claim (a source); content
         stays at the board's edge; cells left behind read known empty; content arriving on content that also moved
         piles up (noisy-OR strength), elsewhere it replaces what was there. Orders and marks follow their contents.
@@ -3511,7 +3581,7 @@ class ConceptGraph:
         src_s = np.where(S["s"] > 0, S["s"], np.where(S["F"], S["fc"], 0.0))
         src_v = np.where(S["s"] > 0, S["v"], S["fe"])
         if _standing():
-            run, blocked = _stuff_run(S, cells & (src_s > 0), dy, dx, against)
+            run, blocked = _stuff_run(S, cells & (src_s > 0), dy, dx, against, drive)
             cells = run & ~blocked
         rows, cols = np.nonzero(cells & (src_s > 0))
         tr, tc = rows + dy, cols + dx
