@@ -4,6 +4,7 @@ import itertools
 import math
 import random
 import unittest
+from pathlib import Path
 from collections import Counter
 
 import numpy as np
@@ -1506,6 +1507,24 @@ class ParallelLadderTests(unittest.TestCase):
 
 
 class PlaygroundTests(unittest.TestCase):
+    def test_the_page_script_parses(self):
+        """The board-first page's script is valid JavaScript (checked with node when it is installed)."""
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("node is not installed")
+        html = (Path(__file__).parent / "grace_lot" / "analysis" / "playground_page.html").read_text(encoding="utf-8")
+        scripts = [m.group(1) for m in re.finditer(r"<script>(.*?)</script>", html, re.S)]
+        self.assertTrue(scripts)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.js"
+            path.write_text(";\n".join(scripts), encoding="utf-8")
+            done = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
     def test_examples_agree_with_the_engine(self):
         """The playground's phase-by-phase recording equals ConceptGraph.step(), and component rollouts equal
         whole-program rollouts, for every example."""
