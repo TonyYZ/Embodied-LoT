@@ -12,6 +12,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `static_fields` | Bare leaves are stuff, bodies are objects, fields are places re-asserted every tick |
 | `standing_motion` | Every motion leaf acts every tick on everything in its region; self-motion is a special case (25 Oct) |
 | `flow_perception` | Observers see motion (optical flow) with its direction; a dashed edge into a motion leaf acts in the same tick (26 Oct) |
+| `multi_part_units` | Grammar: a body or field holds several children, no parallel needed (one node and one level less; 26 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -186,7 +187,8 @@ a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths:
   unknown like motion, rigid but three times the runs per body, about twice the cost of a likelihood.) A body that
   fills its slot is drawn like a solid block of that shape; it still moves and is pushed as one unit.
 
-The current language is pure claims, solid figure, static fields, standing motion and flow perception (soft edges do
+The current language is pure claims, solid figure, static fields, standing motion, flow perception and multi-part units
+(soft edges do
 nothing under standing motion, where the program states a body's size, so they are not part of it). The expressivity suite passes 61/61 in it (thirteen cases restated to these semantics, three added).
 
 **Fog is unknown, not non-solid substance (decision, 26 Oct).** All substance more likely there than not is solid;

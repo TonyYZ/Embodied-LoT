@@ -47,6 +47,7 @@ class Grammar:
     content_windows: bool = False    # with output_leaves: windows are never templates (enforced by the prior)
     grouping: bool = False           # grouping_nodes: field / body are unary units; template copies
     max_motion_units: Optional[int] = None   # probabilistic_motion: at most this many unknown-motion units
+    multi_part_units: bool = False   # field / body take 1..max_children children, drawn together (no parallel needed)
 
     @classmethod
     def from_config(cls, lot: dict) -> "Grammar":
@@ -59,7 +60,8 @@ class Grammar:
                    bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True),
                    bool(lot.get("max_outputs", 0)) and lot.get("output_leaves", True) and lot.get("content_windows", True),
                    bool(lot.get("grouping_nodes", True)),
-                   lot.get("max_motion_units") if lot.get("probabilistic_motion", True) else None)
+                   lot.get("max_motion_units") if lot.get("probabilistic_motion", True) else None,
+                   bool(lot.get("multi_part_units", False)))
 
     # -- attribute domains (also used by the symmetric moves) ---------
 
@@ -88,8 +90,8 @@ class Grammar:
     def child_counts(self, kind: str) -> range:
         if kind == OUTPUTS:                         # with output_leaves a forest has 2+ trees; one tree is plain
             return range(2 if self.output_leaves else 1, max(1, self.max_outputs) + 1)
-        if self.grouping and kind in GROUPS:          # grouping is unary: one unit over one child
-            return range(1, 2)
+        if self.grouping and kind in GROUPS:          # one unit over one child, or over several (multi_part_units)
+            return range(1, (self.max_children if self.multi_part_units else 1) + 1)
         return range(MIN_CHILDREN[kind], max(MIN_CHILDREN[kind], self.max_children) + 1)
 
     def multi_output(self, depth: int) -> bool:

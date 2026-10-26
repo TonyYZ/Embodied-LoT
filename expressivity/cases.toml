@@ -40,7 +40,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: the object moves around inside"
-program = "(parallel bottom/V periphery/H (template center/H (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel bottom/V periphery/H (template center/H (body center/V universal/H* universal/V*)))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
 note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
@@ -93,7 +93,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: U from strips, packed to the edge, holds the object"
-program = "(serial_h universal/V (serial_v universal/H (body (parallel center/V universal/H* universal/V*)) void/H) universal/V)"
+program = "(serial_h universal/V (serial_v universal/H (body center/V universal/H* universal/V*) void/H) universal/V)"
 frames = [0, 3, 6, 9, 12, 15]
 note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside. Pressing on, it moves as small as it must be, so where exactly it is grows uncertain (drawn faintly)."
 [case.boards]
@@ -174,7 +174,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: strip U, packed to the edge, holds the object"
-program = "(serial_v universal/H (serial_h universal/V (body (parallel center/V universal/H* universal/V*)) universal/V) periphery/H)"
+program = "(serial_v universal/H (serial_h universal/V (body center/V universal/H* universal/V*) universal/V) periphery/H)"
 frames = [0, 3, 6, 9, 12, 15]
 note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 [case.boards]
@@ -296,7 +296,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: a ball moving in the superposed basket"
-program = "(parallel periphery/H bottom/V (template center/H (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel periphery/H bottom/V (template center/H (body center/V universal/H* universal/V*)))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
 note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
@@ -310,7 +310,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: a ball moving in the hollowed basket"
-program = "(parallel universal/H (template center/H upper/V void/H) (template center/H (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel universal/H (template center/H upper/V void/H) (template center/H (body center/V universal/H* universal/V*)))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
 note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
@@ -324,7 +324,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: the superposed basket, packed to the edge, holds a small ball"
-program = "(parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
+program = "(parallel periphery/H bottom/V (template center/H center/V (body universal/H universal/H* universal/V*)))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 [case.boards]
@@ -337,7 +337,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "sand: the closed box, packed to the edge, holds a ball"
-program = "(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body center/V universal/H* universal/V*)))"
 note = "Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside."
 frames = [0, 3, 6, 9, 12, 15]
 [case.boards]
@@ -352,7 +352,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: the object moves around inside"
-program = "(parallel (field (parallel bottom/V periphery/H)) (template center/H (template center/V (body (parallel center/V universal/H* universal/V*)))))"
+program = "(parallel (field bottom/V periphery/H) (template center/H (template center/V (body center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V)."
 [case.boards]
@@ -365,7 +365,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: the object is a strip moving randomly"
-program = "(parallel (field (parallel bottom/V periphery/H)) (template center/H (template center/V (body universal/H* universal/V* center/V))))"
+program = "(parallel (field bottom/V periphery/H) (template center/H (template center/V (body universal/H* universal/V* center/V))))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V)."
 [case.boards]
@@ -379,7 +379,7 @@ all = """
 concept = "containment"
 name = "anchored: a void slot in the field above the ball is a drain, so the ball entering it vanishes"
 expect = "differ"
-program = "(parallel (field (parallel periphery/H bottom/V (template center/H top/V void/H))) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel (field periphery/H bottom/V (template center/H top/V void/H)) (template center/H center/V (body center/V universal/H* universal/V*)))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
@@ -392,7 +392,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: strip U, the object moves inside"
-program = "(parallel (field (serial_v universal/H periphery/H periphery/H)) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel (field (serial_v universal/H periphery/H periphery/H)) (template center/H center/V (body center/V universal/H* universal/V*)))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
@@ -405,7 +405,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: a ball moving in the superposed basket"
-program = "(parallel (field (parallel periphery/H bottom/V)) (template center/H (template center/V (body (parallel center/V universal/H* universal/V*)))))"
+program = "(parallel (field periphery/H bottom/V) (template center/H (template center/V (body center/V universal/H* universal/V*))))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V)."
 [case.boards]
@@ -419,7 +419,7 @@ all = """
 concept = "containment"
 name = "anchored: a hollow made by a field is a drain, so the ball in it vanishes"
 expect = "differ"
-program = "(parallel (field (parallel universal/H (template center/H upper/V void/H))) (template center/H (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel (field universal/H (template center/H upper/V void/H)) (template center/H (body center/V universal/H* universal/V*)))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
@@ -432,7 +432,7 @@ all = """
 [[case]]
 concept = "containment"
 name = "anchored: a small ball moving in the superposed basket"
-program = "(parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H* universal/V*))))"
+program = "(parallel (field periphery/H bottom/V) (template center/H center/V (body universal/H universal/H* universal/V*)))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
@@ -446,7 +446,7 @@ all = """
 concept = "containment"
 name = "anchored: the closed box hollowed inside a field is a drain, so the ball vanishes"
 expect = "differ"
-program = "(parallel (field (parallel universal/H (template center/H center/V void/H))) (template center/H center/V (body (parallel center/V universal/H* universal/V*))))"
+program = "(parallel (field universal/H (template center/H center/V void/H)) (template center/H center/V (body center/V universal/H* universal/V*)))"
 frames = [0, 3, 6, 9, 12, 15]
 note = "The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream."
 [case.boards]
@@ -460,7 +460,7 @@ all = """
 concept = "containment"
 name = "a bare field holds: the ball inside cannot push it (static fields)"
 expect = "differ"
-program = "(serial_h void/V (field (parallel periphery/H bottom/V (template center/H center/V (body (parallel universal/H universal/H*))))) void/V)"
+program = "(serial_h void/V (field periphery/H bottom/V (template center/H center/V (body universal/H universal/H*))) void/V)"
 frames = [15]
 size = 24
 note = "A field is a boundary condition and never moves; to push a box whole, carry the field in a body (next cases). Earlier semantics pushed it."
@@ -533,7 +533,7 @@ note = "Bare leaves are an initial condition: the block rises and leaves known e
 [[case]]
 concept = "drain"
 name = "a void field swallows a body that moves into it"
-program = "(parallel (template top/V center/H (field void/H)) (template bottom/V center/H (body (parallel universal/H bottom/V*))))"
+program = "(parallel (template top/V center/H (field void/H)) (template bottom/V center/H (body universal/H bottom/V*)))"
 frames = [0, 11]
 note = "The field is a drain: what enters its region is empty again on the next tick, and the body never shows there."
 [case.boards]
@@ -551,7 +551,7 @@ note = "The field is a drain: what enters its region is empty again on the next 
 [[case]]
 concept = "growth"
 name = "a fountain: a field with motion inside pushes out a column that rises to the top"
-program = "(parallel (template bottom/V center/H (field (parallel universal/H bottom/V*))) void/V)"
+program = "(parallel (template bottom/V center/H (field universal/H bottom/V*)) void/V)"
 frames = [3, 11]
 note = "Standing motion with chain pushing: the field's motion carries its substance out, and each new emission pushes the last, so the column rises until the board stops it."
 [case.boards]
@@ -587,7 +587,7 @@ ____________
 [[case]]
 concept = "containment"
 name = "a carried field: a rigid box (body around a field) is pushed whole by the ball inside"
-program = "(serial_h void/V (body (parallel (field (parallel periphery/H bottom/V)) (template center/H center/V (body (parallel universal/H universal/H*))))) void/V)"
+program = "(serial_h void/V (body (field periphery/H bottom/V) (template center/H center/V (body universal/H universal/H*))) void/V)"
 frames = [15]
 size = 24
 note = "A body carrying the walls' field is a rigid box; the ball sits beside the field inside the body (in the field it would be spawned). Its edge pushes the box whole; by frame 15 it has left the middle."
@@ -645,7 +645,7 @@ note = "Already packed at the centre: nothing moves."
 [[case]]
 concept = "growth"
 name = "a spawner: a field holding a rising thin body emits a growing line"
-program = "(parallel (template bottom/V center/H (field (body (parallel center/H bottom/V*)))))"
+program = "(parallel (template bottom/V center/H (field (body center/H bottom/V*))))"
 frames = [0, 11]
 note = "Each tick a new body appears at home while the last rises, so a line grows up out of the field."
 [case.boards]
@@ -681,7 +681,7 @@ note = "Each tick a new body appears at home while the last rises, so a line gro
 [[case]]
 concept = "growth"
 name = "contrast: a body beside a field, not in it, rises alone"
-program = "(parallel (template bottom/V center/H (field void/H)) (template bottom/V center/H (body (parallel center/H bottom/V*))))"
+program = "(parallel (template bottom/V center/H (field void/H)) (template bottom/V center/H (body center/H bottom/V*)))"
 frames = [11]
 expect = "differ"
 note = "The same body as a sibling of the field is independent: one body rises and nothing replaces it."
@@ -732,7 +732,7 @@ expect = "differ"
 [[case]]
 concept = "conveyor"
 name = "a cart carrying a conveyor: the conveyor drives the cart and its load"
-program = "(parallel (template center/H center/V (body (parallel bottom/V (field bottom/H*)))) (template center/H center/V center/V universal/H))"
+program = "(parallel (template center/H center/V (body bottom/V (field bottom/H*))) (template center/H center/V center/V universal/H))"
 frames = [0, 11]
 note = "Standing motion: the field's motion acts on everything in its region, the body carrying it included, so the cart drives right with the sand on it, to the edge."
 [case.boards]
@@ -768,7 +768,7 @@ note = "Standing motion: the field's motion acts on everything in its region, th
 [[case]]
 concept = "conveyor"
 name = "a solid cart carrying a conveyor drives itself, as a self-propelled one does"
-program = "(parallel (template center/H center/V (body (parallel universal/H (field bottom/H*)))))"
+program = "(parallel (template center/H center/V (body universal/H (field bottom/H*))))"
 frames = [11]
 note = "Standing motion: the field re-asserts its motion wherever the cart now is, so the cart keeps moving (drawn exactly: its extent is set by the field)."
 [case.boards]
@@ -790,7 +790,7 @@ note = "Standing motion: the field re-asserts its motion wherever the cart now i
 [[case]]
 concept = "conveyor"
 name = "contrast: the same motion leaf directly in the body propels the cart"
-program = "(parallel (template center/H center/V (body (parallel universal/H bottom/H*))))"
+program = "(parallel (template center/H center/V (body universal/H bottom/H*)))"
 frames = [11]
 expect = "differ"
 note = "Directly in the body, the motion leaf belongs to the body: a self-propelled cart drives off to the right."
@@ -842,7 +842,7 @@ note = "The substance is pushed out of the field's fixed region and the field re
 [[case]]
 concept = "carried field"
 name = "a carried source drives its own cart: the field's motion moves the body carrying it, sowing along"
-program = "(parallel (template center/V (template center/H (body (field (parallel universal/H top/V*))))) bottom/H*)"
+program = "(parallel (template center/V (template center/H (body (field universal/H top/V*)))) bottom/H*)"
 frames = [11]
 note = "Standing motion: the field's own motion carries its substance and the cart in the same direction, so the cart ends at the bottom corner, pushed right as well."
 [case.boards]
@@ -879,7 +879,7 @@ expect = "differ"
 [[case]]
 concept = "pushing"
 name = "a pusher drives a row of blocks against the edge, where they stop side by side"
-program = "(serial_h (body (parallel universal/H bottom/H*)) (body universal/H) neutral/V (body universal/H) neutral/V neutral/V)"
+program = "(serial_h (body universal/H bottom/H*) (body universal/H) neutral/V (body universal/H) neutral/V neutral/V)"
 frames = [11]
 note = "A push is passed along: the pushed block pushes the one ahead. None may leave the board, so at the edge the row stops, pusher included, the blocks side by side."
 [case.boards]
@@ -901,7 +901,7 @@ ____**######
 [[case]]
 concept = "pushing"
 name = "a ball pushes a sand pile across open ground; at the edge the pile keeps its shape"
-program = "(serial_h void/V (body (parallel universal/H bottom/H*)) (serial_v void/H universal/H void/H) void/V void/V void/V)"
+program = "(serial_h void/V (body universal/H bottom/H*) (serial_v void/H universal/H void/H) void/V void/V void/V)"
 frames = [11]
 note = "Sand is pushed as a run and cannot be squeezed, so it is not piled up or lost at the edge."
 [case.boards]
@@ -938,7 +938,7 @@ ooo
 [[case]]
 concept = "support"
 name = "variant: object sliding along the floor"
-program = "(serial_v universal/H (body (parallel center/V universal/H*)) void/H)"
+program = "(serial_v universal/H (body center/V universal/H*) void/H)"
 frames = [0, 3, 6, 9, 12, 15]
 note = "It may move sideways but should stay on the floor."
 [case.boards]

@@ -284,6 +284,11 @@ def _standing() -> bool:
 # the drawing only, and a moving pattern observes it as its static pattern would (earlier runs).
 FLOW_PERCEPTION = False
 
+# Multi-part units (grammar only): a field or body may hold several children in the search grammar, drawn together in
+# its region (the engine always draws a unit's several children so, as a parallel inside it would): one node and one
+# level less than (body (parallel ...)). Kept here so a run's semantics record it.
+MULTI_PART_UNITS = False
+
 
 def _spawned(node, ikey: tuple, instances) -> List[tuple]:
     """STATIC_FIELDS: the keys of a unit's instances at template position ``ikey``: the first, then those a field
