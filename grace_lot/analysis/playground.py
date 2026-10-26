@@ -433,8 +433,9 @@ def offline_page(cfg_path: str, ticks: int = 24) -> str:
         for states in options:
             d = first if states == {u["key"]: u["state"] for u in first["units"]} else record(e["program"], ticks, states, cfg_path, lot)
             d.pop("snapshots", None)                     # the graph viewer's, not shown on this page
-            if len(d["roots"]) == 1:                     # one tree: its space is the drawn board (shown only for several)
-                for f in d["frames"]:
+            for f in d["frames"]:
+                f.pop("grids", None)                     # the mass grids: not shown on the page
+                if len(d["roots"]) == 1:                 # one tree: its space is the drawn board (shown only for several)
                     f["spaces"] = {}
             runs.append({"program": e["program"], "lot": lot, "states": states, "run": d})
     html = page(cfg_path).replace(
