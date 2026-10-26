@@ -149,7 +149,7 @@ const BOOT = (() => {     // the playground server fills in the boot data; every
     document.querySelector('main').insertAdjacentHTML('beforeend',
       '<div class="card"><b>This page needs the playground server.</b> Run ' +
       '<code>python -m grace_lot.analysis.playground</code> and open ' +
-      '<code>http://localhost:8765/gameboard</code>.</div>');
+      '<code>http://localhost:8765</code>.</div>');
     document.getElementById('run').disabled = true;
     throw new Error('playground_page.html needs the server: python -m grace_lot.analysis.playground');
   }

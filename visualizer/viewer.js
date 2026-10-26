@@ -2301,7 +2301,7 @@
       if (!engineAvailable()) {
         document.querySelectorAll("#enginePanel select, #enginePanel textarea, #enginePanel input, #enginePanel button:not(#graphToProgramBtn)")
           .forEach(el => { el.disabled = true; });
-        engineMessage(`<div class="warn">No engine here (the page was opened as a file). To run programs on the engine, start the server:\npython -m grace_lot.analysis.playground\nand open http://localhost:8765. Graph → Program still works here.</div>`);
+        engineMessage(`<div class="warn">No engine here (the page was opened as a file). To run programs on the engine, start the server:\npython -m grace_lot.analysis.playground\nand open http://localhost:8765/graph. Graph → Program still works here.</div>`);
         return;
       }
       payload.engine.examples.forEach((e, i) => {

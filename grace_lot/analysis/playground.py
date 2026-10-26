@@ -4,8 +4,8 @@
                                             [--lot pure_claims=true solid_figure=true soft_edges=true static_fields=true]
     python -m grace_lot.analysis.playground --offline playground_offline.html     # a self-contained copy (no server)
 
-then open http://localhost:8765 for the graph visualizer (``visualizer/page.html``: edit a graph, load or
-export v7 program text, run it on the engine and replay the ticks), or /gameboard for the board-first page.
+then open http://localhost:8765 for the board-first page (also at /gameboard), or /graph for the graph visualizer
+(``visualizer/page.html``: edit a graph, load or export v7 program text, run it on the engine and replay the ticks).
 The pages send programs to this server, which runs the real engine
 (``embodied_lot``) under the config's semantics (with the language flags the page or ``--lot`` switches on:
 ``SEMANTICS``) and records every tick phase by phase, as
@@ -478,10 +478,10 @@ def make_handler(cfg_path: str, lot: dict = None):
             self.wfile.write(body)
 
         def do_GET(self):
-            if self.path in ("/", "/index.html"):
-                self._send(200, visualizer_page(cfg_path, lot).encode("utf-8"), "text/html; charset=utf-8")
-            elif self.path == "/gameboard":
+            if self.path in ("/", "/index.html", "/gameboard"):
                 self._send(200, page(cfg_path, lot).encode("utf-8"), "text/html; charset=utf-8")
+            elif self.path == "/graph":
+                self._send(200, visualizer_page(cfg_path, lot).encode("utf-8"), "text/html; charset=utf-8")
             else:
                 self._send(404, b"not found", "text/plain")
 
@@ -520,7 +520,7 @@ def main() -> None:
         return
     lot = {k: v.lower() == "true" for k, v in (item.split("=", 1) for item in args.lot)}
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.config, lot))
-    print(f"v7 playground on http://localhost:{args.port}  (semantics from {args.config}"
+    print(f"v7 playground on http://localhost:{args.port}  (graph editor: /graph; semantics from {args.config}"
           + (f", with {', '.join(k for k, v in lot.items() if v)}" if any(lot.values()) else "") + ")", flush=True)
     server.serve_forever()
 
