@@ -39,30 +39,48 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "sand: the object moves around inside"
-program = "(parallel bottom/V periphery/H (template center/H (body center/V universal/H* universal/V*)))"
+name = "sand: the object moves around inside, away from the edge"
+program = "(parallel (serial_h void/V (parallel bottom/V periphery/H (template center/H (body center/V universal/H* universal/V*))) void/V))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass). Away from the board's edge (a void margin each side) the walls have somewhere to go: the moving ball pushes a wall cell out and the sand stays broken, like a sandcastle. (Against the edge the sand holds; see the packed cases.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****####****
 """
 
 [[case]]
 concept = "containment"
-name = "sand: the object is a strip moving randomly"
-program = "(parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V)))"
+name = "sand: the object is a strip moving randomly, away from the edge"
+program = "(parallel (serial_h void/V (parallel bottom/V periphery/H (template center/H (body universal/H* universal/V* center/V))) void/V))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass). Away from the board's edge (a void margin each side) the walls have somewhere to go: the moving ball pushes a wall cell out and the sand stays broken, like a sandcastle. (Against the edge the sand holds; see the packed cases.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****####****
 """
 
 [[case]]
@@ -295,30 +313,48 @@ all = """
 
 [[case]]
 concept = "containment"
-name = "sand: a ball moving in the superposed basket"
-program = "(parallel periphery/H bottom/V (template center/H (body center/V universal/H* universal/V*)))"
+name = "sand: a ball moving in the superposed basket, away from the edge"
+program = "(parallel (serial_h void/V (parallel periphery/H bottom/V (template center/H (body center/V universal/H* universal/V*))) void/V))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass). Away from the board's edge (a void margin each side) the walls have somewhere to go: the moving ball pushes a wall cell out and the sand stays broken, like a sandcastle. (Against the edge the sand holds; see the packed cases.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****####****
 """
 
 [[case]]
 concept = "containment"
-name = "sand: a ball moving in the hollowed basket"
-program = "(parallel universal/H (template center/H upper/V void/H) (template center/H (body center/V universal/H* universal/V*)))"
+name = "sand: a ball moving in the hollowed basket, away from the edge"
+program = "(parallel (serial_h void/V (parallel universal/H (template center/H upper/V void/H) (template center/H (body center/V universal/H* universal/V*))) void/V))"
 expect = "differ"
 frames = [0, 3, 6, 9, 12, 15]
-note = "Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle."
+note = "Bare leaves are a pile (free mass). Away from the board's edge (a void margin each side) the walls have somewhere to go: the moving ball pushes a wall cell out and the sand stays broken, like a sandcastle. (Against the edge the sand holds; see the packed cases.)"
 [case.boards]
 all = """
-#o#
-#o#
-###
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****#oo#****
+****####****
 """
 
 [[case]]
@@ -454,6 +490,28 @@ all = """
 #o#
 #o#
 ###
+"""
+
+[[case]]
+concept = "containment"
+name = "anchored, away from the edge: the wall closes behind the ball"
+program = "(parallel (serial_h void/V (field periphery/H bottom/V) void/V) (serial_h void/V (template center/H (body center/V universal/H* universal/V*)) void/V))"
+frames = [0, 3, 6, 9, 12, 15]
+note = "The same basket as the sand contrasts, its walls in a field. A field's mass is pushable too, so the ball pushes a wall cell out and may leave, but the field re-asserts its walls behind: the basket heals, where sand stays broken. Only the walls are judged (inside and outside, anything)."
+[case.boards]
+all = """
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****#**#****
+****####****
 """
 
 [[case]]
