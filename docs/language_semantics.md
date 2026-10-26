@@ -8,7 +8,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | --- | --- |
 | `pure_claims` | Pure patterns claim the substance itself; mixed patterns claim only their figure; the more specific claim wins |
 | `solid_figure` | Moving bodies cannot enter substance; they interact by contact, and only their own motion propels them |
-| `soft_edges` | A body's size and place in its region are uncertain: drawn as an average over placements |
+| `soft_edges` | A body's size and place in its region are uncertain: drawn as an average over placements (earlier languages; not part of the current one) |
 | `static_fields` | Bare leaves are stuff, bodies are objects, fields are places re-asserted every tick |
 | `standing_motion` | Every motion leaf acts every tick on everything in its region; self-motion is a special case (25 Oct) |
 
@@ -185,7 +185,8 @@ a time: Battaglia, Hamrick & Tenenbaum 2013; objects move on unobstructed paths:
   unknown like motion, rigid but three times the runs per body, about twice the cost of a likelihood.) A body that
   fills its slot is drawn like a solid block of that shape; it still moves and is pushed as one unit.
 
-The expressivity suite passes 61/61 with all five flags (thirteen cases restated to these semantics, three added).
+The current language is pure claims, solid figure, static fields and standing motion (soft edges do nothing under
+standing motion, where the program states a body's size, so they are not part of it). The expressivity suite passes 61/61 in it (thirteen cases restated to these semantics, three added).
 
 ## 6. Results
 

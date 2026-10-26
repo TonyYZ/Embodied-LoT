@@ -40,7 +40,8 @@ _lock = Lock()                       # the engine's semantics are module flags: 
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
 # STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
 SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion")
-CURRENT = {k: True for k in SEMANTICS}        # the language the examples and a fresh page run in: keep it current
+CURRENT = {k: k != "soft_edges" for k in SEMANTICS}   # the language the examples and a fresh page run in: keep it
+                                                       # current (soft edges do nothing under standing motion)
 
 EXAMPLES = [
     ("One body glides, clearing its path through unexplored stuff", "(parallel (serial_h (body (parallel center/V bottom/H*)) neutral/H neutral/H) out)"),
