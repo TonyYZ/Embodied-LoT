@@ -163,8 +163,8 @@ reading; a truck that sows along its path takes the motion leaf directly in its 
 
 **Pushing is passed along (with `solid_figure`).** A body that moves into anything pushes it: a unit, with
 everything inside it (a body pushing the unit it is inside is carried along), and through it whatever that unit would
-move into; stuff as a run, cell by cell along the line. All of it moves together if it can, else nothing does: none
-may leave the board or enter a field's figure, and stuff pressed from both sides in one tick holds. A tick is one
+move into; stuff as a run, cell by cell along the line, a field's mass included. All of it moves together if it can,
+else nothing does: none may leave the board, and stuff pressed from both sides in one tick holds. A tick is one
 moment: every unit's own move is taken first, and a pushed unit already moving the same way this tick moves once
 (two bodies in file stay touching; the leader is not pushed and driven both). A unit's solid
 part is as before (its figure above 0.75; an agent of uncertain extent's core where it leans figure, or all of it if
@@ -221,6 +221,17 @@ when its home is clear: no unit and no substance more likely there than not (unk
 claims are not in the way of what it holds). A spawner whose home is blocked produces nothing until it clears, as a
 hive whose entrance is blocked lets no bee out; nothing new appears inside something solid, so one solidity rule holds
 everywhere. Streams are spaced by the body's own size.
+
+**A field's mass is pushable; the field refills behind (26 Oct).** A field's figure used to be fixed: nothing could
+push or enter it, while mass pushing mass moved freely, an exception for one kind of substance. Now a field's mass is
+mass like any other: pushed, a copy of its claim moves out (as its own motion already carried copies off), and the
+field re-asserts its claim in the cell once nothing else is there, as a spawner re-asserts a body once its home is
+clear. One rule now holds for bodies and mass: a field is a source that keeps re-asserting what it holds, and anything
+it asserted can be pushed. What holds is what would be pushed off the board: a floor or a basket's walls that run to
+the board's edge hold a ball (the run reaches the edge), as packed sand does; a free-standing wall does not. A ball
+pushing into one shoves the mass ahead as a growing pile (each shove copies, and the field refills behind) and the wall
+closes behind it, like a membrane. Open: there is now no way to state an immovable substance away from the edge (a
+rock in mid-air, an anchored post). That needs its own representation, to be decided.
 
 **Contour claims (`contour_claims`, 26 Oct).** Words for parts of a space are vague: "a bottom" says something
 salient is in the lower third, not that the lower third is solid; nobody pictures a basket as three slabs. And what is

@@ -75,9 +75,12 @@ EXAMPLES = [
     ("a ball in a sand basket (packed to the board's edge, the sand holds)",
      "(parallel periphery/H bottom/V (template center/H center/V (serial_v (serial_h (body universal/H "
      "universal/H* universal/V*) void/V) void/H)) out)"),
-    ("a ball beside a field basket (the walls hold)",
+    ("a ball beside a field basket (the walls hold: the board's edge backs them)",
      "(parallel (field periphery/H bottom/V) (template center/H center/V (serial_v (serial_h (body universal/H"
      " universal/H* universal/V*) void/V) void/H)) out)"),
+    ("a ball pushes into a free-standing wall (a field): the mass piles up ahead, the wall closes behind",
+     "(parallel (serial_h (serial_v void/H (body universal/H bottom/H*) void/H) void/V (field universal/H) void/V "
+     "void/V void/V) out)"),
     ("a plant (a source field under upward motion)",
      "(parallel (template bottom/V center/H (field universal/H)) bottom/V* out)"),
     ("a spawner (a field holding a rising body)",

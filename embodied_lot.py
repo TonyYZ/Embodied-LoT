@@ -458,13 +458,19 @@ def _moved_mask(m: np.ndarray, dy: int, dx: int) -> np.ndarray:
     return out
 
 
+def _solid_stuff(S: dict) -> np.ndarray:
+    """STANDING_MOTION: where substance more likely than not is: loose stuff, and a field's figure where its claim
+    stands (a field's mass is mass like any other; pushed out, it leaves a copy and the field re-asserts behind)."""
+    return np.where(S["s"] > 0, (S["v"] > 0.5), S["F"] & (S["fe"] > 0.5) & (S["fc"] > 0))
+
+
 def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
-    """STANDING_MOTION: substance moving by (dy, dx) pushes the substance ahead of it. Returns the run (``cells`` and
-    every substance cell in its way, transitively) and its blocked cells: those whose target is off the board, in a
-    field's figure or in ``against`` (content pushing the other way), and those whose target is blocked. Claims of
-    absence are not pushed; they are replaced."""
+    """STANDING_MOTION: substance moving by (dy, dx) pushes the substance ahead of it, a field's figure included.
+    Returns the run (``cells`` and every substance cell in its way, transitively) and its blocked cells: those whose
+    target is off the board or in ``against`` (content pushing the other way), and those whose target is blocked.
+    Claims of absence are not pushed; they are replaced."""
     against = np.zeros_like(cells) if against is None else against & ~cells
-    solid = (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"] & ~against
+    solid = _solid_stuff(S) & ~against
     run = cells.copy()
     while True:
         ahead = _moved_mask(run, dy, dx) & solid & ~run
@@ -472,7 +478,7 @@ def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray
             break
         run |= ahead
     lands = lambda m: _moved_mask(m, -dy, -dx)                # the cells whose target is in m
-    blocked = run & (~lands(np.ones_like(run)) | lands((S["F"] & (S["fe"] > 0.5) | against) & ~run))
+    blocked = run & (~lands(np.ones_like(run)) | lands(against & ~run))
     while True:
         more = run & lands(blocked) & ~blocked
         if not more.any():
@@ -2625,8 +2631,9 @@ class ConceptGraph:
         content's coverage above one half: for an agent of uncertain extent, all but its corners; a body too small for any
         cell to pass one half, where it most likely is). A body pushes what
         it would move into: a unit, with everything inside it (a body pushing the unit it is inside is carried along),
-        and through it whatever that unit would move into; stuff as a run (``_stuff_run``). Nothing may leave the board
-        or enter a field's figure. Copies of one body are solid to each other, as any two bodies are.
+        and through it whatever that unit would move into; stuff as a run (``_stuff_run``), a field's figure included (a
+        copy is pushed out; the field re-asserts behind once the cell is clear). Nothing may leave the board: what holds
+        is what would be pushed off it. Copies of one body are solid to each other, as any two bodies are.
 
         A move resolves what made it possible: the uncertain stuff
         it passes through (unknown, not substance more likely than not) is resolved by Bayes when it leaves a cell:
@@ -2641,8 +2648,7 @@ class ConceptGraph:
         none = np.zeros((H, W), dtype=bool)
         group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
         S = self._substance(root)
-        stuff = (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]
-        fixed = S["F"] & (S["fe"] > 0.5) & (S["fc"] > 0) & ~np.logical_or.reduce(list(own.values()) + [none])
+        stuff = _solid_stuff(S) & ~np.logical_or.reduce(list(own.values()) + [none])   # a unit's own: pushed whole
 
         def plan(d):
             moving, push, queue = [], none.copy(), [body.node_id]
@@ -2652,8 +2658,8 @@ class ConceptGraph:
                     continue                                                  # carried by a moving unit
                 g = group(x)
                 foot = _moved_mask(g, *d)
-                if foot.sum() < g.sum() or (foot & fixed).any():
-                    return None                                               # off the board, or into a field
+                if foot.sum() < g.sum():
+                    return None                                               # off the board
                 if not groups.get(x) and [self._clamped_shift(units[x], a, d[a], n) for a, n in ((0, H), (1, W))] != list(d):
                     return None
                 moving.append(x)
