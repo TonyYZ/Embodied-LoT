@@ -1,7 +1,7 @@
 # v7: copying, grouping and agency are separate operators (lot.grouping_nodes). `template` copies its material
 # into its template's slots and groups nothing (the earlier plan); `field` makes its one child a rigid unit moved
 # only from outside; `body` is a field its own dynamic leaves propel every tick. Template copies of a group are
-# independent instances. Same limits as grace_v6_parts (max_depth 5): only the grouping semantics differ.
+# independent instances. Same limits as grace_v6_parts (max_depth 5, raised to 6 on 26 Oct 2026): only the grouping semantics differ.
 # No results yet.
 
 # PROTOTYPE: anonymous outputs matched to body parts in a 3-detector-per-axis activation space.
@@ -40,7 +40,7 @@ allow_dynamic = true
 body_positions = [0.25, 0.5, 0.75]
 body_extents = [0.34, 0.67, 1.0]
 body_speeds = [0.0, 0.03, 0.06]
-max_depth = 5
+max_depth = 6                          # 5 until 26 Oct 2026: containers and carts (nested slots, units) need a level more
 max_nodes = 24                         # lenient: room for a loop per limb
 p_leaf = 0.55
 max_children = 3

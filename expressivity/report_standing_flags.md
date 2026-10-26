@@ -32,7 +32,7 @@ ___   ???   ############
 should match; matches the sketch  
 The intended prototype: bottom and side walls, and a body placed in the central slot. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.2.1.1: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -55,8 +55,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel bottom/V periphery/H (template center/H (body center/V universal/H* universal/V*)))`  
 contrast (should not match); does not match the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
-
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -176,8 +174,6 @@ state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | en
 contrast (should not match); does not match the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
@@ -296,7 +292,7 @@ state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | en
 should match; matches the sketch  
 Your variant: the whole U as material in a top/V* template, which should turn it into a Π. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 7, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 6
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -336,8 +332,6 @@ frame 3: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 Walls as flanking strips and a bottom strip; the object in the middle strip, ground above it.
 
-Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
@@ -359,8 +353,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(serial_h universal/V (serial_v universal/H (body center/V universal/H* universal/V*) void/H) universal/V)`  
 should match; matches the sketch  
 Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside. Pressing on, it moves as small as it must be, so where exactly it is grows uncertain (drawn faintly).
-
-Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -400,7 +392,7 @@ state {'n7:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 should match; matches the sketch  
 Top and bottom walls, a left wall; the object in the middle. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/H).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.2.1.1: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -509,8 +501,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 The middle row is wall, object, wall; the top row walls with nothing between them.
 
-Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #_#   #?#   ####????####
@@ -532,8 +522,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(serial_v universal/H (serial_h universal/V (body center/V universal/H* universal/V*) universal/V) periphery/H)`  
 should match; matches the sketch  
 Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside.
-
-Outside the search grammar: .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n7:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -616,8 +604,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(serial_h (serial_h universal/V (serial_v universal/H void/H void/H) universal/V) (body center/H))`  
 contrast (should not match); does not match the sketch  
 An empty U on the left, the object outside it on the right.
-
-Outside the search grammar: .1.0.1: a serial_v at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -747,8 +733,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel periphery/H bottom/V (template center/H (body center/V)))`  
 should match; matches the sketch
 
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
@@ -770,8 +754,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel periphery/H bottom/V (template center/H (body center/V universal/H* universal/V*)))`  
 contrast (should not match); does not match the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
-
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n8:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -891,8 +873,6 @@ state {'n8:universal': 'b'}, frame 15: sketch | engine at sketch resolution | en
 contrast (should not match); does not match the sketch  
 Bare leaves are a pile (free mass): the edge of the moving ball pushes it apart, like a sandcastle.
 
-Outside the search grammar: .1.2.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #.#   ####....####
@@ -1011,8 +991,6 @@ state {'n11:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
 should match; matches the sketch  
 Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside.
 
-Outside the search grammar: .1.2.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 state {'n9:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
@@ -1050,8 +1028,6 @@ state {'n9:universal': 'a'}, frame 3: sketch | engine at sketch resolution | eng
 `(parallel universal/H (template center/H center/V void/H) (template center/H center/V (body center/V universal/H* universal/V*)))`  
 should match; matches the sketch  
 Bare leaves are a pile (free mass), but sand cannot be squeezed: walls packed to the board's edge have nowhere to go, so the ball cannot push them apart and stays inside.
-
-Outside the search grammar: .1.2.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1091,7 +1067,7 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 should match; matches the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.1.1.1: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1131,7 +1107,7 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 should match; matches the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.1.1.1: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1170,8 +1146,6 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 `(parallel (field periphery/H bottom/V (template center/H top/V void/H)) (template center/H center/V (body center/V universal/H* universal/V*)))`  
 contrast (should not match); does not match the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
-
-Outside the search grammar: .1.0.2: a template at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n14:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1291,8 +1265,6 @@ state {'n14:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
 should match; matches the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
 
-Outside the search grammar: .1.0.0: a serial_v at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
@@ -1331,7 +1303,7 @@ state {'n12:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 should match; matches the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream. The program states the object's size: a body fills its region, so the object sits in a smaller slot (template center/V).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.1.1.1: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 state {'n11:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1370,8 +1342,6 @@ state {'n11:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 `(parallel (field universal/H (template center/H upper/V void/H)) (template center/H (body center/V universal/H* universal/V*)))`  
 contrast (should not match); does not match the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
-
-Outside the search grammar: .1.0.1: a template at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.1: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n12:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1571,8 +1541,6 @@ state {'n12:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
 should match; matches the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
 
-Outside the search grammar: .1.1.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 state {'n10:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 #o#   #?#   ####????####
@@ -1610,8 +1578,6 @@ state {'n10:universal': 'a'}, frame 3: sketch | engine at sketch resolution | en
 `(parallel (field universal/H (template center/H center/V void/H)) (template center/H center/V (body center/V universal/H* universal/V*)))`  
 contrast (should not match); does not match the sketch  
 The walls in a field (a ground that re-asserts itself, so they hold); the ball beside the field, so it is one independent ball, not a spawned stream.
-
-Outside the search grammar: .1.0.1: a template at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 state {'n13:universal': 'a'}, frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1811,7 +1777,7 @@ state {'n13:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
 contrast (should not match); does not match the sketch  
 A field is a boundary condition and never moves; to push a box whole, carry the field in a body (next cases). Earlier semantics pushed it.
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.1.2.2: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 state {'n11:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
 ```
@@ -1875,7 +1841,7 @@ state {'n11:universal': 'b'}, frame 15: sketch | engine at sketch resolution | e
 should match; matches the sketch  
 Soft edges: the size of the body is uncertain, so it is drawn at its core and leaves room around it. (A body that fills its slot is drawn like a solid block of that shape; it still moves as a unit.)
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.2.1.1: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1898,8 +1864,6 @@ frame 0: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel (template bottom/V center/H (field universal/H)) bottom/V*)`  
 should match; matches the sketch  
 The field is a source: motion carries its substance up, the field refills, so the column lengthens.
-
-Outside the search grammar: .1.0.2: a field at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -1961,8 +1925,6 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 The field is a drain: what enters its region is empty again on the next tick, and the body never shows there.
 
-Outside the search grammar: .1.0.2: a field at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
 *.*   ?.?   ????....????
@@ -2000,8 +1962,6 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel (template bottom/V center/H (field universal/H bottom/V*)) void/V)`  
 should match; matches the sketch  
 Standing motion with chain pushing: the field's motion carries its substance out, and each new emission pushes the last, so the column rises until the board stops it.
-
-Outside the search grammar: .1.0.2: a field at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 frame 3: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2041,7 +2001,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 A body carrying the walls' field is a rigid box; the ball sits beside the field inside the body (in the field it would be spawned). Its edge pushes the box whole; by frame 15 it has left the middle.
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.1.1.2: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 state {'n12:universal': 'a'}, frame 15: sketch | engine at sketch resolution | engine 24 x 24
 ```
@@ -2151,7 +2111,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 Each tick a new body appears at home while the last rises, so a line grows up out of the field.
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.0.2.0: a body at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2191,8 +2151,6 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 contrast (should not match); does not match the sketch  
 The same body as a sibling of the field is independent: one body rises and nothing replaces it.
 
-Outside the search grammar: .1.0.2: a field at depth 4; at depth 4 and below only leaves (max_depth = 5); .1.1.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
 *#*   ?#?   ?????##?????
@@ -2214,8 +2172,6 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel (template center/V (field bottom/H*)) (template center/V center/H universal/H))`  
 should match; matches the sketch  
 The field claims no substance, so it is no source; its motion leaf moves what lies in its region.
-
-Outside the search grammar: .1.0.1: a field at depth 4; at depth 4 and below only leaves (max_depth = 5)
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2254,8 +2210,6 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel (template bottom/V (field bottom/H*)) (template center/V center/H universal/H))`  
 contrast (should not match); does not match the sketch
 
-Outside the search grammar: .1.0.1: a field at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ************   ????????????   ????????????
@@ -2278,7 +2232,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 Standing motion: the field's motion acts on everything in its region, the body carrying it included, so the cart drives right with the sand on it, to the edge.
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.0.2.1: a field at depth 5; at depth 5 and below only leaves (max_depth = 6); .1.1: template has 4 children; it may have 2 to 3
 
 frame 0: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2318,7 +2272,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 Standing motion: the field re-asserts its motion wherever the cart now is, so the cart keeps moving (drawn exactly: its extent is set by the field).
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.0.2.1: a field at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2342,8 +2296,6 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 contrast (should not match); does not match the sketch  
 Directly in the body, the motion leaf belongs to the body: a self-propelled cart drives off to the right.
 
-Outside the search grammar: .1.0.2: a body at depth 4; at depth 4 and below only leaves (max_depth = 5)
-
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
 ************   ????????????   ????????????
@@ -2366,7 +2318,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 The field is anchored relative to its body: the outside motion moves the body, field and all, leaving known emptiness.
 
-Outside the search grammar: depth 7, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 6
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2390,7 +2342,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 contrast (should not match); does not match the sketch  
 The substance is pushed out of the field's fixed region and the field re-asserts it every tick.
 
-Outside the search grammar: depth 6, more than max_depth = 5
+Outside the search grammar: .1.0.1.1: a field at depth 5; at depth 5 and below only leaves (max_depth = 6)
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2414,7 +2366,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 should match; matches the sketch  
 Standing motion: the field's own motion carries its substance and the cart in the same direction, so the cart ends at the bottom corner, pushed right as well.
 
-Outside the search grammar: depth 7, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 6
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
@@ -2437,7 +2389,7 @@ frame 11: sketch | engine at sketch resolution | engine 12 x 12
 `(parallel (template center/V (template center/H (body (field universal/H)))) bottom/H*)`  
 contrast (should not match); does not match the sketch
 
-Outside the search grammar: depth 7, more than max_depth = 5
+Outside the search grammar: depth 7, more than max_depth = 6
 
 frame 11: sketch | engine at sketch resolution | engine 12 x 12
 ```
