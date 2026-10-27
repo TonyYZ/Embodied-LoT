@@ -335,7 +335,9 @@ def _open_edge() -> bool:
 # missions on a body whose leaves are both still on cancel, as two pushes at once do (a treadmill; with different gates
 # the stronger gets there at the difference of their rates); a mission whose leaf has switched off is a trip under
 # way, and one against it waits until it is done (so a mission given before the body has arrived does not cancel the
-# end of the trip bringing it). Missions the same way add up. With False, an order is a fixed distance: a body's
+# end of the trip bringing it). Missions the same way add up. While its leaf is on, a mission is as strong as the leaf
+# is now; a mission is committed once it has moved the body, and one whose leaf switches off before that lapses (a push
+# held back all along, never begun). With False, an order is a fixed distance: a body's
 # extent (half of it for out/in), the region's span for stuff (a quarter of it for out) (earlier runs).
 MISSIONS = False
 
@@ -2653,7 +2655,8 @@ class ConceptGraph:
             if beyond and not home:          # MISSIONS: a destination, where its window starts once past
                 sign = 1 if m > 0 else -1
                 at = round(body.position[ax] * frame[ax] - cells / 2)
-                body.orders.append([ax, sign, beyond, abs(m), 0.0, node_id, delay, at + sign * beyond])
+                a = self._acting(self._nodes[node_id], self._parents()) if node_id in self._nodes else 1.0
+                body.orders.append([ax, sign, beyond, abs(m), 0.0, node_id, delay, at + sign * beyond, a, False])
                 continue
             body.orders.append([ax, 1 if m > 0 else -1, max(1, round(cells / 2)) if half else cells, abs(m), 0.0,
                                 node_id, delay])
@@ -2716,18 +2719,27 @@ class ConceptGraph:
         self._solid_cache, self._moves = {}, Counter()     # solidity maps, valid until something else moves
         bodies = [b for b in self._tokens().values() if b.position is not None
                   and not (STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(b, "node", None), FieldNode))]
-        self._pending, self._strength = {}, {}   # this tick's own moves (and how strongly driven), all taken first
+        self._pending, self._strength, self._stepped = {}, {}, {}   # this tick's own moves (and how strongly driven,
+                                                                    # and the missions that stepped), all taken first
         parents = self._parents()
         for body in bodies:
             net = self._pending[body.node_id] = [0, 0]
             frame = homes[body.node_id][1] if body.node_id in homes else self.grid
             left = [o[2] for o in body.orders]                   # what each had left as this tick began
-            off = [len(o) > 7 and o[5] in self._nodes and not self._acting(self._nodes[o[5]], parents) > ONSET_THRESHOLD
-                   for o in body.orders]                         # a trip under way: its leaf has switched off
+            now = [self._acting(self._nodes[o[5]], parents) if len(o) > 7 and o[5] in self._nodes else 1.0
+                   for o in body.orders]                         # how strongly each mission's leaf acts now
+            off = [len(o) > 7 and not a > ONSET_THRESHOLD for o, a in zip(body.orders, now)]   # a trip under way
+            stepped = self._stepped[body.node_id] = []
             for i, order in enumerate(body.orders):
                 if len(order) > 6 and order[6] >= 1 - 1e-9:     # queued: waits its turn
                     order[6] -= 1
                     continue
+                if len(order) > 8:
+                    if off[i] and not order[9]:                  # its leaf went off before it moved the body:
+                        order[2] = 0                             # a push held back, never begun; it lapses
+                        continue
+                    if not off[i] and order[8] > 0:              # while its leaf is on, as strong as the leaf now
+                        order[3], order[8] = order[3] * now[i] / order[8], now[i]
                 if len(order) > 7:                               # MISSIONS: against one under way, it waits;
                     if any(o[0] == order[0] and o[1] != order[1] and n > 0 and f
                            for o, n, f in zip(body.orders[:i], left, off)):
@@ -2743,6 +2755,7 @@ class ConceptGraph:
                 net[order[0]] += order[1] * k
                 if k:
                     self._strength[body.node_id] = max(self._strength.get(body.node_id, 0.0), min(1.0, order[3]))
+                    stepped.append(order)
             body.orders = [o for o in body.orders if o[2] > 0]
             for ax in (0, 1):                                    # random pushes (universal), whole cells
                 step = max(-1, min(1, math.trunc(body.jitter[ax])))
@@ -2761,6 +2774,9 @@ class ConceptGraph:
             elif _motion_claims() and any(net) and (H, W) == tuple(self.grid) and self._pinned(body):
                 net = [0, 0]                             # a pin holds a body without built-in solidity too
             moved = [self._clamped_shift(body, axis, net[axis], n) for axis, n in ((0, H), (1, W))]
+            for o in self._stepped.get(body.node_id, ()):
+                if len(o) > 9 and moved[o[0]] * o[1] > 0:
+                    o[9] = True                                  # MISSIONS: it has moved the body: committed
             if any(moved):
                 self._moves[getattr(body, "node", body).node_id] += 1
             for axis, n in ((0, H), (1, W)):

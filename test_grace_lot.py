@@ -1443,14 +1443,24 @@ class MissionsTests(unittest.TestCase):
         self.assertGreaterEqual(w.count((6, 12)), 2)           # and all of the right half
         self.assertEqual(set(w) - {(c, c + 6) for c in range(7)}, set())
 
-    def test_a_pin_states_solidity_without_built_in_solidity(self):
+    def rows(self, src, ticks=12):
         from grace_lot.analysis import playground as PG
-        src = ("(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) "
-               "(template center/H universal/H) (template center/H (field void/H*)) out) | .1.1>.2.1.0")
-        d = PG.record(src, 12, {}, "configs/grace_v7_parts.toml", {**PG.CURRENT, "solid_figure": False})
-        rows = [np.array(f["drawn"])[6] > 0.75 for f in d["frames"]]
-        self.assertTrue(all(r.sum() == 6 for r in rows))              # never overlapping
-        self.assertTrue(all((r == rows[3]).all() for r in rows[3:]))  # touching from tick 3 on, and staying
+        d = PG.record(src, ticks, {}, "configs/grace_v7_parts.toml", {**PG.CURRENT, "solid_figure": False})
+        return [np.array(f["drawn"])[6] > 0.75 for f in d["frames"]]
+
+    def test_a_push_apart_states_solidity_exactly(self):
+        r = self.rows("(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) "
+                      "(template center/H universal/H) (template center/H center/H*) out) | .1.1>.2.1")
+        self.assertTrue(all(x.sum() == 6 for x in r))                 # never overlapping
+        self.assertTrue(all((x == r[3]).all() for x in r[3:]))        # touching from tick 3 on, never pushed apart
+
+    def test_a_push_that_never_moved_anyone_lapses(self):
+        r = self.rows("(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H* "
+                      "bottom/H*)) (template center/H universal/H) (template center/H center/H*) (template center/H "
+                      "void/H) out) | .1.1>.2.1 .1.1>.0.3.2 .3.1>.0.3.1")
+        left = [int(x.nonzero()[0].min()) for x in r]                   # the left body's left edge
+        self.assertTrue(all(b >= a for a, b in zip(left, left[1:])))    # never pushed back
+        self.assertGreater(left[-1], left[3])                           # it follows once they part
 
     def test_opposing_missions_from_leaves_still_on_cancel(self):
         from grace_lot.analysis import playground as PG

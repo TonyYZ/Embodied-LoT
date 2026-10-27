@@ -136,16 +136,22 @@ EXAMPLES = [
     ("a ball in a closed box (walls drawn as outlines) pushes through a wall and leaves; the wall heals behind",
      "(parallel (field periphery/H bottom/V top/V) (template center/H center/V (body universal/H universal/H* "
      "universal/V*)) out)"),
-    ("solidity stated by the program (built-in solidity off): once no gap is left, a pin over the middle (a field "
-     "with void*) holds them touching",
+    ("solidity stated by the program (built-in solidity off): once no gap is left, a push apart cancels the push in "
+     "exactly; they stop touching",
      "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) "
-     "(template center/H universal/H) (template center/H (field void/H*)) out) | .1.1>.2.1.0",
+     "(template center/H universal/H) (template center/H center/H*) out) | .1.1>.2.1",
      {**CURRENT, "solid_figure": False}),
     ("no solidity at all (built-in solidity off, no rule): the bodies run into each other",
      "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) out)",
      {**CURRENT, "solid_figure": False}),
     ("periphery motion gathers two strips at the centre",
      "(parallel (serial_v universal/H void/H void/H void/H void/H universal/H) periphery/V* out)"),
+    ("stated solidity, and parting again: the right body turns back once they touch; the push apart never moved "
+     "anyone, so it lapses, and the left body follows",
+     "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H* bottom/H*)) "
+     "(template center/H universal/H) (template center/H center/H*) (template center/H void/H) out) | "
+     ".1.1>.2.1 .1.1>.0.3.2 .3.1>.0.3.1",
+     {**CURRENT, "solid_figure": False}),
 ]
 
 

@@ -326,15 +326,23 @@ while general non-interpenetration is cheaper and exact as a core assumption, in
 all-or-none expectation that objects do not pass through each other, refined later by learned variables such as the
 size of the hitter (Kotovsky & Baillargeon 1998). Demos: "solidity stated by the program" and "no solidity at all".
 
-**Stated as a pin (27 Oct).** Solidity is "they stop", not "they push apart", and with motion claims the language says
-"stop" directly: a field with `void*` over the middle, gated by "no gap left" (universal over the middle). It switches
-on in the tick the bodies touch (the observer sees them, and a dashed edge into a motion leaf acts that tick), pins what
-is in the middle, and outranks the bodies' own motion (a field's claims outrank what they cover, as for the tar pit;
-a bare `void*` leaf is less specific than a body's own leaves and loses). The bodies touch and stay touching: no
-overlap, no bounce, no lurch (the gate watches the gap, not motion, and the gap never opens). For this a pin now holds a
-body whose built-in solidity is off too (before, pins were checked only within solidity). The limits that remain: the
-pin holds everything in the middle, so neither body could move away while pinned either, and the rule is still
-specific to a layout.
+**Stated as a counter-push (28 Oct).** The original idea, made exact: once no gap is left (universal over the middle),
+a push apart over the middle (centre*) switches on and cancels the push in, so the bodies stop exactly where they
+touch, and are not pushed apart. Two refinements of missions made it work:
+- While its leaf is on, a mission is as strong as the leaf is now (it was fixed when given: the push apart went out at
+  0.67, from a half-closed gap seen a tick earlier, and lost against the bodies' own push at 1). Touching, the gap
+  observer reads 1, the two pushes are equal, and they cancel every tick, as on a treadmill.
+- A mission is committed once it has moved the body. One whose leaf switches off before that lapses: it was a push held
+  back all along. The push apart only ever cancels, so when the gap opens it lapses instead of becoming a trip that
+  pushes the bodies apart (before, it did).
+So two bodies pushing into each other touch and stay touching; and if one turns back (its own leaf reverses when they
+touch), it leaves, the push apart lapses, and the other follows it (the last demo). What is left: the gap observer is
+graded, so while the middle is partly full the push apart acts at part strength and drags on a follower; and the rule
+covers only the region it names (two bodies meeting elsewhere are not stopped).
+
+A pin does the stopping too (a field with `void*` over the middle, gated by "no gap left"; a field, since its claims
+outrank the bodies' own motion, as for the tar pit), and a pin now holds a body whose built-in solidity is off. But it
+holds every direction: pinned, neither body could leave, and the gap never opens to release it.
 
 **The first look (`see_start`, 27 Oct).** Observers perceive the previous tick's drawing. At the first tick there was
 none, so they were given a blank board, every cell unknown: every pattern matched it halfway, and the scene was seen
