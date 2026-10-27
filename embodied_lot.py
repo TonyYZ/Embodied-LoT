@@ -657,13 +657,22 @@ def _orient_field(field: "ReceptiveField", region: Region, v: Tuple[float, float
     """
     Hc, Wc, rows, cols, (uy, ux, ry, rx) = _orientation_map(region, v)
     r0, r1, c0, c1 = region
+    H, W = field.activation.shape
+    if r0 < 0 or c0 < 0 or r1 > H or c1 > W:            # OPEN_EDGE: only the region's cells on the board count
+        R, C = np.meshgrid(np.arange(r0, r1), np.arange(c0, c1), indexing="ij")
+        on = (R >= 0) & (R < H) & (C >= 0) & (C < W)
+        rows, cols = rows[on], cols[on]
+        a = field.activation[R[on], C[on]]
+        m = None if field.motion is None else field.motion[R[on], C[on]]
+    else:
+        a = field.activation[r0:r1, c0:c1]
+        m = None if field.motion is None else field.motion[r0:r1, c0:c1]
     total, count = np.zeros((Hc, Wc)), np.zeros((Hc, Wc))
-    np.add.at(total, (rows, cols), field.activation[r0:r1, c0:c1])
+    np.add.at(total, (rows, cols), a)
     np.add.at(count, (rows, cols), 1.0)
     activation = np.where(count > 0, total / np.maximum(count, 1.0), unknown_value())
     motion = None
-    if field.motion is not None:
-        m = field.motion[r0:r1, c0:c1]
+    if m is not None:
         motion = np.zeros((Hc, Wc, 2))
         np.add.at(motion[..., 0], (rows, cols), -(m[..., 0] * uy + m[..., 1] * ux))
         np.add.at(motion[..., 1], (rows, cols), m[..., 0] * ry + m[..., 1] * rx)
@@ -2374,6 +2383,8 @@ class ConceptGraph:
         rects = self._moving_bodies(views, rects=True) if pad else {}
         win, own, cover = {}, {}, {}
         for b, (chain, _, cells) in self._moving_bodies(views).items():
+            if b not in units or not (pad or cells.any()):        # (a copy spawned this tick is not a unit yet)
+                continue
             u = node_of(b)
             if self.tree_index().get(u.node_id) != root or isinstance(u, FieldNode):
                 continue
@@ -2446,7 +2457,7 @@ class ConceptGraph:
         H, W = self.grid
         root = self.tree_index()[node.node_id]
         was, first.position = first.position, list(first.home)
-        r0, r1, c0, c1 = first.window(H, W)
+        r0, r1, c0, c1 = _clip(first.window(H, W), (H, W))
         first.position = was
         home = np.zeros((H, W), dtype=bool)
         home[r0:r1, c0:c1] = True
@@ -3529,6 +3540,8 @@ class ConceptGraph:
                 r0, r1, c0, c1 = region          # the field, resized to the window's cells
                 f = node.field[np.arange(r1 - r0) * node.field.shape[0] // (r1 - r0)][
                     :, np.arange(c1 - c0) * node.field.shape[1] // (c1 - c0)]
+                q0, q1, p0, p1 = _clip(region, cv[0].shape)          # OPEN_EDGE: only its part on the board
+                f, (r0, r1, c0, c1) = f[q0 - r0:q1 - r0, p0 - c0:p1 - c0], (q0, q1, p0, p1)
                 w = _clamp(weight * node.gate)
                 if cv[6] is not None and w > 0:
                     m, value = np.zeros(cv[0].shape, dtype=bool), np.full(cv[0].shape, 0.5)
