@@ -301,7 +301,7 @@ CONTOUR_CLAIMS = False
 # void* that there is none (0), neutral* that it is unknown (0.5), every other motion leaf that there is some (1;
 # universal* in an unknown direction). They compose exactly as content claims do: siblings average by strength, the
 # more specific claim pulls the cell to its value, and a field's claims outrank what they cover (``_motion_field``). Where a cell leans still (v < 0.5) what is in
-# it is pinned with strength 1 - 2v: it resists any push no stronger, and what enters is held too (a tar pit). Where it
+# it is pinned with strength 1 - 2v: it resists any push no stronger, and what enters is held too (a tar pit), with or without built-in solidity. Where it
 # leans moving (v > 0.5) each leaf drives its content at its own rate (its gate) times the share of motion left after
 # void* and neutral* dilute it there ((2v - 1) over what the moving claims alone make). So neutral* dilutes motion and stillness alike, as neutral dilutes yang and yin. universal* leaves content
 # already moving along its axis alone. neutral* is no longer drawn by lot. With False, void* and neutral* give no
@@ -2758,6 +2758,8 @@ class ConceptGraph:
             net = self._pending[body.node_id]
             if SOLID_FIGURE and any(net) and (H, W) == tuple(self.grid):
                 net = self._chain_move(body, net) if _standing() else self._solid_step(body, net)
+            elif _motion_claims() and any(net) and (H, W) == tuple(self.grid) and self._pinned(body):
+                net = [0, 0]                             # a pin holds a body without built-in solidity too
             moved = [self._clamped_shift(body, axis, net[axis], n) for axis, n in ((0, H), (1, W))]
             if any(moved):
                 self._moves[getattr(body, "node", body).node_id] += 1
@@ -2867,6 +2869,13 @@ class ConceptGraph:
         hit = (fy < 0.5) & ring[where]                                   # substance now under the edge
         st["off"][..., 0] = np.where(hit, np.clip(where[0] + d[0], 0, H - 1) - R, st["off"][..., 0])
         st["off"][..., 1] = np.where(hit, np.clip(where[1] + d[1], 0, W - 1) - C, st["off"][..., 1])
+
+    def _pinned(self, body) -> bool:
+        """MOTION_CLAIMS: is the body's figure (on the board) where a pin holds it against its own drive?"""
+        root = self.tree_index()[getattr(body, "node", body).node_id]
+        fig = self._unit_figures(root)[1].get(body.node_id)
+        held = _held(self._substance(root), getattr(self, "_strength", {}).get(body.node_id, 1.0))
+        return fig is not None and bool((fig & held).any())
 
     def _chain_move(self, body, net: list) -> list:
         """STANDING_MOTION with SOLID_FIGURE: the move ``net`` (or its part along one axis) if everything it pushes can

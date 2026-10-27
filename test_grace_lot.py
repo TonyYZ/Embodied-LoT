@@ -1443,6 +1443,15 @@ class MissionsTests(unittest.TestCase):
         self.assertGreaterEqual(w.count((6, 12)), 2)           # and all of the right half
         self.assertEqual(set(w) - {(c, c + 6) for c in range(7)}, set())
 
+    def test_a_pin_states_solidity_without_built_in_solidity(self):
+        from grace_lot.analysis import playground as PG
+        src = ("(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) "
+               "(template center/H universal/H) (template center/H (field void/H*)) out) | .1.1>.2.1.0")
+        d = PG.record(src, 12, {}, "configs/grace_v7_parts.toml", {**PG.CURRENT, "solid_figure": False})
+        rows = [np.array(f["drawn"])[6] > 0.75 for f in d["frames"]]
+        self.assertTrue(all(r.sum() == 6 for r in rows))              # never overlapping
+        self.assertTrue(all((r == rows[3]).all() for r in rows[3:]))  # touching from tick 3 on, and staying
+
     def test_opposing_missions_from_leaves_still_on_cancel(self):
         from grace_lot.analysis import playground as PG
         src = "(parallel (field bottom/H*) (serial_h void/V (body universal/H top/H*) void/V) out)"   # a treadmill

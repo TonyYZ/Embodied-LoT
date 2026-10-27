@@ -326,6 +326,16 @@ while general non-interpenetration is cheaper and exact as a core assumption, in
 all-or-none expectation that objects do not pass through each other, refined later by learned variables such as the
 size of the hitter (Kotovsky & Baillargeon 1998). Demos: "solidity stated by the program" and "no solidity at all".
 
+**Stated as a pin (27 Oct).** Solidity is "they stop", not "they push apart", and with motion claims the language says
+"stop" directly: a field with `void*` over the middle, gated by "no gap left" (universal over the middle). It switches
+on in the tick the bodies touch (the observer sees them, and a dashed edge into a motion leaf acts that tick), pins what
+is in the middle, and outranks the bodies' own motion (a field's claims outrank what they cover, as for the tar pit;
+a bare `void*` leaf is less specific than a body's own leaves and loses). The bodies touch and stay touching: no
+overlap, no bounce, no lurch (the gate watches the gap, not motion, and the gap never opens). For this a pin now holds a
+body whose built-in solidity is off too (before, pins were checked only within solidity). The limits that remain: the
+pin holds everything in the middle, so neither body could move away while pinned either, and the rule is still
+specific to a layout.
+
 **The first look (`see_start`, 27 Oct).** Observers perceive the previous tick's drawing. At the first tick there was
 none, so they were given a blank board, every cell unknown: every pattern matched it halfway, and the scene was seen
 only from the second tick. Now the first tick perceives the board as the program draws it before anything moves (what
@@ -354,10 +364,9 @@ changes (0 of 200), at the same cost.
   sends it back. Its observer fires a tick before the body has arrived, when the right half's leaf is already off;
   that mission waits for the trip bringing the body, so the swing lands exactly in each half (with the two
   cancelling, it fell a cell short, then stalled).
-- The stated-solidity demo needs no self-loop: the push apart is a centre* over the middle (where the "no gap left"
-  observer looks), and each of its missions sends the bodies out of the middle. While its leaf is on, the push and
-  the bodies' own inward missions cancel tick by tick; as a destination it is not used up by that, and it gets the
-  bodies out of the middle and holds them apart for a few ticks. The bodies still meet and overlap at times.
+- The push-apart version of stated solidity (a centre* over the middle) needed no self-loop under missions, and as a
+  destination it got the bodies out of the middle, but they still met and overlapped at times; the demo now states
+  solidity as a pin (above).
 
 ## 6. Results
 

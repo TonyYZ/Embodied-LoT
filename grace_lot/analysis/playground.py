@@ -136,10 +136,10 @@ EXAMPLES = [
     ("a ball in a closed box (walls drawn as outlines) pushes through a wall and leaves; the wall heals behind",
      "(parallel (field periphery/H bottom/V top/V) (template center/H center/V (body universal/H universal/H* "
      "universal/V*)) out)"),
-    ("solidity stated by the program (built-in solidity off): converging with no gap left sends both out of "
-     "the middle",
-     "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) periphery/H* "
-     "(template center/H universal/H) (template center/H center/H*) out) | .1>.3.1 .2.1>.3.1",
+    ("solidity stated by the program (built-in solidity off): once no gap is left, a pin over the middle (a field "
+     "with void*) holds them touching",
+     "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) "
+     "(template center/H universal/H) (template center/H (field void/H*)) out) | .1.1>.2.1.0",
      {**CURRENT, "solid_figure": False}),
     ("no solidity at all (built-in solidity off, no rule): the bodies run into each other",
      "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) out)",
