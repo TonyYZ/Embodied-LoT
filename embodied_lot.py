@@ -315,7 +315,8 @@ def _motion_claims() -> bool:
 
 # An open board (needs STANDING_MOTION). The board is the part of an imagined space being drawn, not a box: nothing
 # bounces off its edge. A body may move past it: it keeps its place and its orders, is drawn cut off at the edge (not
-# squeezed), and can come back; nothing on the board acts on it while none of it is there (no imagery reaches it).
+# squeezed), and can come back. It stays solid there (contact is resolved on the board grown to hold it) and its own
+# motion leaves still drive it; nothing else on the board reaches it (no claims, pins or dilution).
 # Mass that leaves is gone: stuff has no identity to keep track of off the board. What traps anything is substance
 # (pinned by void*, MOTION_CLAIMS), not the rim. With False, the rim holds: nothing leaves the board (earlier runs).
 OPEN_EDGE = False
@@ -2114,14 +2115,16 @@ class ConceptGraph:
             if isinstance(node, PORTALS):
                 node.activation = gate
 
-    def _moving_bodies(self, views, cells: bool = True) -> Dict[str, tuple]:
-        """Each placed body's home (its first view's chain and frame size) and its board cells."""
+    def _moving_bodies(self, views, cells: bool = True, rects: bool = False) -> Dict[str, tuple]:
+        """Each placed body's home (its first view's chain and frame size) and its board cells (with ``rects``, its
+        rect in its home frame instead)."""
         out = {}
         for b in self._body_nodes():
             vs = views.get(b.node_id)
             if isinstance(b, BodyNode) and not isinstance(b, PlanNode) and b.position is not None \
                     and b.extent is not None and vs:
-                mask = np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs])                     if cells else None
+                mask = vs[0][2] if rects else np.logical_or.reduce([_view_mask(self.grid, chain, rect) for _, chain, rect in vs]) \
+                    if cells else None
                 out[b.node_id] = (vs[0][1], _frame_shape(vs[0][1], self.grid), mask)
             elif isinstance(b, GroupNode) and vs:                # each instance moves on its own view
                 for (_, chain, rect), (ikey, enclosing) in zip(vs, self.view_meta(b.node_id)):
@@ -2133,7 +2136,7 @@ class ConceptGraph:
                         tok_groups[tok.node_id] = enclosing
                     if tok is not None and tok.position is not None and tok.extent is not None:
                         out[tok.node_id] = (chain, _frame_shape(chain, self.grid),
-                                            _view_mask(self.grid, chain, rect) if cells else None)
+                                            rect if rects else _view_mask(self.grid, chain, rect) if cells else None)
         return out
 
     def _issue_orders(self, views=None) -> None:
@@ -2313,24 +2316,83 @@ class ConceptGraph:
                             go = side if kind == "out" else -side
                             self._push_body(b, bodies_at, axis, go * rate, node_id=node.node_id, half=True)
 
-    def _unit_figures(self, root: str):
+    def _unit_figures(self, root: str, pad: int = 0):
         """STANDING_MOTION: every unit of a tree (bodies, not fields): its board cells, where it more likely than not
-        is (else where it most likely is), and how likely it is at each cell."""
+        is (else where it most likely is), and how likely it is at each cell. With ``pad`` (OPEN_EDGE), on the board
+        grown by ``pad`` cells on every side, a unit past the edge whole: it is solid there too."""
         units = self._tokens()
         node_of = lambda b: getattr(units[b], "node", units[b])
 
-        def figure(u, cells):
-            v, c = self._paint_only_values(root, self._own_content(u))
+        def figure(u, cells, values):
+            v, c = values
             solid = (_claimed_value(v, c) > 0.5) & cells
             likely = solid & (c > 0.5)
             fig = likely if likely.any() or not solid.any() else solid & (c >= c[solid].max() - 1e-9)
             return fig, np.where(solid, c, 0.0)
-        win = {b: cells for b, (_, _, cells) in self._moving_bodies(self.node_views(self.grid)).items()
-               if cells.any() and self.tree_index().get(node_of(b).node_id) == root and not isinstance(node_of(b), FieldNode)}
-        own, cover = {}, {}
-        for b, cells in win.items():
-            own[b], cover[b] = figure(node_of(b), cells)
+        views = self.node_views(self.grid)
+        rects = self._moving_bodies(views, rects=True) if pad else {}
+        win, own, cover = {}, {}, {}
+        for b, (chain, _, cells) in self._moving_bodies(views).items():
+            u = node_of(b)
+            if self.tree_index().get(u.node_id) != root or isinstance(u, FieldNode):
+                continue
+            if pad and not chain:
+                cells, values = self._whole(root, units[b], rects[b][2], pad)
+            else:
+                cells, values = np.pad(cells, pad), [np.pad(x, pad) for x in self._paint_only_values(root, self._own_content(u))]
+            if cells.any():
+                win[b] = cells
+                own[b], cover[b] = figure(u, cells, values)
         return win, own, cover
+
+    def _whole(self, root: str, tok, rect: Region, pad: int):
+        """OPEN_EDGE: a unit's cells and own claims on the board grown by ``pad`` cells on every side, the part past the
+        edge included: drawn with the unit moved onto the board (as far as it fits), then moved back."""
+        H, W = self.grid
+        u, (r0, r1, c0, c1) = getattr(tok, "node", tok), rect
+        dr, dc = (-r0 if r0 < 0 else min(0, H - r1)), (-c0 if c0 < 0 else min(0, W - c1))
+        was = list(tok.position)
+        tok.position[0], tok.position[1] = was[0] + dr / H, was[1] + dc / W
+        try:
+            values = self._paint_only_values(root, self._own_content(u))
+        finally:
+            tok.position[:] = was
+        q0, q1, p0, p1 = _clip((r0 + dr, r1 + dr, c0 + dc, c1 + dc), (H, W))
+        at = (slice(pad + q0 - dr, pad + q1 - dr), slice(pad + p0 - dc, pad + p1 - dc))
+        out = [np.zeros((H + 2 * pad, W + 2 * pad)) for _ in range(3)]
+        out[0][at] = 1.0
+        for o, x in zip(out[1:], values):
+            o[at] = x[q0:q1, p0:p1]
+        return out[0] > 0, out[1:]
+
+    def _overhang(self) -> int:
+        """OPEN_EDGE: how far the furthest unit on the board's own frame reaches past it, in cells."""
+        H, W = self.grid
+        return max([0] + [max(-r[0], r[1] - H, -r[2], r[3] - W)
+                          for chain, _, r in self._moving_bodies(self.node_views(self.grid), rects=True).values()
+                          if not chain])
+
+    def _drive_past_edge(self, node, tok, rect: Region, a: float, root_id: str, bodies_at) -> None:
+        """OPEN_EDGE: a body's own leaf whose region lies wholly past the edge still drives the body where the body is
+        (its figure there), at the leaf's own rate: nothing on the board reaches it there to dilute or pin it."""
+        holder = getattr(tok, "node", tok)
+        if tok is None or isinstance(holder, FieldNode) or tok.node_id not in bodies_at \
+                or any(o[5] == node.node_id for o in tok.orders):
+            return
+        pad = self._overhang()
+        cells, values = self._whole(root_id, tok, self._moving_bodies(self.node_views(self.grid), rects=True)[tok.node_id][2], pad)
+        r0, r1, c0, c1 = rect
+        there = np.zeros_like(cells)
+        there[max(0, pad + r0):pad + r1, max(0, pad + c0):pad + c1] = True
+        if not (cells & there & (values[0] > 0) & (_claimed_value(*values) > 0.5)).any():
+            return
+        motion = BodyNode._template_motion(node)
+        norm = float(np.hypot(*motion))
+        if norm < 1e-12:
+            return
+        for axis, comp in enumerate((motion[0] / norm, motion[1] / norm)):
+            if abs(comp) > 1e-9:
+                self._push_body(tok, bodies_at, axis, a * comp, node_id=node.node_id)
 
     def _home_clear(self, node, first) -> bool:
         """STANDING_MOTION with SOLID_FIGURE: may a field spawn a copy of ``node`` at ``first``'s home? Only where nothing
@@ -2385,12 +2447,14 @@ class ConceptGraph:
         some = (_motion_claims() and isinstance(node, _AsMotion)          # universal*: "some motion here" (along its
                 and _UNKNOWN_MOTION.get(node._node.pattern) == "universal")   # axis), which moving content satisfies
         for key, (_, chain, rect) in keyed_views:
+            k = int(key.split("#")[1])
+            own = meta[k][1] if k < len(meta) else ()
             space = _view_mask(self.grid, chain, rect)
             rows, cols = np.nonzero(space)
             if not rows.size:
+                if _open_edge() and own and kind in ("bulk", "gradient") and not chain:
+                    self._drive_past_edge(node, units.get(own[-1]), rect, a, root_id, bodies_at)
                 continue
-            k = int(key.split("#")[1])
-            own = meta[k][1] if k < len(meta) else ()
             mine = getattr(getattr(units.get(own[-1]), "node", None), "node_id", None) if own else None
             stuff = loose | src.get(None, none) | src.get(mine, none)    # a carried field: only its own motion
             n_orders = len(S["orders"])
@@ -2756,14 +2820,16 @@ class ConceptGraph:
         units, groups = self._tokens(), getattr(self, "_unit_groups", {})
         node_of = lambda b: getattr(units[b], "node", units[b])
         root = self.tree_index()[node_of(body.node_id).node_id]
-        win, own, cover = self._unit_figures(root)
+        p = self._overhang() + max(map(abs, net)) if _open_edge() else 0      # OPEN_EDGE: the board grown to hold
+        board = (slice(p, p + H), slice(p, p + W))                             # every unit past it, and its move
+        win, own, cover = self._unit_figures(root, p)
         inside = lambda b, a: a in groups.get(b, ())                          # unit b is inside unit a
-        none = np.zeros((H, W), dtype=bool)
+        none = np.zeros((H + 2 * p, W + 2 * p), dtype=bool)
         group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
         S = self._substance(root)
-        stuff = _solid_stuff(S) & ~np.logical_or.reduce(list(own.values()) + [none])   # a unit's own: pushed whole
-        drive = getattr(self, "_strength", {}).get(body.node_id, 1.0)
-        held = _held(S, drive)                                    # MOTION_CLAIMS: pinned too strongly to be pushed
+        stuff = np.pad(_solid_stuff(S), p) & ~np.logical_or.reduce(list(own.values()) + [none])   # a unit's own:
+        drive = getattr(self, "_strength", {}).get(body.node_id, 1.0)                           # pushed whole
+        held = np.pad(_held(S, drive), p)                         # MOTION_CLAIMS: pinned too strongly to be pushed
 
         def plan(d):
             moving, push, queue = [], none.copy(), [body.node_id]
@@ -2780,7 +2846,7 @@ class ConceptGraph:
                 moving.append(x)
                 push |= foot & stuff & ~g
                 queue += [y for y in own if y not in moving and not inside(y, x) and (foot & own[y] & ~g).any()]
-            if push.any() and _stuff_run(S, push, *d, drive=drive)[1].any():
+            if push.any() and _stuff_run(S, push[board], *d, drive=drive)[1].any():
                 return None                                                   # stuff in the way cannot move
             return moving, push
 
@@ -2806,14 +2872,14 @@ class ConceptGraph:
                 if hasattr(self, "_moves"):
                     self._moves[node_of(x).node_id] += 1
             if push.any():
-                self._shift_substance(S, push, *d, drive=drive)
+                self._shift_substance(S, push[board], *d, drive=drive)
                 if hasattr(self, "_moves"):
                     self._moves["substance"] += 1
             was, now = np.ones((H, W)), np.ones((H, W))       # the chance no unit covers a cell, before / after
             for b in cover:
                 moved = any(b == x or inside(b, x) for x in movers)
-                was *= 1.0 - cover[b]
-                now *= 1.0 - (_moved_mask(cover[b], *d) if moved else cover[b])
+                was *= 1.0 - cover[b][board]
+                now *= 1.0 - (_moved_mask(cover[b], *d) if moved else cover[b])[board]
             passed = S.setdefault("passed", np.zeros((H, W)))   # the most likely it covered a cell it is still on
             np.maximum(passed, 1.0 - np.minimum(was, now), out=passed)
             left = (now >= 1.0) & (passed > 0)

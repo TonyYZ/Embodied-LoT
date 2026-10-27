@@ -15,7 +15,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `multi_part_units` | Grammar: a body or field holds several children, no parallel needed (one node and one level less; 26 Oct) |
 | `contour_claims` | A lone figure band claims a line, not the whole band: a basket is an outline (26 Oct) |
 | `motion_claims` | Motion leaves are claims (still 0, unknown 0.5, moving 1) composed like content: pins, dilution, fields outrank (26-27 Oct) |
-| `open_edge` | The board's edge is open: bodies may leave and come back, mass that leaves is gone; substance traps, not the rim (27 Oct) |
+| `open_edge` | The board's edge is open: bodies may leave and come back, solid and self-driven past it; mass that leaves is gone; substance traps, not the rim (27 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -267,9 +267,12 @@ expects a thing to bounce back off the edge of a space they imagine, so the rim 
 space is open, and what traps a thing is substance: a wall, a room, and now a pin (`void*`).
 
 - A body may move past the edge. It keeps its place and its orders, is drawn cut off where it crosses (not squeezed),
-  and can come back: objects are individuals, tracked out of view as infants track an object behind a screen. While
-  none of it is on the board nothing there acts on it (no imagery reaches it), so a body that drove itself off stays
-  just past the edge.
+  and can come back: objects are individuals, tracked out of view as infants track an object behind a screen. It
+  stays solid past the edge (27 Oct): contact is resolved on the board grown to hold every body past it, so a ball
+  keeps pushing a box whose wall has left the board, and a body pushed against one out there moves it or stops. Its
+  own motion leaves still drive it there, at their own rate; nothing else on the board reaches it (no field's claims,
+  no pins, no dilution), so a body that drives itself off keeps going. (Before, a body was solid only on the board:
+  a ball slid out through its box's wall once the wall crossed the edge, and stopped once it was off.)
 - Mass that leaves is gone. Stuff has no identity to keep track of (infants who track an object through occlusion fail
   to track a pile of sand poured behind a screen), and keeping it would need a board as wide as the rollout is long.
   A field pushed off its region refills it, as always.

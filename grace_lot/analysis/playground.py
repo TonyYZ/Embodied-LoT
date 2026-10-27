@@ -106,7 +106,7 @@ EXAMPLES = [
      "bottom/V*)) out)"),
     ("a fountain (a field with motion inside)",
      "(parallel (template bottom/V center/H (field universal/H bottom/V*)) void/V out)"),
-    ("a rigid box (a body carrying a field), pushed by the ball inside",
+    ("a rigid box (a body carrying a field), pushed by the ball inside, off the board",
      "(parallel (serial_h void/V (body (field periphery/H bottom/V) (template center/H center/V (body "
      "universal/H universal/H*))) void/V) out)"),
     ("contraction cannot squeeze a solid block",
@@ -117,7 +117,7 @@ EXAMPLES = [
      "(parallel (serial_h void/V (serial_v void/H (field top/H* (body universal/H)) void/H) void/V) out)"),
     ("a conveyor carries a cart all the way, and off the board",
      "(parallel (field bottom/H*) (serial_h void/V (body universal/H) void/V void/V) out)"),
-    ("a ball crosses a roomy box, then moves it only by pushing its wall",
+    ("a ball crosses a roomy box, then moves it only by pushing its wall, all the way off the board",
      "(parallel (serial_h (body (field periphery/H bottom/V) (template center/H center/V (body universal/H "
      "bottom/H*))) void/V) out)"),
     ("a body riding in a moving body is carried, not driven twice",

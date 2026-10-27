@@ -1412,6 +1412,13 @@ class MotionClaimsTests(unittest.TestCase):
         self.assertTrue((v[3][11] > 0.75))                                  # half of it still on the board
         self.assertTrue((v[5] < 0.25).all())                                # gone past the edge
 
+    def test_a_body_past_the_edge_is_still_solid_and_driven(self):
+        from grace_lot.analysis.expressivity import render
+        v = render("(parallel (serial_h (body (field periphery/H bottom/V) (template center/H center/V (body universal/H "
+                   "bottom/H*))) void/V) out)", 14, 0)[0][1][:, 0]
+        self.assertTrue((v[9][:, 8] > 0.75).all())           # its left wall: pushed by its right wall, past the edge
+        self.assertTrue((v[13] < 0.25).all())                # the ball, past the edge itself, pushed it all the way off
+
 
 class StandingMotionTests(unittest.TestCase):
     """lot.standing_motion: motion outside a body acts every tick on everything in its region."""
