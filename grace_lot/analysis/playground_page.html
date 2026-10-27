@@ -197,7 +197,7 @@ function showSemantics() {
     showSemantics(); run();
   });
 }
-BOOT.examples.forEach((e, i) => { const o = document.createElement('option'); o.value = i; o.textContent = e.title; $('examples').appendChild(o); });
+BOOT.examples.forEach((e, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `${i + 1}. ${e.title}`; $('examples').appendChild(o); });
 $('examples').onchange = () => {
   const e = BOOT.examples[+$('examples').value];
   $('program').value = e.program; states = {}; t = 0;     // a new example starts at its first tick
@@ -374,7 +374,7 @@ function render() {
   $('scrub').max = D.frames.length - 1; $('scrub').value = t;
   $('tick').textContent = `tick ${t}`;
   const st = $('stage'); st.innerHTML = '';
-  figure(st, `Drawn this tick · ${BOOT.examples[+$('examples').value] && BOOT.examples[+$('examples').value].program === $('program').value ? BOOT.examples[+$('examples').value].title : 'your program'}`, f.drawn, f, true);
+  figure(st, `Drawn this tick · ${BOOT.examples[+$('examples').value] && BOOT.examples[+$('examples').value].program === $('program').value ? `${+$('examples').value + 1}. ${BOOT.examples[+$('examples').value].title}` : 'your program'}`, f.drawn, f, true);
   const b = $('boards'); b.innerHTML = '';
   figure(b, 'Seen (last tick, all trees)', f.seen, f, false);
   if (D.roots.length > 1) D.roots.forEach((r, i) => figure(b, `Tree ${i}'s own space`, f.spaces[r], f, true));
