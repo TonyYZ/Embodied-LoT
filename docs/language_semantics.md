@@ -340,11 +340,14 @@ region stood when the order was given, however far that is. A leaf that is on gi
 taken back when the leaf switches off. A leaf over the whole board sends what is on it off the board. A body's own leaf
 moves with the body, so its missions are renewed as it goes (self-motion as before); "in" still goes as far as the
 centre. A body is past the region when its window (its region) is, not only its figure: a body relativizes a region,
-and leaving a place means all of it leaving. Opposing missions (same axis, other way) on one body:
+and leaving a place means all of it leaving. A body's mission is a destination, fixed when it is given: how far it
+still is, is measured every tick, so a tick it was held back (by an opposing mission, or blocked) costs it nothing.
+Opposing missions (same axis, other way) on one body:
 a mission whose leaf has switched off is a trip under way, and one against it waits until it is done, then is measured
 from where the body then is. Opposing missions whose leaves are both
 still on cancel, as two pushes at once do: a body walking against a conveyor stands still, and two bodies without
-solidity pushing into each other stick. Missions the same way add up (a cart on a conveyor). No fitted program
+solidity pushing into each other stick. With different gates the stronger gets there, at the difference of their
+rates (each mission steps a cell whenever its credit, built at its gate, reaches one). Missions the same way add up (a cart on a conveyor). No fitted program
 changes (0 of 200), at the same cost.
 - The self-observing oscillator works as first written: the right half's leaf sends the body (a center/H line in a
   window as wide as a half) beyond itself, which is the whole left half; the left half's observer sees it there and
@@ -353,8 +356,8 @@ changes (0 of 200), at the same cost.
   cancelling, it fell a cell short, then stalled).
 - The stated-solidity demo needs no self-loop: the push apart is a centre* over the middle (where the "no gap left"
   observer looks), and each of its missions sends the bodies out of the middle. While its leaf is on, the push and
-  the bodies' own inward missions cancel; once it is off, its missions run to the end. The bodies still meet and
-  overlap at times.
+  the bodies' own inward missions cancel tick by tick; as a destination it is not used up by that, and it gets the
+  bodies out of the middle and holds them apart for a few ticks. The bodies still meet and overlap at times.
 
 ## 6. Results
 

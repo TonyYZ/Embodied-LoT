@@ -329,14 +329,14 @@ def _open_edge() -> bool:
 # Missions (needs STANDING_MOTION). An order is a mission: "beyond me". What a leaf orders moves until it is past the
 # leaf's region (as the region stood when the order was given), however far that is; a leaf that is on gives missions,
 # and a mission given is not taken back when the leaf switches off. A leaf over the whole board sends what is on it off
-# the board; a body's own leaf moves with it, so its missions are renewed as it goes (self-motion as before);
-# "in" still goes as far as the centre. A body is past when its window (its region) is. A body takes missions against
-# one under way (same axis, other way) in turn: the later waits until the earlier is done, and its distance is
-# measured when it starts, from where the body then is. Opposing missions whose leaves are both still on cancel, as two
-# pushes at once do (a treadmill); a mission whose leaf has switched off is a trip under way, and one against it waits
-# until it is done, then is measured from where the body then is (so a mission given before the body has arrived does
-# not cancel the end of the trip bringing it). Missions the same way add up. With False, an order is a fixed distance: a body's extent (half of it for
-# out/in), the region's span for stuff (a quarter of it for out) (earlier runs).
+# the board; a body's own leaf moves with it, so its missions are renewed as it goes (self-motion as before); "in"
+# still goes as far as the centre. A body is past when its window (its region) is, and its mission is a destination:
+# fixed when given, how far it still is measured every tick, so a tick it was held back costs it nothing. Opposing
+# missions on a body whose leaves are both still on cancel, as two pushes at once do (a treadmill; with different gates
+# the stronger gets there at the difference of their rates); a mission whose leaf has switched off is a trip under
+# way, and one against it waits until it is done (so a mission given before the body has arrived does not cancel the
+# end of the trip bringing it). Missions the same way add up. With False, an order is a fixed distance: a body's
+# extent (half of it for out/in), the region's span for stuff (a quarter of it for out) (earlier runs).
 MISSIONS = False
 
 
@@ -2650,9 +2650,10 @@ class ConceptGraph:
                 body.jitter[ax] += m
                 continue
             cells = max(1, round(body.extent[ax] * frame[ax]))
-            if beyond and not home:          # MISSIONS: also where it starts from (measured again when it begins)
+            if beyond and not home:          # MISSIONS: a destination, where its window starts once past
+                sign = 1 if m > 0 else -1
                 at = round(body.position[ax] * frame[ax] - cells / 2)
-                body.orders.append([ax, 1 if m > 0 else -1, beyond, abs(m), 0.0, node_id, delay, at])
+                body.orders.append([ax, sign, beyond, abs(m), 0.0, node_id, delay, at + sign * beyond])
                 continue
             body.orders.append([ax, 1 if m > 0 else -1, max(1, round(cells / 2)) if half else cells, abs(m), 0.0,
                                 node_id, delay])
@@ -2731,12 +2732,10 @@ class ConceptGraph:
                     if any(o[0] == order[0] and o[1] != order[1] and n > 0 and f
                            for o, n, f in zip(body.orders[:i], left, off)):
                         continue
-                    if order[7] is not None:                     # begun: measured from where the body now is
-                        size = max(1, round(body.extent[order[0]] * frame[order[0]]))
-                        at = round(body.position[order[0]] * frame[order[0]] - size / 2)
-                        order[2], order[7] = order[2] - order[1] * (at - order[7]), None
-                        if order[2] <= 0:
-                            continue
+                    size = max(1, round(body.extent[order[0]] * frame[order[0]]))     # how far it still is from
+                    order[2] = order[1] * (order[7] - round(body.position[order[0]] * frame[order[0]] - size / 2))
+                    if order[2] <= 0:                            # its destination, wherever the body now is
+                        continue
                 order[4] += order[3]
                 k = min(int(order[4]), 1, order[2])
                 order[4] -= k
