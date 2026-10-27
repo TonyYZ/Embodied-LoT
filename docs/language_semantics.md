@@ -346,7 +346,7 @@ centre. A body is past the region when its figure is. No fitted program changes 
   at 1.
 - The self-observing oscillator relied on fixed distances landing the body where the other half's observer looked (its
   centre). A body sent beyond a half now stops at the border, so each half watches the edge where the body arrives, and
-  the body swings one cell across the middle.
+  the body (a center/H line, placed at the right half's inner edge) swings one cell across the middle.
 
 ## 6. Results
 

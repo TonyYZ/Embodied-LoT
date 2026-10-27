@@ -66,7 +66,8 @@ EXAMPLES = [
     ("Measure tree",
      "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0"),
     ("Self-observing oscillator: each half watches the edge where the body arrives and sends it beyond itself",
-     "(parallel (serial_h (parallel bottom/H* top/H) (parallel top/H* bottom/H (body bottom/H))) out) | "
+     "(parallel (serial_h (parallel bottom/H* top/H) (parallel top/H* bottom/H (serial_h (body center/H) void/V))) "
+     "out) | "
      ".0.0.1>.0.0.0 .0.1.1>.0.1.0"),
     ("a basket by superposition (surrounded, with a bottom)",
      "(parallel periphery/H bottom/V out)"),
