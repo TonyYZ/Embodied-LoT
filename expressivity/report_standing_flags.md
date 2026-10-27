@@ -1,6 +1,6 @@
 # Expressivity suite
 
-Semantics: pure_claims=true, solid_figure=true, static_fields=true, standing_motion=true, flow_perception=true, multi_part_units=true, contour_claims=true, motion_claims=true, open_edge=true
+Semantics: pure_claims=true, solid_figure=true, static_fields=true, standing_motion=true, flow_perception=true, multi_part_units=true, contour_claims=true, motion_claims=true, open_edge=true, see_start=true
 
 63 of 63 cases pass. Sketch characters: `#` figure (≥ 0.75), `.` ground (≤ 0.25), `?` in between, `*` anything. In the middle column, `X` marks a block that disagrees with the sketch.
 

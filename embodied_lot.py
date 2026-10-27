@@ -326,6 +326,12 @@ def _open_edge() -> bool:
     return OPEN_EDGE and _standing()
 
 
+# The first look (gameboard). Observers perceive last tick's drawing; at the first tick that is the board as the program
+# draws it before anything moves, so observers see the scene from the start (no motion yet seen: a still picture says
+# nothing of motion). With False, the first tick perceives a blank board, every cell unknown (earlier runs).
+SEE_START = False
+
+
 def _clip(region: "Region", shape: Tuple[int, int]) -> "Region":
     """The part of ``region`` on an H x W canvas (OPEN_EDGE: a body's window may reach past the board)."""
     H, W = shape
@@ -1084,8 +1090,8 @@ class ObjectNode(Node):
     def evaluate(self, field: Optional[ReceptiveField] = None) -> float:
         if field is None:
             self.activation = self.gate
-        elif FLOW_PERCEPTION and self.is_dynamic and field.motion is not None:
-            self.activation = self.gate * self._flow_match(field)
+        elif FLOW_PERCEPTION and self.is_dynamic and (field.motion is not None or SEE_START):
+            self.activation = self.gate * (self._flow_match(field) if field.motion is not None else 0.5)  # none seen yet
         elif PURE_CLAIMS and len(set(self.pattern)) == 1:      # centre axis: the substance in every band
             target = self.pattern[0]
             sims = [1.0 - 2.0 * abs(obs - 0.5) if target == 0.5 else 1.0 - abs(obs - target)
@@ -2078,6 +2084,8 @@ class ConceptGraph:
         content) takes their weighted mean. Observers with an input window keep scanning it.
         """
         flow = getattr(self, "_flow", {}) if FLOW_PERCEPTION else {}
+        if SEE_START and self._imagery is None:           # the first tick: the board as drawn, nothing moved yet
+            self._spaces, self._imagery = self._render_all()
         shared = ReceptiveField(self._imagery if self._imagery is not None else blank_board(self.grid),
                                 sum(flow.values()) if flow else None)
         spaces = getattr(self, "_spaces", None) or {}

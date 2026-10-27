@@ -1420,6 +1420,30 @@ class MotionClaimsTests(unittest.TestCase):
         self.assertTrue((v[13] < 0.25).all())                # the ball, past the edge itself, pushed it all the way off
 
 
+class FirstLookTests(unittest.TestCase):
+    """lot.see_start: the first tick perceives the board as drawn, not a blank one."""
+
+    def first(self, see):
+        import embodied_lot
+        from grace_lot.analysis.expressivity import program_of
+        from grace_lot.lot_adapter.program import compile_program
+        saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        embodied_lot.FLOW_PERCEPTION, embodied_lot.SEE_START = True, see
+        try:
+            g = compile_program(program_of("(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* "
+                                           "center/H (body center/H))) out) | .0.0.1>.0.0.0 .0.1.1>.0.1.0"))
+            g.grid = (12, 12)
+            g.reset_gates()
+            g.step()
+            return [n.activation for n in g._observer_roots]
+        finally:
+            vars(embodied_lot).update(saved)
+
+    def test_the_first_tick_sees_the_drawn_board_but_no_motion(self):
+        self.assertEqual(sorted(self.first(False)), [0.5, 0.5])   # a blank board: everything matches halfway
+        self.assertEqual(sorted(self.first(True)), [0.5, 1.0])    # the body seen in its half; the other still unknown
+
+
 class StandingMotionTests(unittest.TestCase):
     """lot.standing_motion: motion outside a body acts every tick on everything in its region."""
 

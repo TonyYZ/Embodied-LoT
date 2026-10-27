@@ -16,6 +16,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `contour_claims` | A lone figure band claims a line, not the whole band: a basket is an outline (26 Oct) |
 | `motion_claims` | Motion leaves are claims (still 0, unknown 0.5, moving 1) composed like content: pins, dilution, fields outrank (26-27 Oct) |
 | `open_edge` | The board's edge is open: bodies may leave and come back, solid and self-driven past it; mass that leaves is gone; substance traps, not the rim (27 Oct) |
+| `see_start` | The first tick perceives the board as drawn, not a blank one; no motion is seen yet (27 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -323,6 +324,14 @@ So a stated rule can express particular, flexible contact (a heavy body that doe
 while general non-interpenetration is cheaper and exact as a core assumption, in line with infants: an early
 all-or-none expectation that objects do not pass through each other, refined later by learned variables such as the
 size of the hitter (Kotovsky & Baillargeon 1998). Demos: "solidity stated by the program" and "no solidity at all".
+
+**The first look (`see_start`, 27 Oct).** Observers perceive the previous tick's drawing. At the first tick there was
+none, so they were given a blank board, every cell unknown: every pattern matched it halfway, and the scene was seen
+only from the second tick. Now the first tick perceives the board as the program draws it before anything moves (what
+the viewer shows as tick 0). A still picture says nothing of motion, so a moving pattern reads it as unknown (one half)
+until motion has been seen. In the stated-solidity demo the "no gap left" observer now reads the empty middle as empty
+at tick 1 (it read one half), so the push apart stays off until the gap closes; the self-observing oscillator starts a
+tick earlier. 5 of 200 fitted programs change.
 
 ## 6. Results
 
