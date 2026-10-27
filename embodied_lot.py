@@ -839,13 +839,26 @@ class ReceptiveField:
 
     def subfield(self, row_start: int, row_end: int,
                  col_start: int, col_end: int) -> "ReceptiveField":
-        """Crop a rectangle, keeping track of its bounds in the root field."""
-        sub_mot = None if self.motion is None else self.motion[row_start:row_end, col_start:col_end]
+        """Crop a rectangle, keeping track of its bounds in the root field. A rectangle reaching past the field
+        (OPEN_EDGE: a body past the board) sees unknown there, and no motion."""
+        H, W = self.activation.shape
+        if row_start < 0 or col_start < 0 or row_end > H or col_end > W:
+            q0, q1, p0, p1 = _clip((row_start, row_end, col_start, col_end), (H, W))
+            at = (slice(q0 - row_start, q0 - row_start + max(0, q1 - q0)),
+                  slice(p0 - col_start, p0 - col_start + max(0, p1 - p0)))
+            act = blank_board((max(0, row_end - row_start), max(0, col_end - col_start)))
+            act[at] = self.activation[q0:q1, p0:p1]
+            mot = None if self.motion is None else np.zeros(act.shape + (2,))
+            if mot is not None:
+                mot[at] = self.motion[q0:q1, p0:p1]
+        else:
+            act = self.activation[row_start:row_end, col_start:col_end]
+            mot = None if self.motion is None else self.motion[row_start:row_end, col_start:col_end]
         br0, br1, bc0, bc1 = self.bounds
         h, w = max(self.height, 1), max(self.width, 1)
         sub = ReceptiveField.__new__(ReceptiveField)       # the parent is already checked and clipped
-        sub.activation = self.activation[row_start:row_end, col_start:col_end]
-        sub.motion = sub_mot
+        sub.activation = act
+        sub.motion = mot
         sub.bounds = (br0 + (br1 - br0) * row_start / h, br0 + (br1 - br0) * row_end / h,
                       bc0 + (bc1 - bc0) * col_start / w, bc0 + (bc1 - bc0) * col_end / w)
         sub._root_activation = self._root_activation

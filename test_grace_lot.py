@@ -1412,6 +1412,13 @@ class MotionClaimsTests(unittest.TestCase):
         self.assertTrue((v[3][11] > 0.75))                                  # half of it still on the board
         self.assertTrue((v[5] < 0.25).all())                                # gone past the edge
 
+    def test_a_view_past_the_edge_sees_unknown_there(self):
+        from embodied_lot import ReceptiveField
+        f = ReceptiveField(np.ones((4, 4))).subfield(-1, 2, 3, 6)            # a window reaching past two edges
+        self.assertEqual(f.activation.shape, (3, 3))
+        self.assertTrue((f.activation[1:, :1] == 1).all())                   # the part on the board
+        self.assertTrue((f.activation[0] == 0.5).all() and (f.activation[:, 1:] == 0.5).all())   # unknown past it
+
     def test_a_body_past_the_edge_is_still_solid_and_driven(self):
         from grace_lot.analysis.expressivity import render
         v = render("(parallel (serial_h (body (field periphery/H bottom/V) (template center/H center/V (body universal/H "
