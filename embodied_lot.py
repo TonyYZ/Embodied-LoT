@@ -330,7 +330,10 @@ def _open_edge() -> bool:
 # leaf's region (as the region stood when the order was given), however far that is; a leaf that is on gives missions,
 # and a mission given is not taken back when the leaf switches off. A leaf over the whole board sends what is on it off
 # the board; a body's own leaf moves with it, so its missions are renewed as it goes (self-motion as before);
-# "in" still goes as far as the centre. With False, an order is a fixed distance: a body's extent (half of it for
+# "in" still goes as far as the centre. A body is past when its window (its region) is. A body takes missions against
+# one under way (same axis, other way) in turn: the later waits until the earlier is done, and its distance is
+# measured when it starts, from where the body then is (so a mission given early, before the body has arrived, does
+# not cancel the end of the one bringing it). Missions the same way add up. With False, an order is a fixed distance: a body's extent (half of it for
 # out/in), the region's span for stuff (a quarter of it for out) (earlier runs).
 MISSIONS = False
 
@@ -2396,7 +2399,7 @@ class ConceptGraph:
     def _drive_past_edge(self, node, tok, rect: Region, a: float, root_id: str, bodies_at) -> None:
         """OPEN_EDGE: a body's own leaf whose body is wholly past the edge (in the leaf's region) still drives the body
         where the body is (its figure there), at the leaf's own rate: nothing on the board reaches it there to dilute or
-        pin it. MISSIONS: until its figure is past the region."""
+        pin it. MISSIONS: until its window is past the region."""
         holder = getattr(tok, "node", tok)
         if tok is None or isinstance(holder, FieldNode) or tok.node_id not in bodies_at \
                 or any(o[5] == node.node_id for o in tok.orders):
@@ -2415,7 +2418,7 @@ class ConceptGraph:
             return
         for axis, comp in enumerate((motion[0] / norm, motion[1] / norm)):
             if abs(comp) > 1e-9:
-                at, lo, hi = np.nonzero(fig)[axis] - pad, rect[2 * axis], rect[2 * axis + 1] - 1
+                at, lo, hi = np.nonzero(cells)[axis] - pad, rect[2 * axis], rect[2 * axis + 1] - 1
                 beyond = (int(hi - at.min() + 1) if comp > 0 else int(at.max() - lo + 1)) if _missions() else 0
                 self._push_body(tok, bodies_at, axis, a * comp, node_id=node.node_id, beyond=beyond)
 
@@ -2539,12 +2542,8 @@ class ConceptGraph:
                 # MISSIONS: as far as it takes the content past the region; else a fixed distance (``n``)
                 beyond = lambda m, s, n: (int(hi - coord[m].min() + 1) if s > 0 else int(coord[m].max() - lo + 1)) \
                     if _missions() else n
-                def past(b, s):                  # a body: until its figure is past (its window, if none is seen)
-                    if not _missions():
-                        return 0
-                    cells = bodies_at[b.node_id][2]
-                    fig = self._own_figure(root_id, getattr(b, "node", b)) & cells
-                    return beyond(fig if fig.any() else cells, s, 0)
+                def past(b, s):                  # a body: until its window (its region) is past
+                    return beyond(bodies_at[b.node_id][2], s, 0) if _missions() else 0
                 if kind == "bulk":
                     if fresh_m.any():
                         S["orders"].append([fresh_m.copy(), axis, sign, beyond(fresh_m, sign, span), rate, 0.0, 0.0])
@@ -2644,8 +2643,12 @@ class ConceptGraph:
                 body.jitter[ax] += m
                 continue
             cells = max(1, round(body.extent[ax] * frame[ax]))
-            cells = beyond if beyond and not home else max(1, round(cells / 2)) if half else cells
-            body.orders.append([ax, 1 if m > 0 else -1, cells, abs(m), 0.0, node_id, delay])
+            if beyond and not home:          # MISSIONS: also where it starts from (measured again when it begins)
+                at = round(body.position[ax] * frame[ax] - cells / 2)
+                body.orders.append([ax, 1 if m > 0 else -1, beyond, abs(m), 0.0, node_id, delay, at])
+                continue
+            body.orders.append([ax, 1 if m > 0 else -1, max(1, round(cells / 2)) if half else cells, abs(m), 0.0,
+                                node_id, delay])
 
     def _move_mass(self) -> None:
         """Mass orders (and random pushes) move particles at most one cell per tick; mass stays on the board."""
@@ -2708,10 +2711,21 @@ class ConceptGraph:
         self._pending, self._strength = {}, {}   # this tick's own moves (and how strongly driven), all taken first
         for body in bodies:
             net = self._pending[body.node_id] = [0, 0]
-            for order in body.orders:
+            frame = homes[body.node_id][1] if body.node_id in homes else self.grid
+            left = [o[2] for o in body.orders]                   # what each had left as this tick began
+            for i, order in enumerate(body.orders):
                 if len(order) > 6 and order[6] >= 1 - 1e-9:     # queued: waits its turn
                     order[6] -= 1
                     continue
+                if len(order) > 7:                               # MISSIONS: against one under way, it waits;
+                    if any(o[0] == order[0] and o[1] != order[1] and n > 0 for o, n in zip(body.orders[:i], left)):
+                        continue
+                    if order[7] is not None:                     # begun: measured from where the body now is
+                        size = max(1, round(body.extent[order[0]] * frame[order[0]]))
+                        at = round(body.position[order[0]] * frame[order[0]] - size / 2)
+                        order[2], order[7] = order[2] - order[1] * (at - order[7]), None
+                        if order[2] <= 0:
+                            continue
                 order[4] += order[3]
                 k = min(int(order[4]), 1, order[2])
                 order[4] -= k

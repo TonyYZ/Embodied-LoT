@@ -1421,24 +1421,27 @@ class MotionClaimsTests(unittest.TestCase):
 
 
 class MissionsTests(unittest.TestCase):
-    """lot.missions: an order is a mission, "beyond me": what a leaf orders moves until it is past the leaf's region."""
+    """lot.missions: an order is a mission, "beyond me": a body moves until its window is past the leaf's region;
+    opposing missions take turns, each measured when it begins."""
 
-    def last(self, missions):
-        import embodied_lot
-        from grace_lot.analysis.expressivity import render
-        saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
-        for k in ("PURE_CLAIMS", "SOLID_FIGURE", "STATIC_FIELDS", "STANDING_MOTION", "CONTOUR_CLAIMS", "MOTION_CLAIMS",
-                  "OPEN_EDGE"):
-            setattr(embodied_lot, k, True)
-        embodied_lot.SOFT_EDGES, embodied_lot.MISSIONS = False, missions
-        try:
-            return render("(serial_h (parallel bottom/H* (body center/H)) void/V void/V)", 8, 0)[0][1][7, 0, 6]
-        finally:
-            vars(embodied_lot).update(saved)
+    def windows(self, missions):
+        from grace_lot.analysis import playground as PG
+        src = ("(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) out) | "
+               ".0.0.1>.0.0.0 .0.1.1>.0.1.0")
+        _, _, g = PG.prepare(src, "configs/grace_v7_parts.toml", {**PG.CURRENT, "missions": missions})
+        g.assign_roles()
+        tok = next(iter(g._tokens().values()))
+        out = []
+        for _ in range(24):
+            g._step_gameboard()
+            out.append(tok.window(12, 12)[2:])
+        return out
 
-    def test_a_body_stops_just_past_the_region(self):
-        self.assertTrue(self.last(True)[4] > 0.75)             # the region is columns 0-3: it stops at 4
-        self.assertTrue(self.last(False)[5] > 0.75)            # a fixed distance (its extent) took it to 5
+    def test_the_oscillator_swings_exactly_between_the_halves(self):
+        w = self.windows(True)
+        self.assertGreaterEqual(w.count((0, 6)), 2)            # all of the left half, more than once
+        self.assertGreaterEqual(w.count((6, 12)), 2)           # and all of the right half
+        self.assertEqual(set(w) - {(c, c + 6) for c in range(7)}, set())
 
 
 class FirstLookTests(unittest.TestCase):
