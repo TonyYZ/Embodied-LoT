@@ -40,7 +40,7 @@ _lock = Lock()                       # the engine's semantics are module flags: 
 # The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
 # STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
 SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion", "flow_perception",
-             "multi_part_units", "contour_claims", "motion_claims", "open_edge", "see_start")
+             "multi_part_units", "contour_claims", "motion_claims", "open_edge", "see_start", "missions")
 CURRENT = {k: k != "soft_edges" for k in SEMANTICS}   # the language the examples and a fresh page run in: keep it
                                                        # current (soft edges do nothing under standing motion)
 
@@ -65,8 +65,8 @@ EXAMPLES = [
      "(parallel center/H bottom/H*) (parallel center/V out) | .0>.1.0"),
     ("Measure tree",
      "(serial_h universal/H neutral/H neutral/H) (parallel center/H out) | .0>.1.0"),
-    ("Self-observing oscillator",
-     "(parallel (serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H))) out) | "
+    ("Self-observing oscillator: each half watches the edge where the body arrives and sends it beyond itself",
+     "(parallel (serial_h (parallel bottom/H* top/H) (parallel top/H* bottom/H (body bottom/H))) out) | "
      ".0.0.1>.0.0.0 .0.1.1>.0.1.0"),
     ("a basket by superposition (surrounded, with a bottom)",
      "(parallel periphery/H bottom/V out)"),
@@ -136,10 +136,10 @@ EXAMPLES = [
     ("a ball in a closed box (walls drawn as outlines) pushes through a wall and leaves; the wall heals behind",
      "(parallel (field periphery/H bottom/V top/V) (template center/H center/V (body universal/H universal/H* "
      "universal/V*)) out)"),
-    ("solidity stated by the program (built-in solidity off): converging with no gap left switches on a push "
-     "apart",
+    ("solidity stated by the program (built-in solidity off): converging with no gap left sends both out of "
+     "the middle",
      "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) periphery/H* "
-     "(template center/H universal/H) (field center/H*) out) | .1>.3.0 .2.1>.3.0 .3.0>.3.0",
+     "(template center/H universal/H) (template center/H center/H*) out) | .1>.3.1 .2.1>.3.1",
      {**CURRENT, "solid_figure": False}),
     ("no solidity at all (built-in solidity off, no rule): the bodies run into each other",
      "(parallel (serial_h (body universal/H bottom/H*) void/V void/V (body universal/H top/H*)) out)",

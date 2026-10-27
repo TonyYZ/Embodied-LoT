@@ -17,6 +17,7 @@ is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has t
 | `motion_claims` | Motion leaves are claims (still 0, unknown 0.5, moving 1) composed like content: pins, dilution, fields outrank (26-27 Oct) |
 | `open_edge` | The board's edge is open: bodies may leave and come back, solid and self-driven past it; mass that leaves is gone; substance traps, not the rim (27 Oct) |
 | `see_start` | The first tick perceives the board as drawn, not a blank one; no motion is seen yet (27 Oct) |
+| `missions` | An order is a mission, "beyond me": content moves until it is past the leaf's region, and is not taken back (27 Oct) |
 
 ## 1. Why: what the earlier language could not say
 
@@ -332,6 +333,20 @@ the viewer shows as tick 0). A still picture says nothing of motion, so a moving
 until motion has been seen. In the stated-solidity demo the "no gap left" observer now reads the empty middle as empty
 at tick 1 (it read one half), so the push apart stays off until the gap closes; the self-observing oscillator starts a
 tick earlier. 5 of 200 fitted programs change.
+
+**Missions (`missions`, 27 Oct).** An order was a fixed distance: a body's extent (half of it for out/in), the region's
+span for stuff. Now it is a mission, "beyond me": what a leaf orders moves until it is past the leaf's region, as the
+region stood when the order was given, however far that is. A leaf that is on gives missions; a mission given is not
+taken back when the leaf switches off. A leaf over the whole board sends what is on it off the board. A body's own leaf
+moves with the body, so its missions are renewed as it goes (self-motion as before); "in" still goes as far as the
+centre. A body is past the region when its figure is. No fitted program changes (0 of 200), at the same cost.
+- The stated-solidity demo needs no self-loop now: the push apart is a centre* over the middle (where the "no gap
+  left" observer looks), and each of its missions sends the bodies out of the middle. With and without the loop the
+  rollout is the same. The overlap leak remains: the push moves at its gate (about 0.6) against each body's own drive
+  at 1.
+- The self-observing oscillator relied on fixed distances landing the body where the other half's observer looked (its
+  centre). A body sent beyond a half now stops at the border, so each half watches the edge where the body arrives, and
+  the body swings one cell across the middle.
 
 ## 6. Results
 

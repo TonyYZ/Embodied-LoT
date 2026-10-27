@@ -1420,6 +1420,27 @@ class MotionClaimsTests(unittest.TestCase):
         self.assertTrue((v[13] < 0.25).all())                # the ball, past the edge itself, pushed it all the way off
 
 
+class MissionsTests(unittest.TestCase):
+    """lot.missions: an order is a mission, "beyond me": what a leaf orders moves until it is past the leaf's region."""
+
+    def last(self, missions):
+        import embodied_lot
+        from grace_lot.analysis.expressivity import render
+        saved = {k: v for k, v in vars(embodied_lot).items() if k.isupper()}
+        for k in ("PURE_CLAIMS", "SOLID_FIGURE", "STATIC_FIELDS", "STANDING_MOTION", "CONTOUR_CLAIMS", "MOTION_CLAIMS",
+                  "OPEN_EDGE"):
+            setattr(embodied_lot, k, True)
+        embodied_lot.SOFT_EDGES, embodied_lot.MISSIONS = False, missions
+        try:
+            return render("(serial_h (parallel bottom/H* (body center/H)) void/V void/V)", 8, 0)[0][1][7, 0, 6]
+        finally:
+            vars(embodied_lot).update(saved)
+
+    def test_a_body_stops_just_past_the_region(self):
+        self.assertTrue(self.last(True)[4] > 0.75)             # the region is columns 0-3: it stops at 4
+        self.assertTrue(self.last(False)[5] > 0.75)            # a fixed distance (its extent) took it to 5
+
+
 class FirstLookTests(unittest.TestCase):
     """lot.see_start: the first tick perceives the board as drawn, not a blank one."""
 
@@ -1513,7 +1534,7 @@ class StandingMotionTests(unittest.TestCase):
 
     def test_the_self_observing_oscillator_swings_back(self):
         from grace_lot.analysis import playground as PG
-        src = next(e[1] for e in PG.EXAMPLES if e[0] == "Self-observing oscillator")
+        src = next(e[1] for e in PG.EXAMPLES if e[0].startswith("Self-observing oscillator"))
         d = PG.record(src, 24, {}, "configs/grace_v7_parts.toml", PG.CURRENT)
         cols = [float((np.array(f["drawn"]) > 0.6).nonzero()[1].mean()) for f in d["frames"]]
         steps = np.sign(np.diff(cols))
