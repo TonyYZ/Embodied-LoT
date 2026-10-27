@@ -1443,6 +1443,12 @@ class MissionsTests(unittest.TestCase):
         self.assertGreaterEqual(w.count((6, 12)), 2)           # and all of the right half
         self.assertEqual(set(w) - {(c, c + 6) for c in range(7)}, set())
 
+    def test_opposing_missions_from_leaves_still_on_cancel(self):
+        from grace_lot.analysis import playground as PG
+        src = "(parallel (field bottom/H*) (serial_h void/V (body universal/H top/H*) void/V) out)"   # a treadmill
+        d = PG.record(src, 8, {}, "configs/grace_v7_parts.toml", {**PG.CURRENT, "missions": True})
+        self.assertTrue(all(f["drawn"] == d["frames"][0]["drawn"] for f in d["frames"]))
+
 
 class FirstLookTests(unittest.TestCase):
     """lot.see_start: the first tick perceives the board as drawn, not a blank one."""

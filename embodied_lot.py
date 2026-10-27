@@ -332,8 +332,10 @@ def _open_edge() -> bool:
 # the board; a body's own leaf moves with it, so its missions are renewed as it goes (self-motion as before);
 # "in" still goes as far as the centre. A body is past when its window (its region) is. A body takes missions against
 # one under way (same axis, other way) in turn: the later waits until the earlier is done, and its distance is
-# measured when it starts, from where the body then is (so a mission given early, before the body has arrived, does
-# not cancel the end of the one bringing it). Missions the same way add up. With False, an order is a fixed distance: a body's extent (half of it for
+# measured when it starts, from where the body then is. Opposing missions whose leaves are both still on cancel, as two
+# pushes at once do (a treadmill); a mission whose leaf has switched off is a trip under way, and one against it waits
+# until it is done, then is measured from where the body then is (so a mission given before the body has arrived does
+# not cancel the end of the trip bringing it). Missions the same way add up. With False, an order is a fixed distance: a body's extent (half of it for
 # out/in), the region's span for stuff (a quarter of it for out) (earlier runs).
 MISSIONS = False
 
@@ -2600,10 +2602,7 @@ class ConceptGraph:
             if not (isinstance(node, ObjectNode) and node.is_dynamic and getattr(node, "role", None) == "imagined"
                     and node.node_id not in in_templates):
                 continue
-            a, anc = node.gate, node
-            while parents.get(anc.node_id):
-                anc = parents[anc.node_id][0]
-                a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
+            a = self._acting(node, parents)
             if not a > ONSET_THRESHOLD:
                 continue
             root, meta = tree[node.node_id], self.view_meta(node.node_id)
@@ -2628,6 +2627,14 @@ class ConceptGraph:
             S = self._substance(rid)
             S["pin"] = np.maximum(0.0, 1.0 - 2.0 * v)
             S["drive"] = np.where(m > 1e-9, np.maximum(0.0, 2.0 * v - 1.0) / np.maximum(m, 1e-9), 0.0)
+
+    def _acting(self, node, parents) -> float:
+        """How strongly a leaf acts: its gate, times the gates of the structures above it."""
+        a, anc = node.gate, node
+        while parents.get(anc.node_id):
+            anc = parents[anc.node_id][0]
+            a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
+        return a
 
     def _push_body(self, body, bodies_at, axis: int, signed_rate: float, node_id: str = "",
                    delay: float = 0.0, half: bool = False, jitter: bool = False, beyond: int = 0) -> None:
@@ -2709,16 +2716,20 @@ class ConceptGraph:
         bodies = [b for b in self._tokens().values() if b.position is not None
                   and not (STATIC_FIELDS and PURE_CLAIMS and isinstance(getattr(b, "node", None), FieldNode))]
         self._pending, self._strength = {}, {}   # this tick's own moves (and how strongly driven), all taken first
+        parents = self._parents()
         for body in bodies:
             net = self._pending[body.node_id] = [0, 0]
             frame = homes[body.node_id][1] if body.node_id in homes else self.grid
             left = [o[2] for o in body.orders]                   # what each had left as this tick began
+            off = [len(o) > 7 and o[5] in self._nodes and not self._acting(self._nodes[o[5]], parents) > ONSET_THRESHOLD
+                   for o in body.orders]                         # a trip under way: its leaf has switched off
             for i, order in enumerate(body.orders):
                 if len(order) > 6 and order[6] >= 1 - 1e-9:     # queued: waits its turn
                     order[6] -= 1
                     continue
                 if len(order) > 7:                               # MISSIONS: against one under way, it waits;
-                    if any(o[0] == order[0] and o[1] != order[1] and n > 0 for o, n in zip(body.orders[:i], left)):
+                    if any(o[0] == order[0] and o[1] != order[1] and n > 0 and f
+                           for o, n, f in zip(body.orders[:i], left, off)):
                         continue
                     if order[7] is not None:                     # begun: measured from where the body now is
                         size = max(1, round(body.extent[order[0]] * frame[order[0]]))
@@ -3015,10 +3026,7 @@ class ConceptGraph:
         for node in self._nodes.values():
             if not (isinstance(node, ObjectNode) and node.is_dynamic and getattr(node, "role", None) == "imagined"):
                 continue
-            a, anc = node.gate, node
-            while parents.get(anc.node_id):
-                anc = parents[anc.node_id][0]
-                a *= _sg(anc) if not isinstance(anc, ObjectNode) else 1.0
+            a = self._acting(node, parents)
             if not a > ONSET_THRESHOLD:
                 continue
             acting = self._resolve_motion(node) if PROBABILISTIC_MOTION else node
