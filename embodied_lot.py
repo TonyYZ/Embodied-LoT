@@ -2432,8 +2432,11 @@ class ConceptGraph:
         if tok is None or isinstance(holder, FieldNode) or tok.node_id not in bodies_at \
                 or any(o[5] == node.node_id for o in tok.orders):
             return
+        home = self._moving_bodies(self.node_views(self.grid), rects=True).get(tok.node_id)
+        if home is None or home[0]:                      # not placed in the board's own frame
+            return
         pad = self._overhang()
-        cells, values = self._whole(root_id, tok, self._moving_bodies(self.node_views(self.grid), rects=True)[tok.node_id][2], pad)
+        cells, values = self._whole(root_id, tok, home[2], pad)
         r0, r1, c0, c1 = rect
         there = np.zeros_like(cells)
         there[max(0, pad + r0):pad + r1, max(0, pad + c0):pad + c1] = True
