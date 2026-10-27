@@ -2370,16 +2370,15 @@ class ConceptGraph:
         """STANDING_MOTION: every unit of a tree (bodies, not fields): its board cells, where it more likely than not
         is (else where it most likely is), and how likely it is at each cell. With ``pad`` (OPEN_EDGE), on the board
         grown by ``pad`` cells on every side, a unit past the edge whole: it is solid there too."""
-        units = self._tokens()
-        node_of = lambda b: getattr(units[b], "node", units[b])
-
         def figure(u, cells, values):
             v, c = values
             solid = (_claimed_value(v, c) > 0.5) & cells
             likely = solid & (c > 0.5)
             fig = likely if likely.any() or not solid.any() else solid & (c >= c[solid].max() - 1e-9)
             return fig, np.where(solid, c, 0.0)
-        views = self.node_views(self.grid)
+        views = self.node_views(self.grid)                   # (views first: they may place new copies)
+        units = self._tokens()
+        node_of = lambda b: getattr(units[b], "node", units[b])
         rects = self._moving_bodies(views, rects=True) if pad else {}
         win, own, cover = {}, {}, {}
         for b, (chain, _, cells) in self._moving_bodies(views).items():
@@ -2942,6 +2941,7 @@ class ConceptGraph:
         p = self._overhang() + max(map(abs, net)) if _open_edge() else 0      # OPEN_EDGE: the board grown to hold
         board = (slice(p, p + H), slice(p, p + W))                             # every unit past it, and its move
         win, own, cover = self._unit_figures(root, p)
+        units = self._tokens()                                                # (with any copies the views placed)
         inside = lambda b, a: a in groups.get(b, ())                          # unit b is inside unit a
         none = np.zeros((H + 2 * p, W + 2 * p), dtype=bool)
         group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
@@ -3199,8 +3199,9 @@ class ConceptGraph:
         if before is None:
             return
         H, W = self.grid
+        now = self._unit_cells()                       # (views first: they may place new copies)
         tree, units, flow = self.tree_index(), self._tokens(), {}
-        for b, cells in self._unit_cells().items():
+        for b, cells in now.items():
             old = before.get(b)
             if old is None or not old.any() or not cells.any():
                 continue
