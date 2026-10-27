@@ -185,7 +185,7 @@ const SEM_HELP = {
   motion_claims: 'motion leaves are claims (void* still, neutral* unknown, others moving) composed like content: still pins, neutral* dilutes, fields outrank',
   open_edge: 'the board edge is open: bodies may leave and come back (kept off the board, solid and self-driven there), mass that leaves is gone; substance traps, not the rim',
   see_start: 'the first tick perceives the board as drawn (not a blank one); no motion is seen yet',
-  missions: 'an order is a mission, beyond me: what a leaf orders moves until it (a body: its window) is past the leaf\'s region, and is not taken back; opposing missions cancel while both leaves are on, and a trip whose leaf is off finishes first'};
+  missions: 'an order is a mission, beyond me: what a leaf orders moves until it (a body: its window) is past the leaf\'s region, a destination, and is not taken back; opposing missions cancel while both leaves are on, and a trip whose leaf is off finishes first'};
 let lot = {...BOOT.lot};
 function showSemantics() {
   $('sem').innerHTML = '<span class="muted" style="font-size:.88rem">Semantics:</span> ' + BOOT.semantics.map(k =>
