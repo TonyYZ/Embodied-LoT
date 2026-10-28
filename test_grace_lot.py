@@ -21,7 +21,7 @@ from grace_lot.lot_adapter.program import get as get_node
 from grace_lot.lot_adapter.similarity import MEASURES, tree_edit_distance
 
 TINY = Grammar(["top", "bottom"], ["parallel", "serial_v", "template", "body"], True, 3, 3, 0.5, 2, max_dashed=2)
-MOVES = {"regenerate": .2, "leaf": .15, "composition": .1, "body": .05, "swap": .05,
+MOVES = {"regenerate": .2, "leaf": .15, "composition": .1, "swap": .05,
          "add_dashed": .1, "remove_dashed": .1, "wrap": .05, "unwrap": .05,
          "add_child": .075, "remove_child": .075}
 

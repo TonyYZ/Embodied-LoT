@@ -103,12 +103,6 @@ def change_composition(prog: Program, g: Grammar, rng: random.Random, w) -> Prop
     return _edit(prog, path, n._replace(kind=kind)), 0.0, 0.0
 
 
-def change_body(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
-    """Bodies have no parameters (the tree sizes and places them): nothing to change. (The move stays so that a
-    config's ``move_weights`` keep their meaning.)"""
-    return None
-
-
 def swap_siblings(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
     sites = [(path, n) for path, n in nodes(prog.tree) if len(n.children) >= 2]
     if not sites:
@@ -256,7 +250,7 @@ def remove_child(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
 
 
 MOVES = {"regenerate": regenerate, "leaf": change_leaf, "composition": change_composition,
-         "body": change_body, "swap": swap_siblings,
+         "swap": swap_siblings,
          "add_dashed": add_dashed, "remove_dashed": remove_dashed,
          "wrap": wrap, "unwrap": unwrap, "add_child": add_child, "remove_child": remove_child}
 PAIRED = [("add_dashed", "remove_dashed"), ("wrap", "unwrap"), ("add_child", "remove_child")]
