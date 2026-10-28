@@ -456,6 +456,21 @@ def _claim_values(claims: list, shape: Tuple[int, int], boundary=frozenset()) ->
     """
     if not claims:
         return np.full(shape, 0.5), np.zeros(shape)
+    flat = lambda x: x if np.isscalar(x) else (np.shape(x), np.asarray(x, dtype=float).tobytes())
+    key = (tuple(shape), tuple((c[0].tobytes(), flat(c[1]), flat(c[2]), c[3].tobytes(), c[4], c[5], c[4] in boundary)
+                               for c in claims))
+    hit = _claims_memo.get(key)
+    if hit is None:                              # memoised: the same claims recur tick after tick
+        if len(_claims_memo) > 4096:
+            _claims_memo.clear()
+        hit = _claims_memo[key] = _claim_values_of(claims, shape, boundary)
+    return hit[0].copy(), hit[1].copy()
+
+
+_claims_memo: Dict[tuple, tuple] = {}
+
+
+def _claim_values_of(claims: list, shape: Tuple[int, int], boundary) -> Tuple[np.ndarray, np.ndarray]:
     M = np.array([c[0] for c in claims])                                     # (n, H, W) cells
     V, w = (_per_claim([c[k] for c in claims], shape) for k in (1, 2))
     extent: Dict[str, np.ndarray] = {}
@@ -689,8 +704,14 @@ def _view_field(board: "ReceptiveField", chain, rect: Region) -> "ReceptiveField
 
 
 def _view_mask(shape: Tuple[int, int], chain, rect: Region) -> np.ndarray:
-    """The board cells a view covers: those whose place in the last frame of ``chain`` falls in ``rect``."""
-    R, C = _grid_index(tuple(shape))
+    """The board cells a view covers: those whose place in the last frame of ``chain`` falls in ``rect`` (read-only;
+    shared)."""
+    return _view_mask_of(tuple(shape), chain, tuple(rect))
+
+
+@lru_cache(maxsize=65536)
+def _view_mask_of(shape: Tuple[int, int], chain, rect: Region) -> np.ndarray:
+    R, C = _grid_index(shape)
     ok = np.ones(shape, dtype=bool)
     for (r0, r1, c0, c1), v in chain:
         ok &= (R >= r0) & (R < r1) & (C >= c0) & (C < c1)
@@ -699,7 +720,9 @@ def _view_mask(shape: Tuple[int, int], chain, rect: Region) -> np.ndarray:
         R2[ok], C2[ok] = rows[R[ok] - r0, C[ok] - c0], cols[R[ok] - r0, C[ok] - c0]
         R, C = R2, C2
     r0, r1, c0, c1 = rect
-    return ok & (R >= r0) & (R < r1) & (C >= c0) & (C < c1)
+    out = ok & (R >= r0) & (R < r1) & (C >= c0) & (C < c1)
+    out.flags.writeable = False
+    return out
 
 
 def _view_turn(chain, vector: Tuple[float, float]) -> Tuple[float, float]:
@@ -2061,31 +2084,51 @@ class ConceptGraph:
             yang, yin, left = yang * a, yin * b, left * v
         return spaces, _compose(yang, _covered(yang, yin, left))
 
-    def _draw_key(self, root_id: str, substance: bool = True) -> tuple:
-        """Everything a tree's drawing depends on (besides structure, which is part of the key); without the
-        substance grid for a drawing of only some leaves, which never draws it."""
+    def _draw_key(self, root_id: str) -> tuple:
+        """Everything a tree's drawing depends on (besides structure, which is part of the key)."""
         def build():
             per = {}
             for r in self.roots:
                 ns = list(walk(r))
                 per[r.node_id] = (ns, [n for n in ns if isinstance(n, BodyNode) and not isinstance(n, PlanNode)],
+                                  [n for n in ns if isinstance(n, GroupNode)],
                                   [n for n in ns if isinstance(n, InWindowNode)])
             return per
-        nodes, bodies, inputs = self._meta("draw_nodes", build)[root_id]
-        groups = tuple((t.node_id, None if t.position is None else tuple(t.position),
-                        None if t.extent is None else tuple(t.extent))
-                       for n in nodes if isinstance(n, GroupNode) for t in n.instances.values())
+        nodes, bodies, groups, inputs = self._meta("draw_nodes", build)[root_id]
         st = self._mass.get(root_id)
-        return (self._meta("structure", lambda: object()), tuple(self.grid),
-                tuple(n.gate for n in nodes),
-                tuple((None if b.position is None else tuple(b.position), None if b.extent is None else tuple(b.extent))
-                      for b in bodies),
-                None if st is None else st["off"].tobytes(),
-                tuple(id(n.field) for n in inputs),
+        return self._placement_key(nodes, bodies, groups, inputs) + (
+            None if st is None else st["off"].tobytes(), self._substance_key(root_id),
+            tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
+
+    def _only_key(self, root_id: str, ids: frozenset) -> tuple:
+        """The part of ``_draw_key`` the claims of only the nodes ``ids`` depend on: the gates that weigh them (theirs,
+        the structures above them and those structures' templates), the placement of the units above or among them,
+        and the input fields. Trails and substance are not claims of theirs."""
+        def build():
+            def visit(n):                        # the nodes on a path to one of ``ids``
+                below = [visit(c) for c in n.children]
+                if n.node_id in ids or isinstance(n, InWindowNode) or any(below):
+                    held.append(n)
+                    return True
+                return False
+            held = []
+            visit(self._nodes[root_id])
+            return (held + [c for n in held for c in n.children],
+                    [n for n in held if isinstance(n, BodyNode) and not isinstance(n, PlanNode)],
+                    [n for n in held if isinstance(n, GroupNode)], [n for n in held if isinstance(n, InWindowNode)])
+        return self._placement_key(*self._meta(("only", root_id, ids), build))
+
+    def _placement_key(self, gated, bodies, groups, inputs) -> tuple:
+        """A drawing's cache key: the structure, the gates of ``gated``, where the bodies and the groups' instances
+        are, the input fields, and the semantics flags."""
+        toks = [t for n in groups for t in n.instances.values()]
+        placed = lambda us: tuple((None if u.position is None else tuple(u.position),
+                                   None if u.extent is None else tuple(u.extent)) for u in us)
+        return (self._meta("structure", lambda: object()), tuple(self.grid), tuple(n.gate for n in gated),
+                placed(bodies), tuple(t.node_id for t in toks), placed(toks), tuple(id(n.field) for n in inputs),
                 UNKNOWN_BACKGROUND, MOTION_KINDS, ORIENTING_TEMPLATES, GATE_STRUCTURES, TREE_SIZED_BODIES,
-                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, groups, GROUPING_NODES,
-                PROBABILISTIC_MOTION, PURE_CLAIMS, STATIC_FIELDS, self._substance_key(root_id) if substance else None,
-                tuple((k, t.tobytes()) for k, t in self._trails.items() if k[2] == root_id))
+                MOTION_AWAY_FROM_FIGURE, SEPARATE_TREE_SPACES, self.dynamics, GROUPING_NODES, PROBABILISTIC_MOTION,
+                PURE_CLAIMS, STATIC_FIELDS)
 
     def tree_index(self) -> Dict[str, str]:
         """Which root (tree) each node belongs to."""
@@ -3203,8 +3246,8 @@ class ConceptGraph:
         tree, units, flow = self.tree_index(), self._tokens(), {}
         for b, cells in now.items():
             old = before.get(b)
-            if old is None or not old.any() or not cells.any():
-                continue
+            if old is None or old is cells or not old.any() or not cells.any():
+                continue                               # (the same view mask: it did not move)
             d = np.argwhere(cells).min(axis=0) - np.argwhere(old).min(axis=0)
             if d.any():
                 flow.setdefault(tree.get(getattr(units[b], "node", units[b]).node_id), np.zeros((H, W, 2)))[cells] = d
@@ -3441,8 +3484,8 @@ class ConceptGraph:
                     cv[7] = (old[0] + dr0, old[1] + dc0)
                     plain(r)
                     cv[7] = old
-            if not PROBABILISTIC_MOTION or (region == home and trail is None):
-                draw(region)
+            if values or not PROBABILISTIC_MOTION or (region == home and trail is None):
+                draw(region)                     # (values: claims only, which trails do not touch)
                 return
 
             def alone(r):                        # the content's paint on its own, at r
@@ -3703,7 +3746,7 @@ class ConceptGraph:
     def _paint_only_values(self, root_id: str, ids: frozenset) -> Tuple[np.ndarray, np.ndarray]:
         """STATIC_FIELDS: the claimed values and strengths of only the nodes ``ids`` (trails left as they were),
         memoised by what that drawing depends on: fields are re-asserted every tick, mostly where they were."""
-        key = (self._draw_key(root_id, substance=False), ids)
+        key = (self._only_key(root_id, ids), ids)
         cache = self.__dict__.setdefault("_only_paints", {})
         hit = cache.get(key)
         if hit is None:
