@@ -243,7 +243,7 @@
       current.nodes.forEach(node => {
         const source = frameNodes.get(node.id);
         if (!source) return;
-        ["field", "position", "extent", "velocity", "step_size", "subfield_shape"].forEach(key => {
+        ["field", "position", "extent", "velocity", "subfield_shape"].forEach(key => {
           if (Object.prototype.hasOwnProperty.call(source, key)) {
             node[key] = structuredClone(source[key]);
           }

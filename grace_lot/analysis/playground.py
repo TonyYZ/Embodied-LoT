@@ -1,14 +1,13 @@
 """A playground for the v7 language: type a program, step it on the gameboard, look for bugs.
 
-    python -m grace_lot.analysis.playground [--config configs/grace_v7_parts.toml] [--port 8765]
-                                            [--lot pure_claims=true solid_figure=true soft_edges=true static_fields=true]
+    python -m grace_lot.analysis.playground [--config configs/grace_v7_parts.toml] [--port 8765] [--lot solid_figure=false]
     python -m grace_lot.analysis.playground --offline playground_offline.html     # a self-contained copy (no server)
 
 then open http://localhost:8765 for the board-first page (also at /gameboard), or /graph for the graph visualizer
 (``visualizer/page.html``: edit a graph, load or export v7 program text, run it on the engine and replay the ticks).
 The pages send programs to this server, which runs the real engine
-(``embodied_lot``) under the config's semantics (with the language flags the page or ``--lot`` switches on:
-``SEMANTICS``) and records every tick phase by phase, as
+(``embodied_lot``), with the one switch the page or ``--lot`` sets (``SEMANTICS``: built-in solidity), and records
+every tick phase by phase, as
 ``ConceptGraph._step_gameboard`` runs them. Each run also checks itself: the recorded boards must equal a
 twin graph stepped with ``step()``, and the component rollouts (``adapter.rollout``) must equal whole-program
 rollouts; any difference is reported on the page as a bug.
@@ -27,8 +26,7 @@ from threading import Lock
 import numpy as np
 
 import embodied_lot
-from embodied_lot import BodyNode, GroupNode, ObjectNode, PlanNode
-from grace_lot.analysis.gameboard_traces import board_cells, node_label, tree_layout
+from embodied_lot import BodyNode, GroupNode, ObjectNode, PlanNode, SerialNode
 from grace_lot.config import load_config
 from grace_lot.inference.grammar import Grammar
 from grace_lot.lot_adapter import adapter
@@ -37,12 +35,9 @@ from grace_lot.lot_adapter.program import (apply_semantics, as_program, compile_
 
 GRID = 12
 _lock = Lock()                       # the engine's semantics are module flags: one run at a time
-# The language flags a page can switch (lot config keys): see embodied_lot.PURE_CLAIMS, SOLID_FIGURE, SOFT_EDGES,
-# STATIC_FIELDS, STANDING_MOTION. Static fields need pure claims; standing motion needs static fields.
-SEMANTICS = ("pure_claims", "solid_figure", "soft_edges", "static_fields", "standing_motion", "flow_perception",
-             "multi_part_units", "contour_claims", "motion_claims", "open_edge", "see_start", "missions")
-CURRENT = {k: k != "soft_edges" for k in SEMANTICS}   # the language the examples and a fresh page run in: keep it
-                                                       # current (soft edges do nothing under standing motion)
+# The switch a page can set (a lot config key): embodied_lot.SOLID_FIGURE. The language is otherwise built in.
+SEMANTICS = ("solid_figure",)
+CURRENT = {"solid_figure": True}     # what the examples and a fresh page run with
 
 EXAMPLES = [
     ("One body glides, clearing its path through unexplored stuff",
@@ -155,6 +150,40 @@ EXAMPLES = [
 ]
 
 
+
+def node_label(n) -> str:
+    if isinstance(n, ObjectNode):
+        return f"{n.name}/{'V' if n.orientation.value == 1 else 'H'}{'*' if n.is_dynamic else ''}"
+    if isinstance(n, SerialNode):
+        return "serial_" + ("V" if n.split_orientation.value == 1 else "H")
+    return n.node_type
+
+
+def tree_layout(g, root):
+    """Tidy layered layout: leaves in order along x, parents centred over their children."""
+    pos, xs = {}, [0]
+
+    def visit(n, d):
+        kids = [c for c in n.children if c.node_type not in ("return", "input")]
+        if not kids:
+            pos[n.node_id] = (xs[0], d)
+            xs[0] += 1
+        else:
+            for c in kids:
+                visit(c, d + 1)
+            pos[n.node_id] = (sum(pos[c.node_id][0] for c in kids) / len(kids), d)
+    visit(root, 0)
+    return pos
+
+
+def board_cells(nid: str, masks: dict) -> dict:
+    """A node's board cells (they may be turned) and their bounding box."""
+    mask = masks.get(nid, np.zeros((GRID, GRID), dtype=bool))
+    rows, cols = np.nonzero(mask)
+    box = [int(rows.min()), int(rows.max()) + 1, int(cols.min()), int(cols.max()) + 1] if rows.size else [0, 0, 0, 0]
+    return {"region": box, "cells": [[int(r), int(c)] for r, c in zip(rows, cols)]}
+
+
 def language_issues(prog, grammar: Grammar) -> list:
     """Why a program lies outside the configured language (the conditions ``SizePrior`` checks)."""
     g, t, out = grammar, prog.tree, []
@@ -171,9 +200,9 @@ def language_issues(prog, grammar: Grammar) -> list:
         out.append(f"a dashed edge the search could not add (targets: {g.dashed_targets})")
     if g.output_leaves and not 1 <= sum(n.kind == "out" for _, n in nodes(t)) <= g.max_outputs:
         out.append(f"needs 1 to {g.max_outputs} output windows (out)")
-    if g.content_windows and not windows_as_content(t, g.grouping):
+    if not windows_as_content(t):
         out.append("an out/in window used as a template (windows may only be content)")
-    if g.max_motion_units is not None and motion_units(prog, g.grouping) > g.max_motion_units:
+    if g.max_motion_units is not None and motion_units(prog) > g.max_motion_units:
         out.append(f"more than {g.max_motion_units} unknown-motion units")
     if not out and g.log_prob(t) == -math.inf:
         out += grammar_issues(t, g) or ["the grammar gives it probability 0"]
@@ -237,8 +266,8 @@ def _order(o) -> dict:
 
 
 def prepare(src: str, cfg_path: str, lot: dict = None) -> tuple:
-    """The program under the config's semantics (``lot``: the language flags to switch, ``SEMANTICS``), why it is
-    outside the language (if it is), a fresh graph."""
+    """The program under the config (``lot``: the switches to set, ``SEMANTICS``), why it is outside the search
+    grammar (if it is), a fresh graph."""
     cfg = load_config(cfg_path)
     cfg["lot"].update({k: bool(v) for k, v in (lot or {}).items() if k in SEMANTICS})
     apply_semantics(cfg["lot"])
@@ -282,15 +311,14 @@ def program_graph(src: str, cfg_path: str, lot: dict = None) -> dict:
 
 
 def substance_board(S: dict) -> np.ndarray:
-    """STATIC_FIELDS: a substance grid as a board: each cell's claimed value, by its strength (unknown where none)."""
+    """A substance grid as a board: each cell's claimed value, by its strength (unknown where none)."""
     return 0.5 + (S["v"] - 0.5) * S["s"]
 
 
 def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) -> dict:
     prog, issues, g = prepare(src, cfg_path, lot)
-    static = embodied_lot.STATIC_FIELDS and embodied_lot.PURE_CLAIMS
     units = {k: kind for k, (kind, _, _) in sorted(g.unknown_motion_units().items())}
-    options = {"universal": ["a", "b"], "neutral": ["still", "a", "b"]}
+    options = {"universal": ["a", "b"]}
     states = {k: states.get(k, options[kind][0]) for k, kind in units.items()}
     states = {k: v if v in options[units[k]] else options[units[k]][0] for k, v in states.items()}
     g.motion_states = dict(states)
@@ -326,11 +354,10 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
         "role": {n.node_id: getattr(n, "role", "imagined") for n in g.nodes if n.node_id in pos},
         "observers": [], "measures": [],
         "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(masks[n.node_id])} for n in movers if n.node_id in masks],
-        "tokens": [{"id": u.node_id, "kind": u.node.node_type, "drive": [0.0, 0.0], "orders": []}
-                   for u in (g._group_tokens() if embodied_lot.GROUPING_NODES else [])],
-        "shifts": [], "mass": [], "issued": [], "onsets": [], "gate_changes": [], "acts": [], "stuff": [],
+        "tokens": [{"id": u.node_id, "kind": u.node.node_type, "orders": []} for u in g._group_tokens()],
+        "shifts": [], "onsets": [], "gate_changes": [], "acts": [], "stuff": [],
         "substance": [], "resets": [], "spawned": [],
-        "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()} if static else {},
+        "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()},
     })
     for t in range(ticks):
         seen = g._imagery if g._imagery is not None else embodied_lot.blank_board((GRID, GRID))
@@ -344,51 +371,37 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
         measures = {m.node_id: round(float(m.activation), 3) for m in getattr(g, "_measures", [])}
         masks = g.view_masks((GRID, GRID))
         prev_act = dict(g._prev_act)
-        tokens = g._group_tokens() if embodied_lot.GROUPING_NODES else []
-        before = {u.node_id: len(u.orders) for u in movers + tokens}
+        tokens = g._group_tokens()
         sub_before = {k: len(S["orders"]) for k, S in getattr(g, "_sub", {}).items()}
         g._issue_orders(views)
-        acts = []                                    # standing motion: what each switched-on leaf acts on this tick
-        if embodied_lot._standing():
-            for key, bodies in sorted(g._inside.items()):
-                if "#" in key and not key.endswith("m") and g._prev_act.get(key.split("#")[0], 0.0) > embodied_lot.ONSET_THRESHOLD:
-                    acts.append({"leaf": key.split("#")[0], "bodies": sorted(bodies)})
+        acts = [{"leaf": key.split("#")[0], "bodies": sorted(bodies)}        # what each leaf on acts on this tick
+                for key, bodies in sorted(g._inside.items())
+                if "#" in key and g._prev_act.get(key.split("#")[0], 0.0) > embodied_lot.ONSET_THRESHOLD]
         stuff = [{"tree": g.roots.index(g[k]), "cells": int(sum(o[0].sum() for o in S["orders"][sub_before.get(k, 0):]))}
                  for k, S in getattr(g, "_sub", {}).items()]
-        if embodied_lot.GROUPING_NODES:
-            g._drive_bodies(views)
-        issued = [{"unit": u.node_id, **_order(o)} for u in movers + tokens
-                  for o in u.orders[before.get(u.node_id, 0):]]
-        drives = {u.node_id: [round(float(x), 3) for x in u.drive] for u in tokens}         # spent by the move
         onsets = [nid for nid, a in g._prev_act.items()
                   if prev_act.get(nid, 0.0) <= embodied_lot.ONSET_THRESHOLD < a]
         gates_before = {n.node_id: n.gate for n in g.nodes}
         g._propagate_delayed()
         gate_changes = [{"node": n.node_id, "from": round(gates_before[n.node_id], 3), "to": round(n.gate, 3)}
                         for n in g.nodes if n.node_id in pos and abs(n.gate - gates_before[n.node_id]) > 1e-6]
-        offsets = {k: st["off"].copy() for k, st in g._mass.items()}
         flow_from = g._flow_begin()
         g._move_bodies_gameboard(views)
-        substance, spawned, resets = [], [], []
-        if static:                                   # move substance, re-assert fields, spawn held bodies
-            before_sub = {k: substance_board(S) for k, S in getattr(g, "_sub", {}).items()}
-            for rid in list(getattr(g, "_sub", {})):
-                g._move_substance(rid)
-            moved_sub = {k: substance_board(S) for k, S in g._sub.items()}
-            for rid in list(g._sub):
-                g._reset_fields(rid)
-                resets.append({"tree": g.roots.index(g[rid]), "cells": int(g._sub[rid]["F"].sum())})
-            count = lambda: {n.node_id: len(n.instances) for n in g._spawners()}
-            was = count()
-            g._spawn_bodies()
-            spawned = [{"unit": k, "instances": v, "new": v - was.get(k, 0)} for k, v in count().items()]
-            substance = [{"tree": g.roots.index(g[k]), "cells": int((np.abs(moved_sub[k] - b) > 1e-9).sum())}
-                         for k, b in before_sub.items()]
-        elif embodied_lot.MOTION_KINDS:
-            g._move_mass()
+        resets = []                                  # move substance, re-assert fields, spawn held bodies
+        before_sub = {k: substance_board(S) for k, S in getattr(g, "_sub", {}).items()}
+        for rid in list(getattr(g, "_sub", {})):
+            g._move_substance(rid)
+        moved_sub = {k: substance_board(S) for k, S in g._sub.items()}
+        for rid in list(g._sub):
+            g._reset_fields(rid)
+            resets.append({"tree": g.roots.index(g[rid]), "cells": int(g._sub[rid]["F"].sum())})
+        count = lambda: {n.node_id: len(n.instances) for n in g._spawners()}
+        was = count()
+        g._spawn_bodies()
+        spawned = [{"unit": k, "instances": v, "new": v - was.get(k, 0)} for k, v in count().items()]
+        substance = [{"tree": g.roots.index(g[k]), "cells": int((np.abs(moved_sub[k] - b) > 1e-9).sum())}
+                     for k, b in before_sub.items()]
         g._flow_end(flow_from)
-        mass = [{"tree": g.roots.index(g[k]) if k in g._nodes else k,
-                 "cells": int(np.any(st["off"] != offsets.get(k, 0), axis=-1).sum())} for k, st in g._mass.items()]
         g._spaces, g._imagery = g._render_all()
         g._tick += 1
         twin.step()
@@ -415,15 +428,13 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
             "measures": [{"id": nid, "value": v, **board_cells(nid, masks)} for nid, v in measures.items()],
             "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(moved[n.node_id])}
                       for n in movers if n.node_id in moved],
-            "tokens": [{"id": u.node_id, "kind": u.node.node_type, "drive": drives[u.node_id],
-                        "orders": [_order(o) for o in u.orders]} for u in tokens],
-            "shifts": shifts, "mass": [m for m in mass if m["cells"]],
-            "issued": issued, "onsets": onsets, "gate_changes": gate_changes,
+            "tokens": [{"id": u.node_id, "kind": u.node.node_type, "orders": [_order(o) for o in u.orders]}
+                       for u in tokens],
+            "shifts": shifts, "onsets": onsets, "gate_changes": gate_changes,
             "acts": acts, "stuff": [m for m in stuff if m["cells"]],
             "substance": [m for m in substance if m["cells"]], "resets": [m for m in resets if m["cells"]],
             "spawned": spawned,
-            "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()}
-            if static else {},
+            "grids": {k: np.round(substance_board(S), 3).tolist() for k, S in getattr(g, "_sub", {}).items()},
         })
 
     whole = adapter.rollout_whole(prog, ticks + 1, GRID, states)
@@ -537,7 +548,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/grace_v7_parts.toml")
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--lot", nargs="*", default=[], help="language flags on by default, e.g. static_fields=true")
+    ap.add_argument("--lot", nargs="*", default=[], help="the switch, e.g. solid_figure=false")
     ap.add_argument("--offline", help="write a self-contained page with the examples built in to this file, and exit")
     args = ap.parse_args()
     if args.offline:

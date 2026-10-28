@@ -112,8 +112,8 @@ By default (`graph.dynamics = "gameboard"`; "legacy" keeps the original step),
   the tree gives it, and moves at its motion leaf's gate times the
   trigram's motion strength.
 
-`python -m grace_lot.analysis.gameboard_traces` builds an interactive explainer
-(`results/gameboard_viz/gameboard.html`).
+`python -m grace_lot.analysis.playground` steps any program on the gameboard, phase by phase (the explainer of
+the v6 gameboard, `gameboard_traces`, is in `legacy/all_languages`, with the engine of every earlier language).
 
 Bodies can therefore be driven back and forth by observers that watch them.
 See HANDOFF.md (item 10).

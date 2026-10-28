@@ -135,7 +135,7 @@ svg{display:block;max-width:100%;height:auto}
 
 <div class="card">
   <h2 style="margin-top:0">Program</h2>
-  <div class="row sem" id="sem" title="Language semantics (lot config flags). Examples marked New switch all four on."></div>
+  <div class="row sem" id="sem" title="The one language switch left: built-in solidity."></div>
   <div style="margin-top:8px"><textarea id="program" spellcheck="false" aria-label="Program"></textarea></div>
   <div class="row">
     <button class="primary" id="run">Run</button>
@@ -172,30 +172,15 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 let D = null, t = 0, timer = null, states = {};
 
 $('cfg').textContent = BOOT.config;
-const SEM_LABEL = {pure_claims: 'pure claims', solid_figure: 'solid figure', soft_edges: 'soft edges', static_fields: 'static fields', standing_motion: 'standing motion', flow_perception: 'flow perception', multi_part_units: 'multi-part units', contour_claims: 'contour claims', motion_claims: 'motion claims', open_edge: 'open edge', see_start: 'first look', missions: 'missions'};
+const SEM_LABEL = {solid_figure: 'built-in solidity'};
 const SEM_HELP = {
-  pure_claims: 'void, neutral and universal claim the substance in every band; other patterns claim only their figure; a nested claim wins',
-  solid_figure: 'moving bodies cannot enter substance; the edge of a body pushes what it touches',
-  soft_edges: 'earlier languages only: a body is drawn as the average over sizes and places in its region (no effect with standing motion, where the program states the size of a body)',
-  static_fields: 'fields are sources and drains re-asserted every tick and spawn the bodies they hold; bare leaves are sand (needs pure claims)',
-  standing_motion: 'every motion leaf acts every tick on everything in its region, its own body included (self-motion); a push is passed along, and stuff cannot be squeezed (needs static fields)',
-  flow_perception: 'observers see motion (optical flow) with its direction, and a dashed edge into a motion leaf acts in the same tick',
-  multi_part_units: 'the grammar lets a body or field hold several children (no parallel needed): one node and one level less',
-  contour_claims: 'a lone figure band (top, bottom, centre, each side of periphery) claims a line, not the whole band; upper and lower claim their two bands',
-  motion_claims: 'motion leaves are claims (void* still, neutral* unknown, others moving) composed like content: still pins, neutral* dilutes, fields outrank',
-  open_edge: 'the board edge is open: bodies may leave and come back (kept off the board, solid and self-driven there), mass that leaves is gone; substance traps, not the rim',
-  see_start: 'the first tick perceives the board as drawn (not a blank one); no motion is seen yet',
-  missions: 'an order is a mission, beyond me: what a leaf orders moves until it (a body: its window) is past the leaf\'s region, a destination, and is not taken back; opposing missions cancel while both leaves are on, and a trip whose leaf is off finishes first'};
+  solid_figure: 'built in: a moving body cannot enter what its tree makes figure, and a push is passed along; off, solidity is whatever the program states (demos 38, 39, 41)'};
 let lot = {...BOOT.lot};
 function showSemantics() {
   $('sem').innerHTML = '<span class="muted" style="font-size:.88rem">Semantics:</span> ' + BOOT.semantics.map(k =>
     `<label title="${esc(SEM_HELP[k])}"><input type="checkbox" data-k="${k}"${lot[k] ? ' checked' : ''}>${SEM_LABEL[k]}</label>`).join('');
   $('sem').querySelectorAll('input').forEach(i => i.onchange = () => {
     lot[i.dataset.k] = i.checked;
-    if (i.dataset.k === 'static_fields' && i.checked) lot.pure_claims = true;     // static fields need pure claims
-    if (i.dataset.k === 'standing_motion' && i.checked) lot.static_fields = lot.pure_claims = true;
-    if (i.dataset.k === 'pure_claims' && !i.checked) lot.static_fields = false;
-    if (!lot.static_fields) lot.standing_motion = false;                          // standing motion needs static fields
     showSemantics(); run();
   });
 }
@@ -337,34 +322,24 @@ const way = o => o.axis === 'vertical' ? (o.direction > 0 ? 'down' : 'up') : (o.
 
 function phases(f) {
   if (f.start) { $('phases').innerHTML = '<li><span class="k">Start</span>the board as the program draws it, before any tick runs; step or play to run the ticks</li>'; return; }
-  const li = [], standing = D.semantics && D.semantics.standing_motion;
+  const li = [];
   const obs = f.observers.map(o => `<span class="tag-obs">${esc(label(o.id))}</span> sees ${fmt(o.value)}`)
     .concat(f.measures.map(o => `<span class="tag-meas">${esc(label(o.id))}</span> measures ${fmt(o.value)}`)).join('; ');
   li.push(['Perceive', obs || '<span class="muted">no observers or measure trees</span>']);
-  const drive = f.tokens.filter(u => u.drive.some(v => Math.abs(v) > 1e-9)).map(u => `<span class="tag-body">${esc(u.id)}</span> drive (${u.drive.map(fmt).join(', ')})`).join('; ');
-  if (standing) {                                 // every motion leaf acts on everything in its region, every tick
-    const acts = (f.acts || []).map(a => `<span class="tag-img">${esc(label(a.leaf))}</span> acts on ${a.bodies.length ? a.bodies.map(b => `<span class="tag-body">${esc(b)}</span>`).join(', ') : 'no body'}`)
-      .concat((f.stuff || []).map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s stuff ordered one cell`)).join('; ');
-    li.push(['Motion', [acts, drive && 'accumulated: ' + drive].filter(Boolean).join(' · ') || '<span class="muted">no motion leaf is on</span>']);
-  } else {
-    const iss = f.issued.map(o => `<span class="tag-img">${esc(label(o.leaf))}</span> → <span class="tag-body">${esc(o.unit)}</span>: ${fmt(o.cells)} cells ${way(o)} (frame axes), ${fmt(o.rate)} per tick`).join('; ');
-    li.push(['Orders', iss || '<span class="muted">no new orders</span>']);
-    li.push(['Agency', drive || '<span class="muted">no body is driving itself</span>']);
-  }
+  const acts = (f.acts || []).map(a => `<span class="tag-img">${esc(label(a.leaf))}</span> acts on ${a.bodies.length ? a.bodies.map(b => `<span class="tag-body">${esc(b)}</span>`).join(', ') : 'no body'}`)
+    .concat((f.stuff || []).map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s stuff ordered one cell`)).join('; ');
+  li.push(['Motion', acts || '<span class="muted">no motion leaf is on</span>']);   // every leaf on acts, every tick
   const gc = f.gate_changes.map(c => `gate of <b>${esc(label(c.node))}</b> ${fmt(c.from)} → ${fmt(c.to)}`).join('; ');
   li.push(['Propagate', gc ? gc + ' <span class="muted">(acts from the next tick)</span>' : '<span class="muted">no gate changes</span>']);
   const step = s => [s.rows ? `${Math.abs(s.rows)} ${s.rows > 0 ? 'down' : 'up'}` : '', s.cols ? `${Math.abs(s.cols)} ${s.cols > 0 ? 'right' : 'left'}` : ''].filter(Boolean).join(' and ');
-  const moved = f.shifts.map(s => `<span class="tag-body">${esc(label(s.unit))}</span> moved ${step(s)}`)
-    .concat(f.mass.map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s mass moved`)).join('; ');
+  const moved = f.shifts.map(s => `<span class="tag-body">${esc(label(s.unit))}</span> moved ${step(s)}`).join('; ');
   const pend = f.tokens.filter(u => u.orders.length).map(u => `<span class="tag-body">${esc(u.id)}</span>: ${u.orders.map(o => `${fmt(o.cells)} cells ${way(o)} (credit ${fmt(o.credit)})`).join(', ')}`).join('; ');
   const sub = (f.substance || []).map(m => `${m.cells} cell${m.cells === 1 ? '' : 's'} of tree ${m.tree}'s substance changed`).join('; ');
   li.push(['Move', ([moved, sub].filter(Boolean).join('; ') || '<span class="muted">nothing moved</span>') + (pend ? ' · still to go: ' + pend : '')]);
-  if (D.semantics && D.semantics.static_fields) {
-    const rs = (f.resets || []).map(m => `tree ${m.tree}'s fields re-assert ${m.cells} cell${m.cells === 1 ? '' : 's'}`);
-    const sp = (f.spawned || []).filter(x => x.new > 0).map(x => `<span class="tag-body">${esc(label(x.unit))}</span> spawned (${x.instances} instance${x.instances === 1 ? '' : 's'})`);
-    const live = (f.spawned || []).filter(x => !x.new).map(x => `<span class="tag-body">${esc(label(x.unit))}</span>: ${x.instances} instance${x.instances === 1 ? '' : 's'}`);
-    li.push(['Fields', rs.concat(sp, live).join('; ') || '<span class="muted">no fields</span>']);
-  }
+  const rs = (f.resets || []).map(m => `tree ${m.tree}'s fields re-assert ${m.cells} cell${m.cells === 1 ? '' : 's'}`);
+  const sp = (f.spawned || []).filter(x => x.new > 0).map(x => `<span class="tag-body">${esc(label(x.unit))}</span> spawned (${x.instances} instance${x.instances === 1 ? '' : 's'})`);
+  const live = (f.spawned || []).filter(x => !x.new).map(x => `<span class="tag-body">${esc(label(x.unit))}</span>: ${x.instances} instance${x.instances === 1 ? '' : 's'}`);
+  li.push(['Fields', rs.concat(sp, live).join('; ') || '<span class="muted">no fields</span>']);
   li.push(['Draw', 'each tree draws its own space; observers read this drawing next tick']);
   $('phases').innerHTML = li.map(([k, s], i) => `<li><span class="k">${i + 1} ${k}</span>${s}</li>`).join('');
 }

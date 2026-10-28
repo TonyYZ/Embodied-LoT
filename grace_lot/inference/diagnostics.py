@@ -38,22 +38,17 @@ def enumerate_trees(g: Grammar, d: int = 0, budget: int = None) -> List[P]:
     budget = g.max_nodes if budget is None else budget
     if budget < 1:
         return []
-    if g.multi_output(d) and g.output_leaves:       # one plain tree, or a forest of 2+ trees (no node of its own)
+    if g.multi_output(d):                           # one plain tree, or a forest of 2+ trees (no node of its own)
         return enumerate_trees(g, 1, budget) + [P("outputs", (), kids) for k in g.child_counts("outputs")
                                                 for kids in _child_lists(g, 1, budget, k)]
-    if g.multi_output(d):
-        return [P("outputs", (), kids) for k in g.child_counts("outputs")
-                for kids in _child_lists(g, 1, budget - 1, k)]
     out = [P(LEAF, (n, o, dy)) for n in g.primitives for o in g.orientations for dy in g.dynamics]
     if g.output_leaves:
         out.append(P("out"))
     if g.leaf_forced(d):
         return out
     for kind in g.compositions:
-        params = [()] if kind != "body" else list(itertools.product(*[g.body_grid(i) for i in range(g.n_body_params)]))
         for k in g.child_counts(kind):
-            for kids in _child_lists(g, d + 1, budget - 1, k):
-                out += [P(kind, pr, kids) for pr in params]
+            out += [P(kind, (), kids) for kids in _child_lists(g, d + 1, budget - 1, k)]
     return out
 
 
@@ -93,16 +88,10 @@ def neighbours(prog: Program, g: Grammar) -> Iterator[Program]:
                     if v != n.params[attr]:
                         params = list(n.params); params[attr] = v
                         yield Program(replace(t, path, n._replace(params=tuple(params))), prog.dashed)
-        elif n.kind not in ("body", "outputs", "out", "in"):          # composition type
+        elif n.kind not in ("outputs", "out", "in"):                  # composition type
             for k in g.compositions:
-                if k not in (n.kind, "body") and len(n.children) >= MIN_CHILDREN[k]:
+                if k != n.kind and len(n.children) in g.child_counts(k):
                     yield Program(replace(t, path, n._replace(kind=k)), prog.dashed)
-        elif n.kind == "body":                                        # body parameters
-            for i in range(g.n_body_params):
-                for v in g.body_grid(i):
-                    if v != n.params[i]:
-                        params = list(n.params); params[i] = v
-                        yield Program(replace(t, path, n._replace(params=tuple(params))), prog.dashed)
         for i, j in itertools.combinations(range(len(n.children)), 2):   # swap (edges follow)
             kids = list(n.children); kids[i], kids[j] = kids[j], kids[i]
             d = len(path)
@@ -120,8 +109,7 @@ def neighbours(prog: Program, g: Grammar) -> Iterator[Program]:
         d = len(path)
         shift = lambda e: e[:d] + (0,) + e[d:] if e[:d] == path else e
         for k in wrap_kinds:
-            for pr in ([()] if k != "body" else itertools.product(*[g.body_grid(i) for i in range(g.n_body_params)])):
-                yield with_edges(replace(t, path, P(k, tuple(pr), (n,))), [(shift(a), shift(b)) for a, b in prog.dashed])
+            yield with_edges(replace(t, path, P(k, (), (n,))), [(shift(a), shift(b)) for a, b in prog.dashed])
     ends = {e for edge in prog.dashed for e in edge}
     for path, n in nodes(t):                                          # unwrap
         if n.kind in wrap_kinds and len(n.children) == 1 and path not in ends:

@@ -7,19 +7,12 @@ edges. A program is an immutable ``P`` node:
     P("obj",      ("top", "V", False))                  ObjectNode(TOP, VERTICAL, static)
     P("parallel", (), children)                         ParallelNode
     P("serial_h", (), children) / P("serial_v", ...)    SerialNode(H / V)
-    P("plan",     (), children)                         PlanNode(templates..., content)
-    P("body",     (), children)                         BodyNode: sized and placed by the tree
-    P("body",     (h, w, speed), children)              BodyNode(extent, step_size): earlier runs only
-    P("body",     (y, x, h, w, speed), children)        BodyNode(position, ...): earlier runs only
-
-With ``lot.grouping_nodes`` (the default), copying, grouping and agency are separate operators:
-
     P("template", (), children)                         TemplateNode(templates..., material): copies, no grouping
-    P("field",    (), (child,))                         FieldNode: a rigid unit moved only from outside
-    P("body",     (), (child,))                         AgentBodyNode: a rigid unit its own leaves propel
+    P("field",    (), children)                         FieldNode: a rigid unit moved only from outside
+    P("body",     (), children)                         AgentBodyNode: a rigid unit its own leaves propel
 
-``plan`` is read as ``template``. Fields and bodies take one child; copies of a group made by a template
-are independent instances.
+``plan`` is read as ``template``. Copies of a group made by a template are independent instances. (Bodies with
+numeric parameters, ``body[h,w,speed]``, still parse, for reading earlier runs; they no longer compile.)
 
 A full program is ``Program(tree, dashed)``. ``dashed`` holds dashed gate
 edges ``(source_path, target_path)``, where a path is the tuple of child
@@ -39,15 +32,15 @@ from __future__ import annotations
 from typing import Iterator, List, NamedTuple, Tuple
 
 from embodied_lot import (
-    TRIGRAM_PATTERNS, AgentBodyNode, BodyNode, ConceptGraph, FieldNode, Node, ObjectNode, Orientation,
-    OutputNode, ParallelNode, WindowNode, InWindowNode, PlanNode, SerialNode, TemplateNode,
+    TRIGRAM_PATTERNS, AgentBodyNode, ConceptGraph, FieldNode, Node, ObjectNode, Orientation,
+    OutputNode, ParallelNode, WindowNode, InWindowNode, SerialNode, TemplateNode,
 )
 
 LEAF = "obj"
 COMPOSITIONS = ("parallel", "serial_h", "serial_v", "plan", "body")
 MIN_CHILDREN = {"parallel": 1, "serial_h": 1, "serial_v": 1, "plan": 2, "body": 1, "outputs": 1, "out": 0, "in": 0,
                 "template": 2, "field": 1}
-GROUPS = ("field", "body")                 # unary rigid units under grouping_nodes
+GROUPS = ("field", "body")                 # rigid units
 # An output window leaf, written ``out``: it reads the board inside the region its place in the tree
 # gives it (``embodied_lot.WindowNode``). A program's output channels are its ``out`` leaves.
 OUT = "out"
@@ -64,82 +57,41 @@ OUTPUT_ROOT = "par_O"
 OUTPUTS = "outputs"
 
 
+# The language is built into the engine (``embodied_lot``: legacy/all_languages and the git tag ``all-languages`` have
+# every earlier one). A config may state it, but not ask for another. ``LANGUAGE``: the semantics keys runs recorded,
+# with the value the language has; ``EARLIER``: what a saved run that lacks a key meant (it predates the key).
+LANGUAGE = {"imagined_evaluation": "full", "dynamics": "gameboard", "gate_structures": True,
+            "unknown_background": True, "tree_placed_bodies": True, "motion_away_from_figure": True,
+            "orienting_templates": True, "tree_sized_bodies": True, "motion_kinds": True, "output_leaves": True,
+            "content_windows": True, "grouping_nodes": True, "probabilistic_motion": True, "measure_trees": True,
+            "pure_claims": True, "soft_edges": False, "static_fields": True, "standing_motion": True,
+            "flow_perception": True, "multi_part_units": True, "contour_claims": True, "motion_claims": True,
+            "open_edge": True, "see_start": True, "missions": True}
+EARLIER = {**{k: False for k in LANGUAGE}, "imagined_evaluation": "legacy", "dynamics": "legacy", "gate_structures": True}
+SWITCHES = {"solid_figure": True}          # what a config may still choose (default: the language's)
+
+
 def apply_semantics(lot_cfg: dict) -> None:
-    """Set the core's imagined-evaluation semantics from ``lot.imagined_evaluation``.
-
-    "full" (default): every imagined node is evaluated on every step.
-    "legacy": the earlier shortcut, used by runs made before this was fixed.
-    Also sets ``lot.dynamics`` ("gameboard" by default | "legacy" for earlier runs), ``lot.onset_threshold`` and
-    ``lot.gate_structures`` (a structure's gate scales its composite; default true) and
-    ``lot.unknown_background`` (undrawn cells render as unknown, 0.5; default true) and
-    ``lot.tree_placed_bodies`` (bodies start centred in their tree region; default true),
-    ``lot.motion_away_from_figure`` (horizontal motion matches vertical; default true) and
-    ``lot.orienting_templates`` (dynamic templates orient their content; default true) and
-    ``lot.tree_sized_bodies`` (bodies have no parameters: size from the tree; default true) and
-    ``lot.motion_kinds`` (each motion trigram has its own kind of motion, moving mass too; default true),
-    ``lot.pure_claims`` (centre-axis patterns claim the substance, others only their figure; nested claims win;
-    default false) and ``lot.solid_figure`` (moving bodies cannot enter the rest of their tree's figure; default false).
-    """
+    """Set the engine's switches from a config's ``lot`` section (``solid_figure``, and ``onset_threshold``). A key
+    that asks for an earlier language is an error: run that config at the tag ``all-languages``."""
     import embodied_lot
-    mode = lot_cfg.get("imagined_evaluation", "full")
-    if mode not in ("full", "legacy"):
-        raise ValueError(f"unknown imagined_evaluation {mode!r}")
-    embodied_lot.EVALUATE_IMAGINED_SUBTREES = mode == "full"
-    dynamics = embodied_lot.DYNAMICS_ALIASES.get(lot_cfg.get("dynamics", "gameboard"), lot_cfg.get("dynamics", "gameboard"))
-    if dynamics not in ("legacy", "gameboard"):
-        raise ValueError(f"unknown dynamics {dynamics!r}")
-    embodied_lot.DEFAULT_DYNAMICS = dynamics
+    other = {k: v for k, v in lot_cfg.items() if k in LANGUAGE and v != LANGUAGE[k]
+             and not (k == "dynamics" and v == "ludo")}            # (the gameboard's earlier name)
+    if other:
+        raise ValueError(f"lot settings of an earlier language: {other} (run them at git tag all-languages)")
     embodied_lot.ONSET_THRESHOLD = float(lot_cfg.get("onset_threshold", 0.5))
-    embodied_lot.GATE_STRUCTURES = bool(lot_cfg.get("gate_structures", True))
-    embodied_lot.UNKNOWN_BACKGROUND = bool(lot_cfg.get("unknown_background", True))
-    embodied_lot.TREE_PLACED_BODIES = bool(lot_cfg.get("tree_placed_bodies", True))
-    embodied_lot.MOTION_AWAY_FROM_FIGURE = bool(lot_cfg.get("motion_away_from_figure", True))
-    embodied_lot.ORIENTING_TEMPLATES = bool(lot_cfg.get("orienting_templates", True))
-    embodied_lot.TREE_SIZED_BODIES = bool(lot_cfg.get("tree_sized_bodies", True))
-    embodied_lot.MOTION_KINDS = bool(lot_cfg.get("motion_kinds", True))
-    embodied_lot.SEPARATE_TREE_SPACES = bool(lot_cfg.get("output_leaves", True))
-    embodied_lot.GROUPING_NODES = bool(lot_cfg.get("grouping_nodes", True))
-    embodied_lot.PROBABILISTIC_MOTION = bool(lot_cfg.get("probabilistic_motion", True))
-    embodied_lot.MEASURE_TREES = bool(lot_cfg.get("measure_trees", True))
-    embodied_lot.PURE_CLAIMS = bool(lot_cfg.get("pure_claims", False))
-    embodied_lot.SOLID_FIGURE = bool(lot_cfg.get("solid_figure", False))
-    embodied_lot.SOFT_EDGES = bool(lot_cfg.get("soft_edges", False))
-    embodied_lot.STATIC_FIELDS = bool(lot_cfg.get("static_fields", False))
-    embodied_lot.STANDING_MOTION = bool(lot_cfg.get("standing_motion", False))
-    embodied_lot.FLOW_PERCEPTION = bool(lot_cfg.get("flow_perception", False))
-    embodied_lot.MULTI_PART_UNITS = bool(lot_cfg.get("multi_part_units", False))
-    embodied_lot.CONTOUR_CLAIMS = bool(lot_cfg.get("contour_claims", False))
-    embodied_lot.MOTION_CLAIMS = bool(lot_cfg.get("motion_claims", False))
-    embodied_lot.OPEN_EDGE = bool(lot_cfg.get("open_edge", False))
-    embodied_lot.SEE_START = bool(lot_cfg.get("see_start", False))
-    embodied_lot.MISSIONS = bool(lot_cfg.get("missions", False))
-
-
-# Semantics keys whose defaults have changed. A saved run config that lacks one was made
-# before the key existed, i.e. under the legacy behaviour.
-SEMANTICS_KEYS = {"imagined_evaluation": ("full", "legacy"), "dynamics": ("gameboard", "legacy"),
-                  "unknown_background": (True, False), "tree_placed_bodies": (True, False),
-                  "motion_away_from_figure": (True, False), "orienting_templates": (True, False),
-                  "tree_sized_bodies": (True, False), "motion_kinds": (True, False),
-                  "output_leaves": (True, False), "content_windows": (True, False), "grouping_nodes": (True, False),
-                  "probabilistic_motion": (True, False), "measure_trees": (True, False),
-                  "pure_claims": (False, False), "solid_figure": (False, False), "soft_edges": (False, False),
-                  "static_fields": (False, False), "standing_motion": (False, False),
-                  "flow_perception": (False, False), "multi_part_units": (False, False),
-                  "contour_claims": (False, False), "motion_claims": (False, False),
-                  "open_edge": (False, False),
-                  "see_start": (False, False),
-                  "missions": (False, False)}
+    embodied_lot.SOLID_FIGURE = bool(lot_cfg.get("solid_figure", SWITCHES["solid_figure"]))
 
 
 def resolved_lot(lot_cfg: dict) -> dict:
-    """``lot_cfg`` with every semantics key explicit (current defaults), for saving with a run."""
-    return {**{k: new for k, (new, _) in SEMANTICS_KEYS.items()}, **lot_cfg}
+    """``lot_cfg`` with every semantics key explicit, for saving with a run."""
+    return {**LANGUAGE, **SWITCHES, **lot_cfg}
 
 
 def saved_lot(lot_cfg: dict) -> dict:
-    """A saved run's ``lot`` section, with missing semantics keys read as the legacy behaviour."""
-    return {**{k: old for k, (_, old) in SEMANTICS_KEYS.items()}, **lot_cfg}
+    """A saved run's ``lot`` section, a missing semantics key read as what it meant then (``apply_semantics`` refuses
+    a run of an earlier language)."""
+    return {**EARLIER, "solid_figure": False, **lot_cfg}
 
 
 def output_roots(prog) -> list:
@@ -275,11 +227,11 @@ def is_valid(p: P) -> bool:
     return all(n.kind == LEAF or len(n.children) >= MIN_CHILDREN[n.kind] for _, n in nodes(p))
 
 
-def motion_units(prog, grouping: bool = True) -> int:
-    """How many unknown-motion units a program has (as ``ConceptGraph.unknown_motion_units``).
+def motion_units(prog) -> int:
+    """How many unknown-motion units a program has (what the prior bounds, ``max_motion_units``).
 
-    A dynamic universal / neutral leaf outside observer subtrees belongs to its innermost field or body
-    (with grouping) or else is its own unit; universal and neutral leaves of one unit count separately.
+    A dynamic universal / neutral leaf outside observer subtrees belongs to its innermost field or body, or else is
+    its own unit; universal and neutral leaves of one unit count separately.
     """
     prog = as_program(prog)
     srcs, tgts = {a for a, _ in prog.dashed}, {b for _, b in prog.dashed}
@@ -294,7 +246,7 @@ def motion_units(prog, grouping: bool = True) -> int:
             if dyn and name in ("universal", "neutral"):
                 units.add((group if group is not None else path, name))
             return
-        if grouping and q.kind in GROUPS:
+        if q.kind in GROUPS:
             group = path
         for i, c in enumerate(q.children):
             walk(c, path + (i,), group)
@@ -302,11 +254,9 @@ def motion_units(prog, grouping: bool = True) -> int:
     return len(units)
 
 
-def windows_as_content(p: P, grouping: bool = False) -> bool:
-    """No ``out``/``in`` window is a template: in a template (or an earlier body / plan), a window may only be
-    the last child (the material)."""
-    kinds = ("template", "plan") if grouping else ("body", "plan", "template")
-    return all(c.kind not in (OUT, IN) for _, n in nodes(p) if n.kind in kinds for c in n.children[:-1])
+def windows_as_content(p: P) -> bool:
+    """No ``out``/``in`` window is a template: in a template, a window may only be the last child (the material)."""
+    return all(c.kind not in (OUT, IN) for _, n in nodes(p) if n.kind in ("template", "plan") for c in n.children[:-1])
 
 
 # ---- compilation ----------------------------------------------------------
@@ -375,22 +325,10 @@ def _make(q: P, nid: str) -> Node:
         return ParallelNode(nid)
     if q.kind in ("serial_h", "serial_v"):
         return SerialNode(nid, Orientation.HORIZONTAL if q.kind == "serial_h" else Orientation.VERTICAL)
-    import embodied_lot
-    if embodied_lot.GROUPING_NODES:
-        if q.kind in ("plan", "template"):
-            return TemplateNode(nid)
-        if q.kind == "field":
-            return FieldNode(nid)
-        if q.kind == "body" and not q.params:
-            return AgentBodyNode(nid)
     if q.kind in ("plan", "template"):
-        return PlanNode(nid)
+        return TemplateNode(nid)
     if q.kind == "field":
-        raise ValueError("'field' needs lot.grouping_nodes")
-    if not q.params:
-        return BodyNode(nid)                                          # sized and placed by the tree
-    if len(q.params) == 3:
-        h, w, speed = q.params
-        return BodyNode(nid, extent=(h, w), step_size=speed)       # placed by place_bodies()
-    y, x, h, w, speed = q.params
-    return BodyNode(nid, position=(y, x), extent=(h, w), step_size=speed)
+        return FieldNode(nid)
+    if q.params:
+        raise ValueError(f"a body with parameters ({q}) is an earlier language's (run it at git tag all-languages)")
+    return AgentBodyNode(nid)

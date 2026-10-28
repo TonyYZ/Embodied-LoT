@@ -82,16 +82,14 @@ def blocks(board: np.ndarray, rows: int, cols: int) -> list:
 def mismatches(sketch: List[str], board: np.ndarray) -> np.ndarray:
     """(rows, cols) True where the board's block disagrees with the sketch. The o blocks are judged together:
     all of them are marked when their cells hold no content (> 0.5) or no room (< 0.75)."""
-    import embodied_lot
     c = coarse(board, len(sketch), len(sketch[0]))
     want = np.array([list(r) for r in sketch])
     got = np.vectorize(char)(c)
-    if embodied_lot.CONTOUR_CLAIMS:              # a sketch is as vague as words: # means something salient is there,
-        b = blocks(board, len(sketch), len(sketch[0]))   # a line of figure is enough
-        for i, j in zip(*np.nonzero((want == "#") & (got != "#"))):
-            blk = b[i][j]
-            if blk.size and max(blk.mean(axis=0).max(), blk.mean(axis=1).max()) >= FIGURE:
-                got[i, j] = "#"
+    b = blocks(board, len(sketch), len(sketch[0]))   # a sketch is as vague as words: # means something salient
+    for i, j in zip(*np.nonzero((want == "#") & (got != "#"))):   # is there, a line of figure is enough
+        blk = b[i][j]
+        if blk.size and max(blk.mean(axis=0).max(), blk.mean(axis=1).max()) >= FIGURE:
+            got[i, j] = "#"
     bad = (want != "*") & (want != "o") & (want != "_") & (want != got)
     bad |= (want == "_") & (c > 0.5 + 1e-9)
     if (want == "o").any():

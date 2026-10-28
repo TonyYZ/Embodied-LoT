@@ -117,7 +117,6 @@ def _node_payload(node: Any, field: Optional[ReceptiveField] = None) -> Dict[str
             "position": None if node.position is None else list(node.position),
             "extent": None if node.extent is None else list(node.extent),
             "velocity": list(node.velocity),
-            "step_size": node.step_size,
         })
         if isinstance(node, PlanNode):
             payload["subfield_shape"] = node.subfield_shape

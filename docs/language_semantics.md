@@ -1,8 +1,11 @@
 # The v7 language, revised: claims, solidity, uncertain extent, places (22–24 Oct 2026)
 
-This note collects the semantics changes designed and implemented over 22–24 October, the reasoning behind
-them, and what they buy. They sit behind four `lot` flags, all off by default, so every earlier result and fit
-is reproduced bit for bit with the flags off. `docs/static_fields_spec.md` has the detailed spec of the fourth.
+This note collects the semantics changes designed and implemented from 22 October, the reasoning behind them, and
+what they buy. Each was first a `lot` flag (off by default, so earlier fits reproduced bit for bit). Since 28 October
+the current language is built into the engine and the flags are gone, except `solid_figure` (built-in solidity, on
+by default; demos 38, 39 and 41 turn it off); the engine with every flag is `legacy/all_languages` and the git tag
+`all-languages`. The table records what each flag brought in. `docs/static_fields_spec.md` has the detailed spec of
+static fields.
 
 | Flag | One line |
 | --- | --- |

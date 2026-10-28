@@ -68,10 +68,9 @@ def tree_svg(prog) -> str:
     the last of a template, or of a plan / earlier body) have a dashed outline: they place or turn
     the content rather than draw. A forest is drawn as its trees side by side, with no root above them.
     """
-    import embodied_lot
     from grace_lot.lot_adapter.program import OUTPUTS
     forest = prog.tree.kind == OUTPUTS
-    templating = ("plan", "template") if embodied_lot.GROUPING_NODES else ("plan", "body", "template")
+    templating = ("plan", "template")
     pos, nxt = {}, [0]
 
     def place(p, path, d):

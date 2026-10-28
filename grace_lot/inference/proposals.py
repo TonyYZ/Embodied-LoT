@@ -92,12 +92,11 @@ def change_leaf(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
 
 
 def change_composition(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
-    fixed = () if g.grouping and not g.n_body_params else ("body",)   # earlier bodies keep their kind
-    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind not in (LEAF, OUTPUTS, "out", "in") + fixed]
+    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind not in (LEAF, OUTPUTS, "out", "in")]
     if not sites:
         return None
     path, n = rng.choice(sites)
-    kinds = [k for k in g.compositions if k not in fixed and len(n.children) in g.child_counts(k)]
+    kinds = [k for k in g.compositions if len(n.children) in g.child_counts(k)]
     kind = _alternative(rng, kinds, n.kind)
     if kind is None:
         return None
@@ -105,17 +104,9 @@ def change_composition(prog: Program, g: Grammar, rng: random.Random, w) -> Prop
 
 
 def change_body(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
-    sites = [(path, n) for path, n in nodes(prog.tree) if n.kind == "body"]
-    if not sites or not g.n_body_params:        # parameter-free bodies: nothing to change
-        return None
-    path, n = rng.choice(sites)
-    i = rng.randrange(g.n_body_params)
-    value = _alternative(rng, g.body_grid(i), n.params[i])
-    if value is None:
-        return None
-    params = list(n.params)
-    params[i] = value
-    return _edit(prog, path, n._replace(params=tuple(params))), 0.0, 0.0
+    """Bodies have no parameters (the tree sizes and places them): nothing to change. (The move stays so that a
+    config's ``move_weights`` keep their meaning.)"""
+    return None
 
 
 def swap_siblings(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
@@ -174,10 +165,6 @@ def _wrap_kinds(g: Grammar) -> list:
     return [k for k in g.compositions if MIN_CHILDREN[k] == 1]
 
 
-def _wrap_param_options(g: Grammar, kind: str) -> int:
-    return math.prod(len(g.body_grid(i)) for i in range(g.n_body_params)) if kind == "body" else 1
-
-
 def _unwrap_sites(prog: Program) -> List[tuple]:
     """Single-child compositions that no dashed edge starts or ends at."""
     ends = {e for edge in prog.dashed for e in edge}
@@ -191,13 +178,11 @@ def wrap(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
     sites = [p for p, _ in nodes(prog.tree)]
     path = rng.choice(sites)
     kind = rng.choice(kinds)
-    params = tuple(rng.choice(g.body_grid(i)) for i in range(g.n_body_params)) if kind == "body" else ()
     old = _get(prog.tree, path)
     d = len(path)
     shift = lambda e: e[:d] + (0,) + e[d:] if e[:d] == path else e
-    q = with_edges(replace(prog.tree, path, P(kind, params, (old,))), _remap(prog, shift))
-    fwd = (math.log(w["wrap"]) - math.log(len(sites)) - math.log(len(kinds))
-           - math.log(_wrap_param_options(g, kind)))
+    q = with_edges(replace(prog.tree, path, P(kind, (), (old,))), _remap(prog, shift))
+    fwd = math.log(w["wrap"]) - math.log(len(sites)) - math.log(len(kinds))
     bwd = math.log(w["unwrap"]) - math.log(len(_unwrap_sites(q)))
     return q, fwd, bwd
 
@@ -214,8 +199,7 @@ def unwrap(prog: Program, g: Grammar, rng: random.Random, w) -> Proposal:
     shift = lambda e: e[:d] + e[d + 1:] if e[:d] == path else e
     q = with_edges(replace(prog.tree, path, node.children[0]), _remap(prog, shift))
     fwd = math.log(w["unwrap"]) - math.log(len(sites))
-    bwd = (math.log(w["wrap"]) - math.log(sum(1 for _ in nodes(q.tree))) - math.log(len(_wrap_kinds(g)))
-           - math.log(_wrap_param_options(g, node.kind)))
+    bwd = math.log(w["wrap"]) - math.log(sum(1 for _ in nodes(q.tree))) - math.log(len(_wrap_kinds(g)))
     return q, fwd, bwd
 
 

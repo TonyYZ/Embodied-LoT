@@ -37,8 +37,7 @@ def _state_signature(graph) -> tuple:
 def motion_combinations(program: P, size: int) -> list:
     """Every joint state of the program's unknown-motion units, with its prior weight.
 
-    universal*: "a" / "b" (one way or the other), 1/2 each; neutral*: "still" 1/2, "a" 1/4, "b" 1/4.
-    A program without unknown motion has one combination, ``({}, 1.0)``. Memoised per program and semantics.
+    universal*: "a" / "b" (one way or the other), 1/2 each. A program without unknown motion has one combination, ``({}, 1.0)``. Memoised per program and semantics.
     """
     key = (as_program(program), size, _semantics())
     combos = _combination_cache.get(key)
@@ -61,12 +60,10 @@ def _motion_combinations(program: P, size: int) -> list:
     graph = compile_program(program)
     graph.grid = (size, size)
     graph.reset_gates()
-    if graph.dynamics == "gameboard":
-        graph.assign_roles()
+    graph.assign_roles()
     units = sorted(graph.unknown_motion_units().items())
-    opts = {"universal": [("a", 0.5), ("b", 0.5)], "neutral": [("still", 0.5), ("a", 0.25), ("b", 0.25)]}
     out = []
-    for choice in itertools.product(*[opts[kind] for _, (kind, _, _) in units]):
+    for choice in itertools.product(*[[("a", 0.5), ("b", 0.5)] for _ in units]):
         out.append(({key: c[0] for (key, _), c in zip(units, choice)}, float(np.prod([c[1] for c in choice]))))
     return out
 
@@ -76,14 +73,6 @@ def _motion_combinations(program: P, size: int) -> list:
 COMPONENT_CACHE_SIZE = 500                      # 30-60 KB each: ~25 MB per worker
 COMBINATION_CACHE_SIZE = 1_000                  # whole programs: rarely re-proposed
 _component_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
-
-
-def _components_independent() -> bool:
-    """Whether trees joined by no dashed edge evolve independently, with outputs that do not depend on node
-    numbering: separate tree spaces, grouping nodes, and unknown motion as a latent (no id-seeded pushes)."""
-    import embodied_lot as E
-    return (E.SEPARATE_TREE_SPACES and E.GROUPING_NODES and E.PROBABILISTIC_MOTION
-            and E.DEFAULT_DYNAMICS == "gameboard")
 
 
 def _id_paths(prog: Program) -> dict:
@@ -121,14 +110,14 @@ def _semantics() -> tuple:
 
 
 def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> np.ndarray:
-    """``rollout_whole``, assembled from independently rolled-out and cached components when that is exact.
+    """``rollout_whole``, assembled from independently rolled-out and cached components.
 
-    Under the v7 semantics (``_components_independent``), trees joined by no dashed edge never affect each
-    other, so each component's output windows are rolled out on their own, memoised, and put back in program
-    order; components without output windows are skipped. Bit-for-bit the same as ``rollout_whole``.
+    Trees joined by no dashed edge never affect each other (separate spaces; unknown motion is a latent, not a
+    push seeded by node ids), so each component's output windows are rolled out on their own, memoised, and put
+    back in program order; components without output windows are skipped. Bit-for-bit the same as ``rollout_whole``.
     """
     prog = as_program(program)
-    if prog.tree.kind != OUTPUTS or len(prog.tree.children) < 2 or not _components_independent():
+    if prog.tree.kind != OUTPUTS or len(prog.tree.children) < 2:
         return rollout_whole(program, frames, size, motion_states)
     comps = _components(prog)
     channels = [p for p, q in nodes(prog.tree) if q.kind == OUT]
@@ -184,8 +173,7 @@ def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None
     graph = compile_program(program)
     graph.grid = (size, size)
     graph.reset_gates()
-    if graph.dynamics == "gameboard":
-        graph.assign_roles()             # observers are perceivers and are not drawn
+    graph.assign_roles()                 # observers are perceivers and are not drawn
     if motion_states:
         graph.motion_states = dict(motion_states)   # this realization of the unknown motion
     windows = graph.windows()
@@ -218,7 +206,6 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
     only when something moves relative to its window. For output, the window's cells are stretched to
     the full grid (each cell repeated). A window in several template slots uses its heaviest view.
     """
-    import embodied_lot
     from embodied_lot import ReceptiveField, _view_field, blank_board
     tree = graph.tree_index()
     out = np.empty((frames, len(ids), size, size))
@@ -231,14 +218,14 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
                 out[u] = out[u - period]
             break
         seen[sig] = t
-        if t and graph.dynamics == "gameboard":       # the gameboard step has just drawn this state
-            spaces, shared = graph._spaces, graph._imagery
+        if t:                                         # the step has just drawn this state
+            spaces = graph._spaces
         else:
-            spaces, shared = graph._render_all()
+            spaces = graph._render_all()[0]
         views = graph.node_views((size, size))        # memoised: recomputed only if something moved
         fields = {}                                   # one field per space this frame
         for k, i in enumerate(ids):
-            space = spaces[tree[i]] if embodied_lot.SEPARATE_TREE_SPACES else shared
+            space = spaces[tree[i]]
             vs = views.get(i)
             if not vs:                                  # a window with no region shows nothing known
                 out[t, k] = blank_board((size, size))

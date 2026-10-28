@@ -18,22 +18,12 @@ from trigrams import BOTTOM, TOP, UNIVERSAL, VOID, V, Orientation
 
 
 class DashedGateSemanticsTests(unittest.TestCase):
-    def test_body_motion_respects_template_axis(self):
-        for orientation, velocity in [(V, (-0.05, 0.0)),                    # bottom moves up,
-                                      (Orientation.HORIZONTAL, (0.0, 0.05))]:   # and right: away from its figure
+    def test_motion_runs_away_from_the_figure_on_both_axes(self):
+        for orientation, motion in [(V, (-1.0, 0.0)),                       # bottom moves up,
+                                    (Orientation.HORIZONTAL, (0.0, 1.0))]:  # and right: away from its figure
             with self.subTest(orientation=orientation):
-                body = BodyNode("body", position=(0.5, 0.5),
-                                extent=(0.2, 0.2), step_size=0.1)
-                template = ObjectNode("motion", BOTTOM, orientation, is_dynamic=True)
-                template.activation = 0.5
-                body.children = [template]
-                body.update_motion()
-                np.testing.assert_allclose(body.velocity, velocity)
-                np.testing.assert_allclose(body.position, np.array([0.5, 0.5]) + velocity)
-                field = ReceptiveField(np.arange(16).reshape(4, 4) / 16)
-                sub = body._motion_subfield(template, field)
-                expected = field.activation[:2, :] if orientation == V else field.activation[:, 2:]
-                np.testing.assert_allclose(sub.activation, expected)
+                self.assertEqual(BodyNode._template_motion(ObjectNode("m", BOTTOM, orientation, is_dynamic=True)),
+                                 motion)
 
     def test_opposing_half_motions_do_not_translate_body(self):
         template = ObjectNode("motion", (0, 1, 0), V, is_dynamic=True)

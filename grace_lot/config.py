@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG = ROOT / "configs" / "grace_poc.toml"
+DEFAULT_CONFIG = ROOT / "configs" / "grace_v7_parts.toml"
 
 
 def load_config(path: str | Path | None = None) -> dict:

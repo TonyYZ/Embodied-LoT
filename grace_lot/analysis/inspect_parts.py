@@ -29,7 +29,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-import embodied_lot
 from grace_lot.analysis.inspect_programs import tree_svg
 from grace_lot.config import load_config
 from grace_lot.grace.dataset import split_videos
@@ -63,7 +62,7 @@ def colour(chans, labels):
 
 def figure(y):
     """What an output draws as figure: unknown (0.5) and known-empty cells both show as dark."""
-    return np.clip(2 * y - 1, 0, 1) if embodied_lot.UNKNOWN_BACKGROUND else y
+    return np.clip(2 * y - 1, 0, 1)
 
 
 def parts_gif(obs, y, labels) -> str:
