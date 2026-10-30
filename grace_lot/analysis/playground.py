@@ -38,6 +38,7 @@ _lock = Lock()                       # the engine's semantics are module flags: 
 # The switch a page can set (a lot config key): embodied_lot.SOLID_FIGURE. The language is otherwise built in.
 SEMANTICS = ("solid_figure",)
 CURRENT = {"solid_figure": True}     # what the examples and a fresh page run with
+NUMERIC = {"subcell": 1}             # numeric switches a request may set: embodied_lot.SUBCELL (1: whole cells)
 
 EXAMPLES = [
     ("One body glides, clearing its path through unexplored stuff",
@@ -270,6 +271,7 @@ def prepare(src: str, cfg_path: str, lot: dict = None) -> tuple:
     grammar (if it is), a fresh graph."""
     cfg = load_config(cfg_path)
     cfg["lot"].update({k: bool(v) for k, v in (lot or {}).items() if k in SEMANTICS})
+    cfg["lot"].update({k: int(v) for k, v in (lot or {}).items() if k in NUMERIC})
     apply_semantics(cfg["lot"])
     tree_part = src.split("|")[0]
     if tree_part.count("(") != tree_part.count(")"):            # parse_program fails obscurely on these
@@ -338,6 +340,13 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
                  for n in g.nodes if n.node_id in pos]
     dashed = [{"source": e.source.node_id, "target": e.target.node_id} for e in g.dashed_edges]
     movers = [n for n in g.nodes if isinstance(n, BodyNode) and not isinstance(n, PlanNode)]
+    motion_leaves = [n for n in g.nodes if isinstance(n, ObjectNode) and n.is_dynamic and n.node_id in pos]
+    tree_index = g.tree_index()
+
+    def motion_regions(masks, act):              # where each moving leaf acts on the board, and whether it is on
+        return [{"id": n.node_id, "label": node_label(n), "tree": tree_index.get(n.node_id),
+                 "on": act.get(n.node_id, 0.0) > embodied_lot.ONSET_THRESHOLD, "cells": _cells(masks[n.node_id])}
+                for n in motion_leaves if n.node_id in masks and masks[n.node_id].any()]
     windows = [w.node_id for w in g.windows()]
     bugs, frames, snapshots = [], [], []
     g.assign_roles()                             # tick 0: the board as the program draws it, before any tick runs
@@ -354,6 +363,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
         "role": {n.node_id: getattr(n, "role", "imagined") for n in g.nodes if n.node_id in pos},
         "observers": [], "measures": [],
         "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(masks[n.node_id])} for n in movers if n.node_id in masks],
+        "motion": motion_regions(masks, {}),
         "tokens": [{"id": u.node_id, "kind": u.node.node_type, "orders": []} for u in g._group_tokens()],
         "shifts": [], "onsets": [], "gate_changes": [], "acts": [], "stuff": [],
         "substance": [], "resets": [], "spawned": [],
@@ -428,6 +438,7 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
             "measures": [{"id": nid, "value": v, **board_cells(nid, masks)} for nid, v in measures.items()],
             "units": [{"id": n.node_id, "kind": n.node_type, "cells": _cells(moved[n.node_id])}
                       for n in movers if n.node_id in moved],
+            "motion": motion_regions(masks, g._prev_act),
             "tokens": [{"id": u.node_id, "kind": u.node.node_type, "orders": [_order(o) for o in u.orders]}
                        for u in tokens],
             "shifts": shifts, "onsets": onsets, "gate_changes": gate_changes,
@@ -449,7 +460,8 @@ def record(src: str, ticks: int, states: dict, cfg_path: str, lot: dict = None) 
             "units": [{"key": k, "kind": kind, "options": options[kind], "state": states[k]} for k, kind in units.items()],
             "combinations": len(combos), "channels": np.round(whole, 3).tolist(), "frames": frames,
             "config": cfg_path, "prior_ok": not issues, "snapshots": snapshots,
-            "semantics": {k: bool(getattr(embodied_lot, k.upper())) for k in SEMANTICS}}
+            "semantics": {k: bool(getattr(embodied_lot, k.upper())) for k in SEMANTICS},
+            "numeric": {k: int(getattr(embodied_lot, k.upper())) for k in NUMERIC}}
 
 
 def _examples() -> list:
@@ -548,17 +560,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/grace_v7_parts.toml")
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--lot", nargs="*", default=[], help="the switch, e.g. solid_figure=false")
+    ap.add_argument("--lot", nargs="*", default=[], help="switches, e.g. solid_figure=false subcell=3")
     ap.add_argument("--offline", help="write a self-contained page with the examples built in to this file, and exit")
     args = ap.parse_args()
     if args.offline:
         Path(args.offline).write_text(offline_page(args.config), encoding="utf-8")
         print(f"wrote {args.offline}", flush=True)
         return
-    lot = {k: v.lower() == "true" for k, v in (item.split("=", 1) for item in args.lot)}
+    lot = {k: int(v) if k in NUMERIC else v.lower() == "true" for k, v in (item.split("=", 1) for item in args.lot)}
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(args.config, lot))
     print(f"v7 playground on http://localhost:{args.port}  (graph editor: /graph; semantics from {args.config}"
-          + (f", with {', '.join(k for k, v in lot.items() if v)}" if any(lot.values()) else "") + ")", flush=True)
+          + (f", with {', '.join(f'{k}={v}' for k, v in lot.items())}" if lot else "") + ")", flush=True)
     server.serve_forever()
 
 

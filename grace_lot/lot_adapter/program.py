@@ -32,7 +32,7 @@ from __future__ import annotations
 from typing import Iterator, List, NamedTuple, Tuple
 
 from embodied_lot import (
-    TRIGRAM_PATTERNS, AgentBodyNode, ConceptGraph, FieldNode, Node, ObjectNode, Orientation,
+    ALL_PATTERNS, TRIGRAM_PATTERNS, AgentBodyNode, ConceptGraph, FieldNode, Node, ObjectNode, Orientation,
     OutputNode, ParallelNode, WindowNode, InWindowNode, SerialNode, TemplateNode,
 )
 
@@ -68,11 +68,11 @@ LANGUAGE = {"imagined_evaluation": "full", "dynamics": "gameboard", "gate_struct
             "flow_perception": True, "multi_part_units": True, "contour_claims": True, "motion_claims": True,
             "open_edge": True, "see_start": True, "missions": True}
 EARLIER = {**{k: False for k in LANGUAGE}, "imagined_evaluation": "legacy", "dynamics": "legacy", "gate_structures": True}
-SWITCHES = {"solid_figure": True}          # what a config may still choose (default: the language's)
+SWITCHES = {"solid_figure": True, "subcell": 1}          # what a config may still choose (default: the language's)
 
 
 def apply_semantics(lot_cfg: dict) -> None:
-    """Set the engine's switches from a config's ``lot`` section (``solid_figure``, and ``onset_threshold``). A key
+    """Set the engine's switches from a config's ``lot`` section (``solid_figure``, ``subcell``, and ``onset_threshold``). A key
     that asks for an earlier language is an error: run that config at the tag ``all-languages``."""
     import embodied_lot
     other = {k: v for k, v in lot_cfg.items() if k in LANGUAGE and v != LANGUAGE[k]
@@ -81,6 +81,7 @@ def apply_semantics(lot_cfg: dict) -> None:
         raise ValueError(f"lot settings of an earlier language: {other} (run them at git tag all-languages)")
     embodied_lot.ONSET_THRESHOLD = float(lot_cfg.get("onset_threshold", 0.5))
     embodied_lot.SOLID_FIGURE = bool(lot_cfg.get("solid_figure", SWITCHES["solid_figure"]))
+    embodied_lot.SUBCELL = int(lot_cfg.get("subcell", SWITCHES["subcell"]))
 
 
 def resolved_lot(lot_cfg: dict) -> dict:
@@ -170,12 +171,18 @@ def parse(text: str) -> P:
         if tok in (OUT, IN):
             return P(tok)
         if tok != "(":
-            name, rest = tok.split("/")
+            name, _, rest = tok.partition("/")
+            if not rest or rest.rstrip("*") not in ("H", "V"):
+                raise ValueError(f"leaf {tok!r}: write it as name/orientation, H or V, with * if it moves "
+                                 f"(e.g. upper/V, bottom/H*), or out / in for a window")
             return leaf(name, rest[0], rest.endswith("*"))
         head = tokens[pos]; pos += 1
         kind, params = head, ()
         if head.startswith("body["):                # earlier runs: body[...] with parameters
             kind, params = "body", tuple(float(v) for v in head[5:-1].split(",") if v)   # body[] = no parameters
+        elif head not in MIN_CHILDREN or head in (OUT, IN):                 # (outputs: a one-tree forest)
+            raise ValueError(f"unknown composition {head!r}: use one of "
+                             f"{', '.join(k for k in MIN_CHILDREN if k not in (OUT, IN, OUTPUTS))}")
         children = []
         while tokens[pos] != ")":
             children.append(read())
@@ -316,7 +323,7 @@ def _make(q: P, nid: str) -> Node:
     if q.kind == LEAF:
         pname, ori, dyn = q.params
         o = Orientation.VERTICAL if ori == "V" else Orientation.HORIZONTAL
-        return ObjectNode(nid, TRIGRAM_PATTERNS[pname], o, is_dynamic=dyn, name=pname)
+        return ObjectNode(nid, ALL_PATTERNS[pname], o, is_dynamic=dyn, name=pname)
     if q.kind == OUT:
         return WindowNode(nid)
     if q.kind == IN:

@@ -58,19 +58,20 @@ TRIGRAM_PATTERNS: Dict[str, Tuple[float, ...]] = {
     "neutral":   (0.5, 0.5, 0.5),   # Zhong            unknown
 }
 
-BIGRAM_PATTERNS: Dict[str, Tuple[float, ...]] = {
-    "tai_yin":   (0, 0),
-    "shao_yin":  (0, 1),
-    "shao_yang": (1, 0),
-    "tai_yang":  (1, 1),
+# Halves (two bands; index 0 the bottom or left half, as above): static only, a template's half or a half drawn
+# filled (no lone-band line). Added 30 Oct 2026.
+HALF_PATTERNS: Dict[str, Tuple[float, ...]] = {
+    "near": (1, 0),                 # the bottom half (vertical) or the left half (horizontal)
+    "far":  (0, 1),                 # the top half or the right half
 }
+STATIC_ONLY = frozenset(HALF_PATTERNS)   # leaves without a moving version
 
 MONOGRAM_PATTERNS: Dict[str, Tuple[float, ...]] = {
     "yin":  (0,),
     "yang": (1,),
 }
 
-ALL_PATTERNS = {**TRIGRAM_PATTERNS, **BIGRAM_PATTERNS, **MONOGRAM_PATTERNS}
+ALL_PATTERNS = {**TRIGRAM_PATTERNS, **HALF_PATTERNS, **MONOGRAM_PATTERNS}
 PATTERN_TO_NAME: Dict[Tuple, str] = {v: k for k, v in ALL_PATTERNS.items()}
 _TRIGRAM_NAMES: Dict[Tuple, str] = {v: k for k, v in TRIGRAM_PATTERNS.items()}
 
@@ -116,6 +117,12 @@ TRIGRAM_MOTION: Dict[str, Tuple[Tuple, Tuple]] = {
 # figure than not, and a push is passed along (``_chain_move``); without it, solidity is whatever the program states.
 SOLID_FIGURE = True
 ONSET_THRESHOLD = 0.5      # a motion leaf is on when its activation passes this (strictly)
+# Drawing below the board's resolution. With SUBCELL = s > 1 a tree is drawn on a board s times finer, so a region
+# keeps its fractions of a cell, and each claim is pooled back: a cell is claimed as strongly as the claim covers it
+# (a third of a cell: a third of the strength). Content smaller than a cell then neither vanishes nor speaks as loud as
+# a whole cell. A lone band's line stays one board cell thick (thinner only where its region is). Motion, bodies and
+# substance stay on the board. 1: whole cells, as before.
+SUBCELL = 1
 
 
 def _clip(region: "Region", shape: Tuple[int, int]) -> "Region":
@@ -126,21 +133,41 @@ def _clip(region: "Region", shape: Tuple[int, int]) -> "Region":
 
 
 def _lone_bands(pattern) -> set:
-    """The figure bands with no figure band beside them (each a salient presence, claimed as a line)."""
+    """The figure bands with no figure band beside them (each a salient presence, claimed as a line). A half's
+    figure band is the half itself, never a line."""
+    if len(pattern) == 2:
+        return set()
     fig = [b > 0.5 for b in pattern]
     return {i for i, f in enumerate(fig) if f and not (i > 0 and fig[i - 1]) and not (i + 1 < len(fig) and fig[i + 1])}
 
 
-def _band_line(region: "Region", i: int, n: int, orientation: "Orientation") -> "Region":
-    """Band ``i``'s line: along the region's edge for an edge band, through the axis for a middle one."""
+def _band_line(region: "Region", i: int, n: int, orientation: "Orientation", thick: int = 1) -> "Region":
+    """Band ``i``'s line, ``thick`` cells across (no more than the band): along the region's edge for an edge band,
+    through the axis for a middle one."""
     r0, r1, c0, c1 = band_region(region, i, n, orientation)
     if r1 <= r0 or c1 <= c0:
         return r0, r1, c0, c1
+
+    def line(a, b, last):                                # within [a, b): the edge at a, the edge at b, or the middle
+        t = min(thick, b - a)
+        start = a if last == "a" else b - t if last == "b" else (a + b - t) // 2
+        return start, start + t
     if orientation == Orientation.VERTICAL:              # vertical bands count from the bottom
-        row = r1 - 1 if i == 0 else r0 if i == n - 1 else (r0 + r1 - 1) // 2
-        return row, row + 1, c0, c1
-    col = c0 if i == 0 else c1 - 1 if i == n - 1 else (c0 + c1 - 1) // 2
-    return r0, r1, col, col + 1
+        rows = line(r0, r1, "b" if i == 0 else "a" if i == n - 1 else "mid")
+        return rows[0], rows[1], c0, c1
+    cols = line(c0, c1, "a" if i == 0 else "b" if i == n - 1 else "mid")
+    return r0, r1, cols[0], cols[1]
+
+
+def _pooled(claim: tuple, s: int) -> tuple:
+    """A claim on a board ``s`` times finer, back on the board: each cell claimed as strongly as the claim covers it
+    (its strength and value averaged over the sub-cells it covers)."""
+    mask, value, w, home, leaf, moved = claim
+    H, W = mask.shape[0] // s, mask.shape[1] // s
+    blocks = lambda a: np.asarray(a, dtype=float).reshape(H, s, W, s).sum(axis=(1, 3))
+    n = blocks(mask)
+    over = lambda x: x if np.isscalar(x) else np.where(n > 0, blocks(np.where(mask, x, 0.0)) / np.maximum(n, 1), 0.5)
+    return n > 0, over(value), (n / (s * s)) * over(w), blocks(home) > 0, leaf, moved
 
 
 def _spawned(node, ikey: tuple, instances) -> List[tuple]:
@@ -486,13 +513,21 @@ def orient_slots(template: "Node", region: Region) -> List[Tuple[Region, Optiona
     """Where a template puts its content, and which way the content faces there.
 
     Returns ``(slot, direction)`` pairs; direction None means upright. Static parts give the
-    usual slots (a leaf's yang bands, a serial's strips). A dynamic leaf, or any non-serial
-    structure, gives one slot over its region facing the sum of its dynamic leaves' motions.
+    usual slots (a leaf's figure, a serial's strips): adjacent yang bands are one figure, so a leaf
+    gives one slot per run of them (``1 1 0``: one slot over two thirds; ``1 0 1``: two slots). A dynamic
+    leaf, or any non-serial structure, gives one slot over its region facing the sum of its dynamic leaves' motions.
     """
     if isinstance(template, ObjectNode) and not template.is_dynamic:
-        bands = [band_region(region, i, template.n_bands, template.orientation)
-                 for i, bit in enumerate(template.pattern) if bit > 0]
-        return [(b, None) for b in bands if not is_empty(b)]
+        runs, run = [], []
+        for i, bit in enumerate(template.pattern):
+            if bit > 0:
+                run.append(band_region(region, i, template.n_bands, template.orientation))
+            elif run:
+                runs.append(run); run = []
+        if run:
+            runs.append(run)
+        slots = [(min(b[0] for b in r), max(b[1] for b in r), min(b[2] for b in r), max(b[3] for b in r)) for r in runs]
+        return [(s, None) for s in slots if not is_empty(s)]
     if isinstance(template, SerialNode):
         kids = content_children(template)
         slots: List[Tuple[Region, Optional[Tuple[float, float]]]] = []
@@ -500,12 +535,24 @@ def orient_slots(template: "Node", region: Region) -> List[Tuple[Region, Optiona
             strip = band_region(region, i, len(kids), template.split_orientation)
             slots.extend(orient_slots(child, strip) or [(strip, None)])
         return slots
-    dy = dx = 0.0
-    for n in walk(template):
-        if isinstance(n, ObjectNode) and n.is_dynamic:
-            my, mx = BodyNode._template_motion(n)
-            dy, dx = dy + my, dx + mx
+    dy, dx = _facing(template)
     return [(region, None if abs(dy) < 1e-12 and abs(dx) < 1e-12 else (dy, dx))]
+
+
+def _facing(template: "Node", strength: float = 1.0, top: bool = True) -> Tuple[float, float]:
+    """Which way a template's content faces: its dynamic leaves' motions, each weighted by how
+    strongly it acts (its gate times the gates of the structures between it and the template)."""
+    if isinstance(template, ObjectNode):
+        if not template.is_dynamic:
+            return 0.0, 0.0
+        my, mx = BodyNode._template_motion(template)
+        w = strength * template.gate
+        return w * my, w * mx
+    dy = dx = 0.0
+    for c in getattr(template, "children", ()):                # the template's own gate is not a turn (it
+        cy, cx = _facing(c, strength * (1.0 if top else _sg(template)), False)   # weighs turned against upright)
+        dy, dx = dy + cy, dx + cx
+    return dy, dx
 
 
 # ============================================================
@@ -1527,7 +1574,7 @@ class ConceptGraph:
         tokens = tuple((t.node_id, None if t.position is None else tuple(t.position)) for t in self._group_tokens())
         return (tuple((None if b.position is None else tuple(b.position), None if b.extent is None else tuple(b.extent))
                       for b in bodies),
-                tuple(t.gate for t in templates), tokens)
+                tuple(t.gate for t in templates), tuple(_facing(t) for t in templates), tokens)
 
     def _group_tokens(self) -> List["GroupToken"]:
         """Every instance of every field and body."""
@@ -1680,13 +1727,15 @@ class ConceptGraph:
         """
         cache = self.__dict__.setdefault("_draw_cache", {})
         yang, yin, left, spaces = np.ones(self.grid), np.ones(self.grid), np.ones(self.grid), {}
+        self._space_claims = {}                  # per tree: how strongly each cell of its space is claimed
         for r in self.roots:
             key = self._draw_key(r.node_id)
             hit = cache.get(r.node_id)
             if hit is None or hit[0] != key:
-                a, b, v = self._paint(self.grid, r.node_id, place_bodies=True)
-                hit = cache[r.node_id] = (key, a, b, v, _compose(a, _covered(a, b, v)))
-            _, a, b, v, spaces[r.node_id] = hit
+                a, b, v, c = self._paint(self.grid, r.node_id, place_bodies=True, with_claimed=True)
+                hit = cache[r.node_id] = (key, a, b, v, _compose(a, _covered(a, b, v)),
+                                          np.where(c > 0, c, 1.0 - v))      # unclaimed: the emptiness left behind
+            _, a, b, v, spaces[r.node_id], self._space_claims[r.node_id] = hit
             yang, yin, left = yang * a, yin * b, left * v
         return spaces, _compose(yang, _covered(yang, yin, left))
 
@@ -2175,8 +2224,10 @@ class ConceptGraph:
         return None if S is None else (S["v"].tobytes(), S["s"].tobytes(), S["moved"].tobytes())
 
     def motion_state(self) -> tuple:
-        """Everything about motion and substance that can change a later frame (for periodicity checks)."""
-        random_now = any(n.is_dynamic and PATTERN_TO_NAME.get(n.pattern) == "universal" for n in self.leaf_nodes())
+        """Everything about motion and substance that can change a later frame (for periodicity checks).
+
+        Not the tick: nothing reads it (universal* is a latent direction, fixed per realization, not drawn per tick).
+        """
         groups = tuple((t.node_id, None if t.position is None else tuple(round(v, 9) for v in t.position),
                         tuple(tuple(o) for o in t.orders))
                        for t in self._group_tokens())
@@ -2185,8 +2236,7 @@ class ConceptGraph:
                             for o in S["orders"]), S["passed"].tobytes() if "passed" in S else b"")
                      for rid, S in sorted(getattr(self, "_sub", {}).items()))
         flow = tuple(sorted((k, v.tobytes()) for k, v in getattr(self, "_flow", {}).items()))
-        return ((self._tick if random_now else 0),) + ((groups,) if groups else ()) + ((subs,) if subs else ()) \
-            + ((flow,) if flow else ())
+        return ((groups,) if groups else ()) + ((subs,) if subs else ()) + ((flow,) if flow else ())
 
     def _move_bodies_gameboard(self, views=None) -> None:
         """Each order advances at most one cell per tick once its credit reaches a whole cell; moves add up.
@@ -2544,10 +2594,12 @@ class ConceptGraph:
         a, b, v = self._paint(shape, output_root_id, place_bodies)
         return ReceptiveField(_compose(a, _covered(a, b, v)))
 
-    def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str], place_bodies: bool, values: bool = False):
+    def _paint(self, shape: Tuple[int, int], output_root_id: Optional[str], place_bodies: bool, values: bool = False,
+               raw: bool = False, with_claimed: bool = False):
         """The noisy-OR complements ``prod(1 - c)`` of one root's yang and yin paint, from its composed claims, and of
         the emptiness its moved bodies left behind (applied by ``_covered`` only where nothing else claims a cell).
-        With ``values``, the claims' values and strengths instead (``_claim_values``). ``self._paint_only``: only
+        With ``values``, the claims' values and strengths instead (``_claim_values``); with ``raw``, the claims and the
+        emptiness left behind, uncomposed. With SUBCELL > 1 the board is drawn that much finer and pooled back. ``self._paint_only``: only
         those leaves are drawn (and no substance); ``self._seeding``: only the bare leaves, into the substance grid."""
         H, W = shape
         out_root = self._nodes[output_root_id] if output_root_id is not None else self.roots[-1]
@@ -2557,6 +2609,8 @@ class ConceptGraph:
         cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W), False, np.ones((H, W)), [], (0, 0)]
         only = getattr(self, "_paint_only", None)
         seeding = getattr(self, "_seeding", False)
+        fine = SUBCELL > 1 and (H, W) == tuple(self.grid)      # drawn SUBCELL times finer, then pooled back
+        thick = SUBCELL if (H, W) == (self.grid[0] * SUBCELL, self.grid[1] * SUBCELL) and SUBCELL > 1 else 1
 
         def at_home(cells):
             """Cells moved back to where the enclosing body started."""
@@ -2702,7 +2756,7 @@ class ConceptGraph:
                 mask = np.zeros(cv[0].shape, dtype=bool)
                 for i, bit in enumerate(node.pattern):
                     if pure or bit > 0.5:
-                        r0, r1, c0, c1 = _clip(_band_line(region, i, node.n_bands, node.orientation) if i in lone
+                        r0, r1, c0, c1 = _clip(_band_line(region, i, node.n_bands, node.orientation, thick) if i in lone
                                                else band_region(region, i, node.n_bands, node.orientation),
                                                cv[0].shape)
                         mask[r0:r1, c0:c1] = True
@@ -2733,7 +2787,14 @@ class ConceptGraph:
                 for child in content_children(node):
                     render_node(child, region, weight * _sg(node), ikey)
 
-        render_node(out_root, (0, H, 0, W), 1.0)
+        if fine:
+            claims, left = self._paint((H * SUBCELL, W * SUBCELL), output_root_id, place_bodies, raw=True)
+            cv[5] = left.reshape(H, SUBCELL, W, SUBCELL).mean(axis=(1, 3))
+            cv[6] = [_pooled(c, SUBCELL) for c in claims]
+        else:
+            render_node(out_root, (0, H, 0, W), 1.0)
+        if raw:
+            return cv[6], cv[5]
         if only is None and not seeding and (H, W) == tuple(self.grid):
             S = self._substance(out_root.node_id)               # the substance grid, as two claims
             for moved in (False, True):
@@ -2744,6 +2805,8 @@ class ConceptGraph:
         if values:
             return _claim_values(cv[6], (H, W), boundary)
         yang, yin = _compose_claims(cv[6], (H, W), boundary)
+        if with_claimed:                         # also how strongly claims cover each cell (``_claim_values``)
+            return yang, yin, cv[5], _claim_values(cv[6], (H, W), boundary)[1]
         return yang, yin, cv[5]
 
     # -- the substance grid ---------------------------------------------------------------------

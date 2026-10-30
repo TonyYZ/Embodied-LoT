@@ -19,6 +19,9 @@
       --dashed-edge: #b8336a;
       --paper:   #f6f4ee;
       --node-object:   #2f6fdb;
+      --node-motion:   #d9761f;
+      --node-observer: #1f9aa6;
+      --node-shape:    #7f6fb0;
       --node-parallel: #5d6a62;
       --node-serial:   #3d7a8c;
       --node-template: #7a5cc4;
@@ -39,7 +42,7 @@
       --bg: #111513; --surface: #181d1a; --raised: #1d231f; --ink: #e2e8e3; --muted: #97a59c; --soft: #6f7d74;
       --line: #2c3530; --accent: #63b8a0; --accent-soft: #1e3a32; --amber: #e0a15b; --amber-soft: #3a2a17;
       --danger: #f08a8a; --unknown: #262c28; --solid-edge: #56635b; --dashed-edge: #ff6fa8; --paper: #1b201d;
-      --node-object: #4f86e8; --node-parallel: #6c7a71; --node-serial: #4e8fa1; --node-template: #8f73d6;
+      --node-object: #4f86e8; --node-motion: #f0a050; --node-observer: #4cc3cf; --node-shape: #a493d8; --node-parallel: #6c7a71; --node-serial: #4e8fa1; --node-template: #8f73d6;
       --node-plan: #8f73d6; --node-field: #8c9c48; --node-body: #3e8f78; --node-out: #c27a2c; --node-return: #c27a2c;
       --node-in: #4c9e6a; --node-input: #4c9e6a;
     } }
@@ -48,7 +51,7 @@
       --bg: #111513; --surface: #181d1a; --raised: #1d231f; --ink: #e2e8e3; --muted: #97a59c; --soft: #6f7d74;
       --line: #2c3530; --accent: #63b8a0; --accent-soft: #1e3a32; --amber: #e0a15b; --amber-soft: #3a2a17;
       --danger: #f08a8a; --unknown: #262c28; --solid-edge: #56635b; --dashed-edge: #ff6fa8; --paper: #1b201d;
-      --node-object: #4f86e8; --node-parallel: #6c7a71; --node-serial: #4e8fa1; --node-template: #8f73d6;
+      --node-object: #4f86e8; --node-motion: #f0a050; --node-observer: #4cc3cf; --node-shape: #a493d8; --node-parallel: #6c7a71; --node-serial: #4e8fa1; --node-template: #8f73d6;
       --node-plan: #8f73d6; --node-field: #8c9c48; --node-body: #3e8f78; --node-out: #c27a2c; --node-return: #c27a2c;
       --node-in: #4c9e6a; --node-input: #4c9e6a;
     }
@@ -65,7 +68,7 @@
     /* ── Layout ── */
     .app {
       display: grid;
-      grid-template-columns: 1fr 352px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);      /* code | tree */
       grid-template-rows: auto 1fr;
       max-width: 1480px;
       margin: 0 auto;
@@ -85,11 +88,12 @@
       border-bottom: 2px solid var(--ink);
       background: var(--bg);
     }
-    main { position: relative; min-height: 0; overflow: hidden; padding: 14px 0 14px 24px; }
+    main { position: relative; min-height: 0; overflow-y: auto; padding: 14px 24px 18px;
+           display: flex; flex-direction: column; gap: 10px; }
     aside {
       min-height: 0;
       overflow-y: auto;
-      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
       background: var(--bg);
       padding: 0 0 18px;
     }
@@ -121,21 +125,12 @@
       align-items: center;
       padding-top: 2px;
     }
-    aside > .toolbar {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 7px;
-      margin: 14px 16px 0;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: var(--surface);
-    }
-    aside > .toolbar .timeline,
-    aside > .toolbar .node-create-control,
-    aside > .toolbar .icon-size-control { grid-column: 1 / -1; }
-    aside > .toolbar button { min-width: 0; width: 100%; }
-    aside > .toolbar label { justify-content: space-between; }
+    .player { flex-wrap: nowrap; margin-bottom: 12px; }
+    .player .timeline { flex: 1 1 auto; min-width: 60px; }
+    .tree-tools label { padding: 4px 8px; }
+    .more { border-top: 2px solid var(--ink); padding-top: 10px; }
+    .more summary { cursor: pointer; font: 700 15px/1.15 var(--display); color: var(--ink); }
+    .more .card { margin: 18px 0 0; }
     .toolbar button { min-width: 74px; }
     .toolbar label {
       padding: 6px 10px;
@@ -209,6 +204,9 @@
 
     /* ── SVG canvas: the graph sits on a paper plate ── */
     main > svg {
+      flex: 1 0 auto;
+      min-height: 420px;
+      height: auto;
       background: var(--paper);
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -434,7 +432,7 @@
       body { overflow: auto; height: auto; }
       .app { grid-template-columns: 1fr; height: auto; overflow: visible; }
       main { padding: 12px 16px; }
-      aside { border-left: none; border-top: 1px solid var(--line); }
+      aside { border-right: none; border-bottom: 1px solid var(--line); }
       main > svg { height: 60vh; }
       header { flex-direction: column; align-items: flex-start; padding: 14px 16px; }
     }
@@ -588,7 +586,7 @@
 
 
     /* ── v7 engine card ── */
-    #programText { min-height: 84px; }
+    #programText { min-height: 130px; font-size: 14px; }
     .engine-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
     .engine-buttons button { white-space: normal; line-height: 1.25; }
     #engineMsgs:empty, #engineUnits:empty { display: none; }
@@ -597,7 +595,11 @@
     #engineMsgs .ok { color: var(--accent); }
     #engineUnits { display: flex; flex-wrap: wrap; gap: 6px 12px; font: 12px var(--mono); color: var(--muted); }
     #engineUnits select { width: auto; }
-    .engine-boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; }
+    .engine-boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .engine-boards:empty::before { content: "Run on Engine (or Ctrl+Enter in the program) to draw the boards here."; color: var(--muted); font: 12px var(--mono); }
     .engine-boards figure { margin: 0; min-width: 0; display: grid; gap: 6px; }
     .engine-boards figcaption { font: 600 10px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
     .engine-boards .pixel-preview { width: 100%; height: auto; aspect-ratio: 1; }
+    .motion-toggle { margin: 0 0 10px; }
+    .region-key { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px/1.3 var(--mono); }
+    .engine-boards .pixel-preview span { box-sizing: border-box; }

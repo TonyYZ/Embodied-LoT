@@ -34,7 +34,7 @@ grouping_nodes = true                  # template / field / body as separate ope
 measure_trees = true                   # a tree whose top node sends a dashed edge measures its own figure
 probabilistic_motion = true            # universal* / neutral* are latent directions, mixed in the likelihood
 max_motion_units = 2                   # at most 2 unknown-motion units per program (<= 9 state combinations)
-primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void", "neutral"]   # neutral: draws nothing; neutral* = unknown whether there is motion
+primitives = ["top", "center", "upper", "bottom", "periphery", "lower", "universal", "void", "neutral", "near", "far"]   # neutral: draws nothing; neutral* = unknown whether there is motion; near, far: halves (static only)
 compositions = ["parallel", "serial_h", "serial_v", "template", "field", "body"]
 allow_dynamic = true
 body_positions = [0.25, 0.5, 0.75]

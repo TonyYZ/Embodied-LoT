@@ -27,19 +27,31 @@ def processed_paths(processed_dir: Path, video: Video) -> Dict[str, Path]:
             for k, ext in (("pose", "npz"), ("traj", "npz"), ("preview", "png"))}
 
 
-def load_trajectory(cfg: dict, video: Video) -> Trajectory:
+def load_trajectory(cfg: dict, video: Video, phase: int = 0) -> Trajectory:
     """The processed trajectory. With ``preprocess.sampling`` other than "segment", its frames are re-taken
-    from the full-rate joints (``grace.temporal``) and its fields redrawn from them."""
-    traj = Trajectory.load(processed_paths(cfg["data"]["processed_dir"], video)["traj"])
+    from the full-rate joints (``grace.temporal``) and its fields redrawn from them.
+
+    With ``preprocess.frame = "world"`` the walk across the screen is kept: x is the joint's position relative to
+    the torso's mean position over the sampled frames, not to the torso in each frame. ``phase`` starts the body's
+    cycle ``phase`` frames later (circularly) while the travel stays as it was, so a shifted copy still walks on.
+    """
+    paths = processed_paths(cfg["data"]["processed_dir"], video)
+    traj = Trajectory.load(paths["traj"])
     sampling = cfg["preprocess"].get("sampling", "segment")
     if sampling == "segment":
         return traj
     import dataclasses
+    import numpy as np
     from grace_lot.grace.temporal import sample_window
-    from grace_lot.grace.trajectories import rasterise, resample
+    from grace_lot.grace.trajectories import canonicalise, rasterise, resample
     pre = cfg["preprocess"]
     a, b = sample_window(traj.joints_full, sampling)
-    joints = resample(traj.joints_full[a:b], pre["frames"])
+    joints = np.roll(resample(traj.joints_full[a:b], pre["frames"]), -phase, axis=0)
+    if pre.get("frame", "body") == "world":
+        centre = canonicalise(PoseSequence.load(paths["pose"]), traj.segment)[1][a:b, 0]
+        travel = resample(centre, pre["frames"])
+        joints = joints.copy()
+        joints[..., 0] += (travel - travel.mean())[:, None]
     fields = rasterise(joints, traj.connections, pre["field_size"], pre["window_x"], pre["window_y"],
                        pre["thickness"], pre["raster_scale"], MEDIAPIPE_TORSO)
     return dataclasses.replace(traj, joints=joints, fields=fields)

@@ -67,11 +67,19 @@ def representation(cfg: dict) -> str:
 
 
 def observations_for(cfg: dict, videos) -> list:
+    if cfg["inference"].get("likelihood") == "descriptors":          # part boards: descriptors are read from them
+        from grace_lot.grace.scanner import part_boards
+        return [part_boards(load_trajectory(cfg, v), cfg["preprocess"], cfg["interface"]["edge_samples"])
+                for v in videos]
     if representation(cfg) == "parts_scan" and cfg["interface"].get("observation_cells", False):
         from grace_lot.grace.scanner import scan_part_cells     # parts quantised to cells first, like LoT outputs
         itf = cfg["interface"]
-        return [scan_part_cells(load_trajectory(cfg, v), cfg["preprocess"], itf["scan_softness"], itf["lot_salience"],
-                                itf["edge_samples"], itf.get("features", "max6")) for v in videos]
+        scan = lambda v, s=0: scan_part_cells(load_trajectory(cfg, v, s), cfg["preprocess"], itf["scan_softness"],
+                                              itf["lot_salience"], itf["edge_samples"], itf.get("features", "max6"))
+        phases = cfg["inference"].get("phases", 1)
+        if cfg["preprocess"].get("frame", "body") == "world" and phases > 1:   # (phases, T, P, F): each phase drawn
+            return [np.stack([scan(v, s) for s in range(phases)]) for v in videos]   # with the travel kept
+        return [scan(v) for v in videos]
     if representation(cfg) == "parts_scan":
         from grace_lot.grace.scanner import scan_parts
         itf = cfg["interface"]
@@ -92,7 +100,19 @@ def build(cfg: dict, observations, noise: dict = None):
     grammar = Grammar.from_config(cfg["lot"])
     renderer = LotRenderer(pre["frames"], pre["field_size"])
     prior = SizePrior.from_config(grammar, inf)
-    if representation(cfg) == "parts_scan" and inf.get("likelihood") == "gaussian":
+    if inf.get("library"):                                  # pieces: cheaper to write, one search step to add
+        from grace_lot.inference.library import Library, LibraryPrior
+        grammar.library = Library.load(inf["library"])
+        prior = LibraryPrior(grammar, inf["lambda_size"], grammar.library, inf.get("dashed_cost", 1.0))
+    if representation(cfg) == "parts_scan" and inf.get("likelihood") == "descriptors":
+        from grace_lot.grace.scanner import feature_background
+        from grace_lot.inference.descriptor_likelihood import DescriptorLikelihood
+        lik = DescriptorLikelihood(observations, pre["frames"], pre["field_size"], cfg["interface"]["lot_salience"],
+                                   feature_background(cfg), inf.get("temperature"), inf.get("cell_draws", 256),
+                                   inf.get("noise_floor", 0.1), noise, size_range=inf.get("size_range"),
+                                   features=inf.get("descriptors", "motion"), open_cells=inf.get("open_cells", "fill"),
+                                   warmup=inf.get("warmup", 0))
+    elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "gaussian":
         from grace_lot.grace.scanner import feature_background
         from grace_lot.inference.likelihood import GaussianScanLikelihood
         itf = cfg["interface"]
@@ -102,7 +122,9 @@ def build(cfg: dict, observations, noise: dict = None):
                                      itf["lot_salience"], feature_background(cfg), inf.get("temperature"),
                                      inf.get("temporal_weight", 0.0), inf.get("cell_draws", 256),
                                      inf.get("noise_floor", 0.1), noise, features=itf.get("features", "max6"),
-                                     phases=inf.get("phases", 1), shift_radius=inf.get("shift_radius", 0))
+                                     phases=inf.get("phases", 1), shift_radius=inf.get("shift_radius", 0),
+                                     timing_sd=inf.get("timing_sd", 0.0), warp_radius=inf.get("warp_radius", 0),
+                                     warp_slack=inf.get("warp_slack", 0.1))
     elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "probabilistic":
         from grace_lot.inference.likelihood import ProbabilisticScanLikelihood
         itf = cfg["interface"]
@@ -124,7 +146,11 @@ def build(cfg: dict, observations, noise: dict = None):
     else:
         lik = TrajectoryLikelihood(observations, renderer, DISTANCES[inf["distance"]], inf["beta"],
                                    inf.get("temporal_weight", 0.0))
-    return grammar, renderer, prior, lik, ProposalMixture(grammar, inf["move_weights"])
+    weights = dict(inf["move_weights"])
+    if inf.get("library"):                                  # the library's paired moves, unless the config sets them
+        weights.setdefault("lib_insert", 0.05)
+        weights.setdefault("lib_remove", 0.05)
+    return grammar, renderer, prior, lik, ProposalMixture(grammar, weights)
 
 
 def chain_ladder(inf: dict, prior, lik, proposal, n_observations: int, key: str) -> tuple:
@@ -138,15 +164,27 @@ def chain_ladder(inf: dict, prior, lik, proposal, n_observations: int, key: str)
     return ladder_for(inf, n_observations), 0
 
 
-def tempered(inf: dict, prior, lik, proposal, rng: random.Random, taus, adapt_until: int, report=None):
-    """One tempered chain with the configured options: ``crossover`` (probability per sweep of a subtree exchange
-    between neighbouring replicas) and ``start`` ("parts": data-driven starting programs, ``start_candidates`` trees
-    per pool; otherwise draws from the generator). With ``population`` > 1, a search of that many chains with
-    selection every ``select_every`` iterations of the burn-in: a list of chains."""
-    init = None
-    if inf.get("start") == "parts":
+def start_init(inf: dict, manner: str, prior, lik, proposal):
+    """How a chain picks its starting program (``inference.start``): "parts", data-driven starting programs
+    (``start_candidates`` trees per pool); "run:<folder>", that run's MAP for the manner (a warm start); otherwise
+    None, draws from the generator."""
+    start = str(inf.get("start") or "")
+    if start == "parts":
         from grace_lot.inference.starts import part_fit_start
-        init = lambda r: part_fit_start(lik, proposal, prior, r, inf.get("start_candidates", 100), inf.get("start_steps", 200))
+        return lambda r: part_fit_start(lik, proposal, prior, r, inf.get("start_candidates", 100), inf.get("start_steps", 200))
+    if start.startswith("run:"):
+        p = parse_program(json.loads((Path(start[4:]) / "posteriors" / f"{manner}.json").read_text())["map"])
+        if prior(p) == -np.inf:
+            raise ValueError(f"the start program for {manner} is outside this prior")
+        return lambda r: p
+    return None
+
+
+def tempered(inf: dict, prior, lik, proposal, rng: random.Random, taus, adapt_until: int, report=None, init=None):
+    """One tempered chain with the configured options: ``crossover`` (probability per sweep of a subtree exchange
+    between neighbouring replicas) and a starting program (``init``, see ``start_init``; None: draws from the
+    generator). With ``population`` > 1, a search of that many chains with selection every ``select_every``
+    iterations of the burn-in: a list of chains."""
     args = (prior, lik, proposal, inf["iterations"], inf["burn_in"], inf["thin"], rng, taus, inf.get("swap_every", 1),
             report, inf.get("progress_every", 0), adapt_until, inf.get("crossover", 0.0), init)
     if inf.get("population", 1) > 1:
@@ -176,7 +214,8 @@ def run_one_chain(job):
         print(f"  {manner} chain {k}: {it}/{inf['iterations']} iterations, "
               f"{(time.time() - t0) / 60:.0f} min, log-post {chain.log_post[-1]:.1f}", flush=True)
         save_checkpoint(checkpoint, chain)
-    cs = tempered(inf, prior, lik, proposal, random.Random(seed), taus, adapt_until, report)
+    cs = tempered(inf, prior, lik, proposal, random.Random(seed), taus, adapt_until, report,
+                  start_init(inf, manner, prior, lik, proposal))
     return manner, k, [{
         "search": k, "samples": [str(p) for p in c.samples], "best": str(c.best), "best_log_post": c.best_log_post,
         "acceptance": c.acceptance_rate, "proposed": dict(c.moves), "accepted": dict(c.accepted),
@@ -242,10 +281,7 @@ def _ladder_worker(conn, cfg: dict, manner: str, videos, k: int, j: int) -> None
     rng = random.Random(inf["seed"] * 1000 + k + 17 * zlib.crc32(manner.encode()))
     for _ in range(j):                                    # the ladders before this one take their seeds first
         rng.getrandbits(64)
-    init = None
-    if inf.get("start") == "parts":
-        from grace_lot.inference.starts import part_fit_start
-        init = lambda r: part_fit_start(lik, proposal, prior, r, inf.get("start_candidates", 100), inf.get("start_steps", 200))
+    init = start_init(inf, manner, prior, lik, proposal)
     ladder = _Ladder(prior, lik, proposal, random.Random(rng.getrandbits(64)), taus, inf.get("swap_every", 1),
                      adapt_until, inf.get("crossover", 0.0), init)
     it, t0 = 0, time.time()

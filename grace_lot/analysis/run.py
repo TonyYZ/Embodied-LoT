@@ -62,6 +62,20 @@ def lot_matrices(posteriors, maps, manners, n_pairs, seed):
     return out
 
 
+def predictive_similarity(pred: dict, manners) -> np.ndarray:
+    """How well each manner's posterior explains the other's validation videos (``inference.predictive``):
+    the mean log predictive density of manner j's videos under manner i, double-centred (so neither broad
+    posteriors nor easy videos count as similarity), then symmetrised. Validation actors only."""
+    assert pred["manners"] == list(manners)
+    lpd = np.array(pred["lpd"])
+    owner = np.array([v.split("_", 1)[1] for v in pred["videos"]])
+    M = np.stack([lpd[:, owner == m].mean(axis=1) for m in manners], axis=1)       # (model manner, video manner)
+    M = M - M.mean(axis=1, keepdims=True) - M.mean(axis=0, keepdims=True) + M.mean()
+    S = (M + M.T) / 2
+    np.fill_diagonal(S, np.nan)
+    return S
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config")
@@ -137,6 +151,8 @@ def main() -> None:
                                        split_videos(d["raw_dir"], cfg["split"], "test"), joints=True,
                                        unsealed=True)
     mats.update(lot_matrices(posteriors, maps, manners, an["max_pairs"], cfg["inference"]["seed"]))
+    if (res / "predictive.json").exists():
+        mats["lot_predictive"] = predictive_similarity(json.loads((res / "predictive.json").read_text()), manners)
     np.savez_compressed(out / "matrices.npz", manners=np.array(manners), **mats)
 
     kin_names = [k for k in mats if k.startswith("kin_")]
@@ -184,6 +200,7 @@ def main() -> None:
     plots.traces(traces, cfg["inference"]["burn_in"], out / "traces.png")
     for m, t in zip(manners, trajs):
         lot_fields = rollout(maps[m], cfg["preprocess"]["frames"], cfg["preprocess"]["field_size"])
+        lot_fields = lot_fields if lot_fields.ndim == 3 else lot_fields.max(axis=1)         # outputs overlaid
         preview(t, out / "fits" / f"{m}.png", f"{m}  MAP: {maps[m]}", lot_fields=lot_fields)
     print((out / "summary.md").read_text())
 

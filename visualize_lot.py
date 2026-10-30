@@ -108,6 +108,10 @@ def _node_payload(node: Any, field: Optional[ReceptiveField] = None) -> Dict[str
             "orientation": node.orientation.name.lower(),
             "dynamic": bool(node.is_dynamic),
         })
+        if node.is_dynamic:                     # how it moves, as the engine reads it (for the node's icon)
+            import embodied_lot as E
+            payload["motion"] = [float(x) for x in E.BodyNode._template_motion(node)]
+            payload["motion_kind"] = E._MOTION_KIND.get(E.PATTERN_TO_NAME.get(node.pattern))
     elif isinstance(node, ParallelNode):
         payload["inherited_weight"] = float(node.inherited_weight)
     elif isinstance(node, SerialNode):

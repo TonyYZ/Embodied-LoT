@@ -183,10 +183,11 @@ def recover_one(job) -> dict:
         same_render = lambda p: euclid(renderer(p), y) < EQUIV_TOL
     prior = SizePrior.from_config(g, inf)
     prop = ProposalMixture(g, inf["move_weights"])
-    from grace_lot.inference.run import chain_ladder, tempered
+    from grace_lot.inference.run import chain_ladder, start_init, tempered
     taus, adapt_until = chain_ladder(inf, prior, lik, prop, len(obs), f"truth{k}")
     t0 = time.time()
-    searches = [tempered(inf, prior, lik, prop, random.Random(seed * 100 + c), taus, adapt_until)
+    init = start_init(inf, f"truth{k}", prior, lik, prop)
+    searches = [tempered(inf, prior, lik, prop, random.Random(seed * 100 + c), taus, adapt_until, init=init)
                 for c in range(inf["chains"])]
     searches = [s if isinstance(s, list) else [s] for s in searches]       # inference.population: ladders per search
     chains = [c for s in searches for c in s]

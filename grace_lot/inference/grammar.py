@@ -23,6 +23,7 @@ import random
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from embodied_lot import STATIC_ONLY
 from grace_lot.lot_adapter.program import GROUPS, LEAF, MIN_CHILDREN, OUT, OUTPUTS, P
 
 P_DYNAMIC = 0.25
@@ -90,7 +91,8 @@ class Grammar:
             if self.output_leaves and rng.random() < P_OUT:
                 return P(OUT)
             dyn = self.allow_dynamic and rng.random() < P_DYNAMIC
-            return P(LEAF, (rng.choice(self.primitives), rng.choice(self.orientations), dyn))
+            name = rng.choice(self.primitives)                  # (draws in this order, as before)
+            return P(LEAF, (name, rng.choice(self.orientations), dyn and name not in STATIC_ONLY))
         kind = rng.choice(self.compositions)
         k = rng.choice(self.child_counts(kind))
         return P(kind, (), tuple(self.sample(rng, depth + 1) for _ in range(k)))
@@ -110,13 +112,13 @@ class Grammar:
             return (0.0 if forced else math.log(self.p_leaf)) + math.log(P_OUT) if self.output_leaves else -math.inf
         if p.kind == LEAF:
             name, ori, dyn = p.params
-            if name not in self.primitives or (dyn and not self.allow_dynamic):
+            if name not in self.primitives or (dyn and (not self.allow_dynamic or name in STATIC_ONLY)):
                 return -math.inf
             lp = 0.0 if forced else math.log(self.p_leaf)
             if self.output_leaves:
                 lp += math.log(1 - P_OUT)
             lp -= math.log(len(self.primitives)) + math.log(2)
-            if self.allow_dynamic:
+            if self.allow_dynamic and name not in STATIC_ONLY:      # a static-only leaf is still either way
                 lp += math.log(P_DYNAMIC if dyn else 1 - P_DYNAMIC)
             return lp
         if (forced or p.kind not in self.compositions or len(p.children) not in self.child_counts(p.kind)

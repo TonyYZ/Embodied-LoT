@@ -1123,7 +1123,7 @@ def drawGuideTree(tree, usefulProbs={}, layerMode=False, verbose=False, pixelMap
     pixelMaps = runMovements(indexMap, pixelPayload, motionPayload)  # include inbetweening frames
 
     background = np.copy(pixelMaps[-1])  # without bodies
-    macroMotionMaps = [np.copy(motionMap) for _ in range(tweening)]
+    macroMotionMaps = [np.copy(motionPayload) for _ in range(tweening)]
 
 
     if not isInit:
@@ -1413,7 +1413,7 @@ def cleanTiny(map, threshold=1e-15):
     map[np.abs(map) < threshold] = 0
 
 
-def rotateMap(oldIndexMap, angle, updateFn):
+def rotateMap(oldIndexMap, angle, isPixel=True):
     # Rotate the temporary maps and cover them on the original maps
     if angle == 0.:
         return oldIndexMap
@@ -1425,7 +1425,7 @@ def rotateMap(oldIndexMap, angle, updateFn):
         rotatedMap = scipy.ndimage.rotate(oldIndexMap, angleDeg, reshape=True,
                                           order=1, mode='constant')
     else:
-        rotatedMap = scipy.ndimage.rotate(oldMap, angleDeg, reshape=True,
+        rotatedMap = scipy.ndimage.rotate(oldIndexMap, angleDeg, reshape=True,
                                           order=1, mode='constant')
 
         def addAngle(coord):
@@ -2562,7 +2562,6 @@ def compLayers(guideTree, layerMode=True, verbose=False,
                                                                                   layerMode=layerMode,
                                                                                   verbose=verbose,
                                                                                   pixelMap=layerPixelMaps[i],
-                                                                                  bodyMotionMap=layerMotionMaps[i],
                                                                                   isInit=curFrameInd == 0)
             if layerMotionMap is not None:
                 layerMotionMaps[i] = layerMotionMap

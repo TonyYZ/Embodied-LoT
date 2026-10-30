@@ -169,7 +169,19 @@
         positions.set(node.id, { x: cursor, y: yStart + level * levelStep, vx: 0, vy: 0, level });
         cursor += leafStep || 100;
       });
+      fitView();
       startPhysics();
+    }
+
+    // Zoom (never in past 1:1) and centre so the whole tree, with its labels, fits the canvas.
+    function fitView() {
+      const rect = svg.getBoundingClientRect();
+      const ps = Array.from(positions.values());
+      if (!ps.length || !rect.width || !rect.height) return;
+      const x0 = Math.min(...ps.map(p => p.x)) - 80, x1 = Math.max(...ps.map(p => p.x)) + 80;
+      const y0 = Math.min(...ps.map(p => p.y)) - 50, y1 = Math.max(...ps.map(p => p.y)) + 70;
+      viewScale = Math.min(1, rect.width / (x1 - x0), rect.height / (y1 - y0));
+      viewOffset = { x: (rect.width - viewScale * (x0 + x1)) / 2, y: (rect.height - viewScale * (y0 + y1)) / 2 };
     }
 
     function resetLayoutOnce() {
@@ -629,17 +641,22 @@
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         circle.setAttribute("r", r);
         // fill: desaturated base color, brightened by activation
-        const base = nodeColour(n.type);
+        const base = nodeColour(leafKind(n));
         circle.setAttribute("fill", base);
         circle.setAttribute("fill-opacity", (0.55 + act * 0.45).toFixed(2));
         attachNodeEvents(circle);
 
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.textContent = shortId(n.id);
+        const isLeaf = n.type === "object" && n.pattern;
+        const text = isLeaf ? leafIcon(n, r) : document.createElementNS("http://www.w3.org/2000/svg", "text");
+        if (!isLeaf) text.textContent = shortId(n.id);
+        text.style.pointerEvents = "none";               // clicks reach the circle beneath
+        const tip = svgEl("title", {});
+        tip.textContent = `${n.id}: ${displayType(n)}`;
+        circle.appendChild(tip);
         const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
         sub.classList.add("sub");
         sub.setAttribute("y", r + 13);                    // below the circle, then the gauge
-        sub.textContent = `${displayType(n)} ${fmt(n.activation)}`;
+        sub.textContent = isLeaf ? displayType(n) : `${displayType(n)} ${fmt(n.activation)}`;
 
         const gaugeValue = Math.max(0, Math.min(1, Number(n.activation) || 0));
         const gaugeWidth = 66;
@@ -802,9 +819,9 @@
       window.addEventListener("pointerup", up);
     }
 
-    function marqueeStart(evt) {
+    function marqueeStart(evt) {          // on the empty canvas: drag pans, Shift + drag selects a box of nodes
       if (evt.target !== svg || editMode !== "select") return;
-      if (evt.altKey || evt.getModifierState?.("Space")) {
+      if (!evt.shiftKey) {
         panStart(evt);
         return;
       }
@@ -949,8 +966,82 @@
       if (nodeById(oldTarget)) target.value = oldTarget;
     }
 
-    function displayType(node) {
+    // A leaf by what it says: its trigram and orientation (* if it moves), and its part: a motion leaf, an
+    // observer (a dashed edge's source: it perceives), or a still figure.
+    function leafKind(node) {
+      if (node.type !== "object") return node.type;
+      if (node.dynamic) return "motion";
+      if (node.role === "observer") return "observer";
+      // in a template (or a body or plan with several children) every child but the last only gives the shape
+      // the content is placed in: it is not drawn
+      const parent = current.nodes.find(p => (p.children || []).includes(node.id));
+      const kids = parent ? parent.children || [] : [];
+      if (parent && ["template", "body", "plan"].includes(parent.type) && kids.length > 1 && kids.indexOf(node.id) < kids.length - 1)
+        return "shape";
+      return "figure";
+    }
+
+    function displayType(node) {             // a leaf by its name in the program, e.g. upper/V or bottom/H*
+      if (node.type === "object" && node.pattern_name) {
+        const o = (node.orientation || "")[0];
+        return `${node.pattern_name}/${o ? o.toUpperCase() : "?"}${node.dynamic ? "*" : ""}`;
+      }
       return node.type === "return" ? "output" : node.type;
+    }
+
+    // A leaf's icon: a still leaf is its three bands (white figure, black empty, grey unknown; vertical bands count
+    // from the bottom, horizontal from the left); a moving leaf is how it moves: an arrow (all of it one way), an
+    // arrow with a layer bar (layer by layer), arrows out of or into the middle, a two-headed arrow (some direction,
+    // unknown), "?" (whether it moves, unknown) or a crossed circle (known still).
+    function leafIcon(n, r) {
+      const g = svgEl("g", { class: "leaf-icon" });
+      const vertical = n.orientation === "vertical";
+      if (!n.dynamic) {
+        const side = 1.15 * r, band = side / Math.max(1, (n.pattern || []).length);
+        (n.pattern || []).forEach((bit, i) => {
+          const tone = bit > 0.75 ? "#f4f4ef" : bit < 0.25 ? "#141414" : "#7c7c78";
+          g.appendChild(svgEl("rect", vertical
+            ? { x: -side / 2, y: side / 2 - (i + 1) * band, width: side, height: band, fill: tone }
+            : { x: -side / 2 + i * band, y: -side / 2, width: band, height: side, fill: tone }));
+        });
+        g.appendChild(svgEl("rect", { x: -side / 2, y: -side / 2, width: side, height: side, fill: "none", stroke: "#9a9a94", "stroke-width": 1 }));
+        return g;
+      }
+      const L = 0.62 * r, ink = "#ffffff";
+      const arrow = (x0, y0, x1, y1) => {
+        g.appendChild(svgEl("line", { x1: x0, y1: y0, x2: x1, y2: y1, stroke: ink, "stroke-width": 2.4, "stroke-linecap": "round" }));
+        const a = Math.atan2(y1 - y0, x1 - x0), h = 0.32 * r;
+        const p = [[x1, y1], [x1 - h * Math.cos(a - 0.5), y1 - h * Math.sin(a - 0.5)], [x1 - h * Math.cos(a + 0.5), y1 - h * Math.sin(a + 0.5)]];
+        g.appendChild(svgEl("polygon", { points: p.map(q => q.join(",")).join(" "), fill: ink }));
+      };
+      const [my, mx] = n.motion || [0, 0];
+      const norm = Math.hypot(my, mx);
+      const ax = vertical ? [0, 1] : [1, 0];            // the leaf's axis on the board (x, y)
+      const kind = n.motion_kind;
+      if ((kind === "bulk" || kind === "gradient") && norm > 0) {
+        const ux = mx / norm, uy = my / norm;
+        arrow(-ux * L, -uy * L, ux * L, uy * L);
+        if (kind === "gradient")                       // layer by layer: a bar across the tail
+          g.appendChild(svgEl("line", { x1: -ux * L - uy * 0.35 * r, y1: -uy * L + ux * 0.35 * r, x2: -ux * L + uy * 0.35 * r,
+                                        y2: -uy * L - ux * 0.35 * r, stroke: ink, "stroke-width": 2.4, "stroke-linecap": "round" }));
+      } else if (kind === "out") {
+        arrow(ax[0] * 0.15 * r, ax[1] * 0.15 * r, ax[0] * L, ax[1] * L);
+        arrow(-ax[0] * 0.15 * r, -ax[1] * 0.15 * r, -ax[0] * L, -ax[1] * L);
+      } else if (kind === "in") {
+        arrow(ax[0] * L, ax[1] * L, ax[0] * 0.12 * r, ax[1] * 0.12 * r);
+        arrow(-ax[0] * L, -ax[1] * L, -ax[0] * 0.12 * r, -ax[1] * 0.12 * r);
+      } else if (kind === "random") {
+        arrow(0, 0, ax[0] * L, ax[1] * L);
+        arrow(0, 0, -ax[0] * L, -ax[1] * L);
+      } else if ((n.pattern || []).every(b => Math.abs(b - 0.5) < 0.01)) {
+        const q = svgEl("text", { "text-anchor": "middle", "dominant-baseline": "central", fill: ink, "font-size": 1.1 * r, "font-weight": 700 });
+        q.textContent = "?";
+        g.appendChild(q);
+      } else {                                          // void*: known still
+        g.appendChild(svgEl("circle", { r: 0.5 * r, fill: "none", stroke: ink, "stroke-width": 2.2 }));
+        g.appendChild(svgEl("line", { x1: -0.36 * r, y1: 0.36 * r, x2: 0.36 * r, y2: -0.36 * r, stroke: ink, "stroke-width": 2.2 }));
+      }
+      return g;
     }
 
     function populateIconSelect() {
@@ -2003,7 +2094,7 @@
 
     function renderLegend() {
       const legend = document.getElementById("legend");
-      legend.innerHTML = nodeTypes
+      legend.innerHTML = ["figure", "shape", "motion", "observer", ...nodeTypes.filter(t => t !== "object")]
         .map(name => `<span><i class="swatch" style="background:${nodeColour(name)};width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:-1px"></i>${name === "return" ? "output" : name}</span>`)
         .join("");
     }
@@ -2219,7 +2310,7 @@
 
     async function loadProgram() {
       try {
-        const data = await enginePost("/api/graph", {program: document.getElementById("programText").value});
+        const data = await enginePost("/api/graph", {program: document.getElementById("programText").value, lot: engineLot()});
         engineRun = null;
         engineStates = {};
         document.getElementById("engineUnits").innerHTML = "";
@@ -2235,7 +2326,7 @@
       button.disabled = true; button.textContent = "Running…";
       try {
         const data = await enginePost("/api/run", {program: document.getElementById("programText").value,
-          ticks: Number(document.getElementById("engineTicks").value) || 24, states: engineStates});
+          ticks: Number(document.getElementById("engineTicks").value) || 24, states: engineStates, lot: engineLot()});
         engineRun = data;
         engineStates = Object.fromEntries(data.units.map(u => [u.key, u.state]));
         document.getElementById("programText").value = data.program;
@@ -2254,6 +2345,10 @@
       }
     }
 
+    function engineLot() {              // the numeric switches the page sets (sub-cell drawing)
+      return {subcell: Number(document.getElementById("engineSubcell").value) || 1};
+    }
+
     function renderEngineUnits() {
       const box = document.getElementById("engineUnits");
       if (!engineRun || !engineRun.units.length) { box.innerHTML = ""; return; }
@@ -2266,7 +2361,11 @@
       }));
     }
 
-    function boardFigure(caption, values) {
+    const REGION_COLOURS = ["#ff8c1a", "#3db8ff", "#f04fb0", "#ffd23d", "#9b7bff", "#3ddc84"];
+
+    // ``regions``: moving leaves' regions to outline ({label, on, cells}), each in its own colour; solid while the
+    // leaf acts, dashed while it is off.
+    function boardFigure(caption, values, regions = []) {
       const fig = document.createElement("figure");
       const cap = document.createElement("figcaption");
       cap.textContent = caption;
@@ -2274,13 +2373,33 @@
       grid.className = "pixel-preview";
       grid.style.gridTemplateRows = `repeat(${values.length}, 1fr)`;
       grid.style.gridTemplateColumns = `repeat(${values[0].length}, 1fr)`;
+      const edges = new Map();                      // "r,c" -> [{side, colour, on}]
+      regions.forEach((g, i) => {
+        const colour = REGION_COLOURS[i % REGION_COLOURS.length];
+        const inside = new Set(g.cells.map(([r, c]) => `${r},${c}`));
+        g.cells.forEach(([r, c]) => {
+          const sides = [["Top", r - 1, c], ["Bottom", r + 1, c], ["Left", r, c - 1], ["Right", r, c + 1]]
+            .filter(([, rr, cc]) => !inside.has(`${rr},${cc}`)).map(([side]) => ({side, colour, on: g.on}));
+          if (sides.length) edges.set(`${r},${c}`, [...(edges.get(`${r},${c}`) || []), ...sides]);
+        });
+      });
       values.forEach((row, r) => row.forEach((value, c) => {
         const cell = document.createElement("span");
         cell.style.background = fieldColour(Math.max(0, Math.min(1, Number(value))));
         cell.title = `row ${r}, column ${c}: ${Number(value).toFixed(2)}`;
+        (edges.get(`${r},${c}`) || []).forEach(e => {
+          cell.style[`border${e.side}`] = `2px ${e.on ? "solid" : "dashed"} ${e.colour}`;
+        });
         grid.appendChild(cell);
       }));
       fig.append(cap, grid);
+      if (regions.length) {
+        const key = document.createElement("div");
+        key.className = "region-key";
+        key.innerHTML = regions.map((g, i) =>
+          `<span style="color:${REGION_COLOURS[i % REGION_COLOURS.length]}">${g.on ? "■" : "□"} ${escapeHtml(g.label)}</span>`).join(" ");
+        fig.appendChild(key);
+      }
       return fig;
     }
 
@@ -2290,8 +2409,12 @@
       box.innerHTML = "";
       const f = engineRun && current.engine ? engineRun.frames[frameIndex] : null;
       if (!f) return;
-      box.appendChild(boardFigure(`drawn, tick ${f.t}`, f.drawn));
-      if (engineRun.roots.length > 1) engineRun.roots.forEach((r, i) => box.appendChild(boardFigure(`tree ${i} space`, f.spaces[r])));
+      const show = document.getElementById("motionRegions").checked;
+      const regionsOf = r => show ? (f.motion || []).filter(g => g.tree === r) : [];
+      if (engineRun.roots.length > 1)            // each tree is its own space: no overlay of them
+        engineRun.roots.forEach((r, i) => box.appendChild(boardFigure(`tree ${i}, tick ${f.t}`, f.spaces[r], regionsOf(r))));
+      else
+        box.appendChild(boardFigure(`drawn, tick ${f.t}`, f.drawn, regionsOf(engineRun.roots[0])));
       (engineRun.channels[frameIndex + 1] || []).forEach((img, k) =>
         box.appendChild(boardFigure(`out ${k} (${engineRun.windows[k] || "tree"})`, img)));
     }
@@ -2318,6 +2441,8 @@
       engineMessage(issuesHtml(payload.issues || []) || `<div class="ok">Semantics from ${escapeHtml(payload.engine.config)}.</div>`);
       document.getElementById("loadProgramBtn").addEventListener("click", loadProgram);
       document.getElementById("runEngineBtn").addEventListener("click", runEngine);
+      document.getElementById("engineSubcell").addEventListener("change", () => { if (engineRun) runEngine(); });
+      document.getElementById("motionRegions").addEventListener("change", renderEngineBoards);
       document.getElementById("programText").addEventListener("keydown", e => {
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runEngine(); }
       });

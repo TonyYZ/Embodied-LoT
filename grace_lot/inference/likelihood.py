@@ -288,6 +288,7 @@ class ProbabilisticScanLikelihood:
         return value
 
 
+WARP_MEMO_SIZE = 100        # warp costs are ~2 MB per channel
 MEMO_SIZE = 2_000           # entries per channel / row memo (a few KB each: ~20 MB per worker), then cleared;
                             # 98% of lookups hit at 250 entries, about as many as with no limit
 
@@ -339,24 +340,45 @@ class GaussianScanLikelihood:
     def __init__(self, observations, frames: int, size: int, softness: float, salience: float, background: dict,
                  temperature: float = None, temporal_weight: float = 0.0, draws: int = 256, noise_floor: float = 0.1,
                  noise: dict = None, cache_size: int = 1000, features: str = "max6", phases: int = 1,
-                 shift_radius: int = 0) -> None:
+                 shift_radius: int = 0, timing_sd: float = 0.0, warp_radius: int = 0, warp_slack: float = 0.1) -> None:
         from collections import OrderedDict
         self.features = features                                          # interface.features (scanner.field_features)
         # Latent shift: where the actor sits in the frame relative to the program is unknown by up to
         # ``shift_radius`` cells each way. The program's boards are scored at every whole-cell shift, all of a
         # video's parts together, and the densities averaged (a uniform prior), like the latent phase; cells shifted
         # in from outside are unknown (0.5). Shifted boards need their own features, not their own rollouts.
+        # Timing uncertainty: actors are not in step with a program, nor with each other, within a frame or so. A
+        # prediction mistimed by d frames is off by about d x its rate of change, so with d ~ N(0, timing_sd^2) each
+        # output's variance grows by timing_sd^2 x (its change per frame)^2 (and its changes' by that of their
+        # change). A still output is unaffected; a moving one is no longer charged as if its timing were exact.
+        self.timing_var = float(timing_sd) ** 2
+        # Time warp (a token level, as in Lake et al. 2015): each video is the program performed with its own timing.
+        # Video frame t shows program frame t + o, |o| <= ``warp_radius``, starting in step (o = 0) and advancing
+        # 0, 1 or 2 program frames per video frame (prior: ``warp_slack`` each for 0 and 2). One warp per video and
+        # phase serves all its parts, so the parts' relative timing still counts. Densities are averaged over warps
+        # (forward algorithm), like the phase; the timing variance above is an older stand-in, not used with it.
+        self.warp_radius, self.warp_slack = int(warp_radius), float(warp_slack)
+        if self.warp_radius and self.timing_var:
+            raise ValueError("timing_sd and warp_radius are alternatives")
         r = int(shift_radius)
         self.shifts = [(dy, dx) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
-        O = np.stack(observations).astype(np.float64)                   # (N, T, P, F)
+        O = np.stack(observations).astype(np.float64)                   # (N, T, P, F), or (N, phases, T, P, F)
+        shifted = O.ndim == 5
+        if shifted and O.shape[1] != phases:
+            raise ValueError(f"observations have {O.shape[1]} phases, the likelihood {phases}")
+        O, shifted = (O[:, 0], O) if shifted else (O, None)
         N, T, P, F = O.shape
         self.N, self.phases = N, int(phases)
         # Latent phase: each video is scored at every circular shift of its frames by 0 .. phases - 1 and the
         # densities are averaged (a uniform prior over the phase). Valid when a video's frames are whole cycles,
         # as with preprocess.sampling = "cycle2" (two cycles of 16 frames: phases = 8 covers one cycle). The
-        # shifted copies are scored as videos of their own, (video, phase) in video-major order.
-        self.O = np.concatenate([np.roll(O, -s, axis=1)[:, None] for s in range(self.phases)], axis=1
-                                ).reshape(N * self.phases, T, P, F) if self.phases > 1 else O
+        # shifted copies are scored as videos of their own, (video, phase) in video-major order. Observations
+        # given per phase (preprocess.frame = "world": the cycle shifts, the travel does not) are used as given.
+        if shifted is not None:
+            self.O = shifted.reshape(N * self.phases, T, P, F)
+        else:
+            self.O = np.concatenate([np.roll(O, -s, axis=1)[:, None] for s in range(self.phases)], axis=1
+                                    ).reshape(N * self.phases, T, P, F) if self.phases > 1 else O
         self.dO = np.diff(self.O, axis=1)
         self.P, self.w = P, float(temporal_weight)
         self.temperature = 1.0 / (T * F) if temperature is None else float(temperature)
@@ -368,6 +390,15 @@ class GaussianScanLikelihood:
         self.s2 = np.maximum(noise["s2"], np.maximum(noise_floor * background["var"], 1e-6))     # 1e-6: a numeric guard
         self.s2d = np.maximum(noise["s2d"], np.maximum(noise_floor * background["dvar"], 1e-6))
         self._cache, self._cache_size = OrderedDict(), cache_size
+        if self.warp_radius:
+            offs = np.arange(-self.warp_radius, self.warp_radius + 1)
+            J = np.arange(T)[:, None] + offs                                # (T, B): the program frame shown at t
+            self._warp_J, self._warp_ok = np.clip(J, 0, T - 1), (J >= 0) & (J < T)
+            J2 = J[:-1]                                                     # a change t -> t + 1 from frame t + o by d
+            self._warp_ok_d = np.stack([(J2 >= 0) & (J2 + d <= T - 1) & (np.abs(offs + d - 1) <= self.warp_radius)
+                                        for d in range(3)])                 # (3, T - 1, B)
+            zero = lambda ok: np.where(ok, 0.0, np.inf)
+            self._warp_logZ = float(self._warp_marginal(zero(self._warp_ok), zero(self._warp_ok_d), 1.0))
 
     def moments(self, p) -> list:
         """Per state combination: its weight and the mean / variance of detector activations and changes."""
@@ -457,6 +488,9 @@ class GaussianScanLikelihood:
         row = cache.get(key)
         if row is None:
             mu, var, dmu, dvar = (np.ascontiguousarray(a) for a in (mu, var, dmu, dvar))
+            if self.timing_var:
+                var = var + self.timing_var * np.gradient(mu, axis=0) ** 2
+                dvar = dvar + self.timing_var * (np.gradient(dmu, axis=0) ** 2 if len(dmu) > 1 else 0.0)
             row = self._nll(self.O, mu[:, None], var[:, None], self.s2)[:, 0]
             if self.w:
                 row = row + self.w * self._nll(self.dO, dmu[:, None], dvar[:, None], self.s2d)[:, 0]
@@ -464,6 +498,72 @@ class GaussianScanLikelihood:
                 cache.clear()
             cache[key] = row
         return row
+
+    def _warp_costs(self, mu, var, dmu, dvar):
+        """One output's costs against each part under every warp step, memoised by its moments: position NLL
+        (NS, P, T, B) of video frame t against program frame t + o, and change NLL x temporal_weight
+        (NS, P, 3, T - 1, B) of the video's change t -> t + 1 against the program's from frame t + o over d = 0, 1, 2
+        frames (none, one change, two changes added; their variances added). Impossible steps cost inf."""
+        key = _digest(mu, var, dmu, dvar)
+        cache = self.__dict__.setdefault("_warp_cache", {})
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+        T, F = mu.shape
+        J = self._warp_J
+        o = self.O.transpose(0, 2, 1, 3)[:, :, :, None]                    # (NS, P, T, 1, F)
+        v = var[J] + self.s2                                               # (T, B, F)
+        E = 0.5 * (((o - mu[J]) ** 2) / v + np.log(2 * np.pi * v)).sum(-1)
+        E[..., ~self._warp_ok] = np.inf
+        pad = lambda a: np.concatenate([a, np.zeros((2, F))])
+        dm, dv = pad(dmu), pad(dvar)
+        J2 = J[:-1]
+        cm = np.stack([np.zeros_like(dm[J2]), dm[J2], dm[J2] + dm[J2 + 1]])  # (3, T - 1, B, F)
+        cv = np.stack([np.zeros_like(dv[J2]), dv[J2], dv[J2] + dv[J2 + 1]]) + self.s2d
+        do = self.dO.transpose(0, 2, 1, 3)[:, :, None, :, None]             # (NS, P, 1, T - 1, 1, F)
+        C = self.w * 0.5 * (((do - cm) ** 2) / cv + np.log(2 * np.pi * cv)).sum(-1)
+        C[..., ~self._warp_ok_d] = np.inf
+        if len(cache) > WARP_MEMO_SIZE:
+            cache.clear()
+        cache[key] = (E, C)
+        return E, C
+
+    def _warp_marginal(self, E, C, tau: float) -> np.ndarray:
+        """log sum over warps of prior x exp(-tau x cost): E (..., T, B), C (..., 3, T - 1, B) -> (...)."""
+        B = E.shape[-1]
+        r = B // 2
+        lp = np.log([self.warp_slack, 1 - 2 * self.warp_slack, self.warp_slack])
+        a = np.full(E.shape[:-2] + (B,), -np.inf)
+        a[..., r] = -tau * E[..., 0, r]                                    # in step at the start
+        with np.errstate(invalid="ignore"):
+            for t in range(E.shape[-2] - 1):
+                new = np.full_like(a, -np.inf)
+                for d in range(3):                                         # offset i -> i + d - 1
+                    lo, hi = max(0, 1 - d), min(B, B + 1 - d)
+                    new[..., lo + d - 1:hi + d - 1] = np.logaddexp(
+                        new[..., lo + d - 1:hi + d - 1], a[..., lo:hi] + lp[d] - tau * C[..., d, t, lo:hi])
+                a = new - tau * E[..., t + 1, :]
+        return np.logaddexp.reduce(a, axis=-1)
+
+    def _matched_warped(self, m):
+        """``_matched`` with each video's own timing: the matching from each pair's warp marginal, then one warp
+        shared by the matched pairs; the matched NLL is -log(marginal / prior mass) / temperature."""
+        from scipy.optimize import linear_sum_assignment
+        K, P = m["mu"].shape[1], self.P
+        b = max(0, P - K)
+        keys = ("mu", "var", "dmu", "dvar")
+        rows = [self._warp_costs(*(np.ascontiguousarray(m[key][:, k]) for key in keys)) for k in range(K)]
+        if b:
+            rows += [self._warp_costs(*(np.ascontiguousarray(np.broadcast_to(self.bg[key], m[key][:, 0].shape))
+                                        for key in keys))] * b
+        E, C = np.stack([e for e, _ in rows], axis=1), np.stack([c for _, c in rows], axis=1)   # (NS, K + b, P, ...)
+        pair = self._warp_marginal(E, C, self.temperature)                 # (NS, K + b, P)
+        rc = [linear_sum_assignment(-x) for x in pair]
+        n = np.arange(len(rc))[:, None]
+        r_, c_ = np.array([r for r, _ in rc]), np.array([c for _, c in rc])
+        joint = self._warp_marginal(E[n, r_, c_].sum(axis=1), C[n, r_, c_].sum(axis=1), self.temperature)
+        nll = -(joint - self._warp_logZ) / self.temperature
+        return [(r, c, float(v)) for (r, c), v in zip(rc, nll)]
 
     def _matched(self, m):
         """Per video: (rows, columns, matched NLL); outputs beyond the parts stay unmatched."""
@@ -477,7 +577,7 @@ class GaussianScanLikelihood:
         """(combinations, N) log densities (phase marginalised), and the matchings per (video, phase)."""
         from scipy.special import logsumexp
         ms = self.moments(p)
-        matched = [self._matched(m) for m in ms]
+        matched = [(self._matched_warped if self.warp_radius else self._matched)(m) for m in ms]
         L = -self.temperature * np.array([[nll for _, _, nll in mt] for mt in matched])      # (combinations, N x phases)
         if self.phases > 1:
             L = logsumexp(L.reshape(len(ms), self.N, self.phases), axis=2) - np.log(self.phases)

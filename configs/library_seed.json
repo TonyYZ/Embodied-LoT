@@ -1,0 +1,64 @@
+{
+ "pieces": [
+  {
+   "name": "learned0",
+   "tree": "(parallel (serial_h (parallel ? ? (body ?)) (parallel ? ?) (parallel ? ?)) out)",
+   "edges": ".0.0.1>.0.0.0 .0.1.1>.0.1.0 .0.2.1>.0.2.0",
+   "source": "learned 30 Oct by compression of the best limb units of bowing, jumping, swinging (training actors; saves 145 nats over 4 uses)"
+  },
+  {
+   "name": "learned1",
+   "tree": "(parallel ? ? out)",
+   "edges": "",
+   "source": "learned 30 Oct by compression of the best limb units of bowing, jumping, scurrying, swinging (training actors; saves 48 nats over 9 uses)"
+  },
+  {
+   "name": "learned2",
+   "tree": "(parallel ? ? (body ?))",
+   "edges": ".1>.0",
+   "source": "learned 30 Oct by compression of the best limb units of jumping, shuffling (training actors; saves 40 nats over 4 uses)"
+  },
+  {
+   "name": "learned3",
+   "tree": "(field ? ? out)",
+   "edges": "",
+   "source": "learned 30 Oct by compression of the best limb units of bowing, jumping, scurrying, shuffling (training actors; saves 30 nats over 6 uses)"
+  },
+  {
+   "name": "learned4",
+   "tree": "(parallel ? ?)",
+   "edges": ".1>.0",
+   "source": "learned 30 Oct by compression of the best limb units of jumping, shuffling (training actors; saves 30 nats over 5 uses)"
+  },
+  {
+   "name": "learned5",
+   "tree": "(body ? out)",
+   "edges": "",
+   "source": "learned 30 Oct by compression of the best limb units of scurrying, shuffling, swinging (training actors; saves 14 nats over 5 uses)"
+  },
+  {
+   "name": "learned6",
+   "tree": "(body ? ? out)",
+   "edges": "",
+   "source": "learned 30 Oct by compression of the best limb units of bowing, scurrying (training actors; saves 5 nats over 2 uses)"
+  },
+  {
+   "name": "oscillator",
+   "tree": "(serial_h (parallel bottom/H* center/H) (parallel top/H* center/H (body center/H)))",
+   "edges": ".0.1>.0.0 .1.1>.1.0",
+   "source": "hand-built: the playground's self-observing oscillator (each half's observer switches its push)"
+  },
+  {
+   "name": "diagonal_shuttle",
+   "tree": "(serial_v (serial_h neutral/V (parallel (parallel top/H* bottom/V*) center/V)) (serial_h (parallel (body ?) (parallel bottom/H* top/V*) center/V) neutral/V))",
+   "edges": ".1.0.2>.1.0.1.0 .1.0.2>.1.0.1.1 .0.1.1>.0.1.0.0 .0.1.1>.0.1.0.1",
+   "source": "hand-built 30 Oct (user's design): a body shuttles between the top-left and bottom-right cells, each cell's observer switching its pushes"
+  },
+  {
+   "name": "vertical_pair",
+   "tree": "(serial_v (parallel (body ?) bottom/V*) top/V*)",
+   "edges": "",
+   "source": "hand-built 30 Oct: a body between two stacked strips pushing up and down, for gating from outside"
+  }
+ ]
+}

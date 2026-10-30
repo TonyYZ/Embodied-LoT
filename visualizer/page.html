@@ -19,27 +19,43 @@
         <div class="meta" id="frameMeta"></div>
       </div>
     </header>
-    <main>
-      <svg id="graph" role="img" aria-label="Concept graph visualization">
-        <defs>
-          <marker id="arrowSolid" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L0,6 L9,3 z"></path>
-          </marker>
-          <marker id="arrowDashed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L0,6 L9,3 z"></path>
-          </marker>
-        </defs>
-        <g id="edges"></g>
-        <g id="nodes"></g>
-        <g id="marquee"></g>
-      </svg>
-    </main>
-    <aside>
-      <div class="toolbar">
+    <aside class="code-pane">
+      <!-- v7 engine card -->
+      <div class="card" id="enginePanel">
+        <div class="card-title">Program</div>
+        <div class="stack">
+          <div class="row"><label for="engineExamples">example</label><select id="engineExamples"></select></div>
+          <textarea id="programText" spellcheck="false" aria-label="v7 program" placeholder="(parallel center/V universal/V* out)"></textarea>
+          <div class="row"><label for="engineTicks">ticks</label><input id="engineTicks" type="number" min="1" max="80" value="24"></div>
+          <div class="row"><label for="engineSubcell">sub-cell</label>
+            <select id="engineSubcell" title="Draw this many times finer, then pool back: content smaller than a cell is claimed as strongly as it covers the cell">
+              <option value="1">1 (whole cells)</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+            </select>
+          </div>
+          <div class="engine-buttons">
+            <button id="loadProgramBtn" title="Build the graph from the program text">Load Program</button>
+            <button id="graphToProgramBtn" title="Write the edited graph as program text">Graph → Program</button>
+            <button id="runEngineBtn" class="primary" title="Run the program on the real engine and replay its ticks">Run on Engine</button>
+          </div>
+          <div id="engineUnits"></div>
+          <div id="engineMsgs" class="note"></div>
+        </div>
+      </div>
+      <!-- What the engine draws, tick by tick -->
+      <div class="card" id="renderPanel">
+        <div class="card-title">Rendered</div>
+        <div class="toolbar player">
         <button id="prevBtn" title="Previous recorded state">Prev</button>
         <button id="playBtn" class="primary" title="Replay recorded states">Play</button>
         <button id="nextBtn" title="Next recorded state">Next</button>
         <input id="timeline" class="timeline" type="range" min="0" max="0" value="0">
+        </div>
+        <label class="motion-toggle" title="Outline where each moving leaf acts: solid while it acts, dashed while it is off"><input id="motionRegions" type="checkbox" style="width:auto"> motion regions</label>
+        <div id="engineBoards" class="engine-boards"></div>
+      </div>
+    </aside>
+    <main class="tree-pane">
+      <div class="toolbar tree-tools">
         <label><input id="solidToggle" type="checkbox" checked> solid</label>
         <label><input id="dashedToggle" type="checkbox" checked> dashed</label>
         <label><input id="floatToggle" type="checkbox"> auto layout</label>
@@ -78,24 +94,21 @@
         <button id="removeBtn" class="danger" title="Remove selected node or edge">Remove</button>
         <button id="layoutBtn" title="Reset node positions">Layout</button>
       </div>
-      <!-- v7 engine card -->
-      <div class="card" id="enginePanel">
-        <div class="card-title">v7 Engine</div>
-        <div class="stack">
-          <div class="row"><label for="engineExamples">example</label><select id="engineExamples"></select></div>
-          <textarea id="programText" spellcheck="false" aria-label="v7 program" placeholder="(parallel center/V universal/V* out)"></textarea>
-          <div class="row"><label for="engineTicks">ticks</label><input id="engineTicks" type="number" min="1" max="80" value="24"></div>
-          <div class="engine-buttons">
-            <button id="loadProgramBtn" title="Build the graph from the program text">Load Program</button>
-            <button id="graphToProgramBtn" title="Write the edited graph as program text">Graph → Program</button>
-            <button id="runEngineBtn" class="primary" title="Run the program on the real engine and replay its ticks">Run on Engine</button>
-          </div>
-          <div id="engineUnits"></div>
-          <div id="engineMsgs" class="note"></div>
-          <div id="engineBoards" class="engine-boards"></div>
-        </div>
-      </div>
-
+      <svg id="graph" role="img" aria-label="Concept graph visualization">
+        <defs>
+          <marker id="arrowSolid" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z"></path>
+          </marker>
+          <marker id="arrowDashed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z"></path>
+          </marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="nodes"></g>
+        <g id="marquee"></g>
+      </svg>
+      <details class="more">
+        <summary>More: node and edge, fields, patterns, export, legend</summary>
       <!-- Selection card -->
       <div class="card">
         <div class="card-title">Node / Edge</div>
@@ -199,7 +212,8 @@
         <div class="card-title">Code View</div>
         <pre id="details">Select a node or edge.</pre>
       </div>
-    </aside>
+      </details>
+    </main>
   </div>
   <script id="lot-data" type="application/json">{"version":1,"name":"Example: (parallel center/V universal/V* out)","base":{"label":"example","graph_name":"program","engine":true,"nodes":[{"id":"n2","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[0,1,0],"pattern_name":"center","orientation":"vertical","dynamic":false,"role":"imagined"},{"id":"n3","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[1,1,1],"pattern_name":"universal","orientation":"vertical","dynamic":true,"role":"imagined"},{"id":"n4","type":"out","class":"WindowNode","activation":0.0,"gate":1.0,"children":[],"role":"imagined"},{"id":"n1","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["n2","n3","n4"],"inherited_weight":1.0,"role":"imagined"},{"id":"par_O","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["O","n1"],"inherited_weight":1.0,"role":"imagined"},{"id":"O","type":"return","class":"OutputNode","activation":1.0,"gate":1.0,"children":[],"role":"imagined"}],"result":0.0,"edges":[{"source":"n1","target":"n2","type":"solid"},{"source":"n1","target":"n3","type":"solid"},{"source":"n1","target":"n4","type":"solid"},{"source":"par_O","target":"O","type":"solid"},{"source":"par_O","target":"n1","type":"solid"}],"roots":["par_O"]},"frames":[{"label":"example","graph_name":"program","engine":true,"nodes":[{"id":"n2","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[0,1,0],"pattern_name":"center","orientation":"vertical","dynamic":false,"role":"imagined"},{"id":"n3","type":"object","class":"ObjectNode","activation":0.0,"gate":1.0,"children":[],"pattern":[1,1,1],"pattern_name":"universal","orientation":"vertical","dynamic":true,"role":"imagined"},{"id":"n4","type":"out","class":"WindowNode","activation":0.0,"gate":1.0,"children":[],"role":"imagined"},{"id":"n1","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["n2","n3","n4"],"inherited_weight":1.0,"role":"imagined"},{"id":"par_O","type":"parallel","class":"ParallelNode","activation":0.0,"gate":1.0,"children":["O","n1"],"inherited_weight":1.0,"role":"imagined"},{"id":"O","type":"return","class":"OutputNode","activation":1.0,"gate":1.0,"children":[],"role":"imagined"}],"result":0.0,"edges":[{"source":"n1","target":"n2","type":"solid"},{"source":"n1","target":"n3","type":"solid"},{"source":"n1","target":"n4","type":"solid"},{"source":"par_O","target":"O","type":"solid"},{"source":"par_O","target":"n1","type":"solid"}],"roots":["par_O"]}],"icon_sprites":{},"program":"(parallel center/V universal/V* out)"}</script>
   <script src="viewer.js"></script>

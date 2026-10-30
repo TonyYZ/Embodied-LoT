@@ -109,8 +109,9 @@ def _semantics() -> tuple:
     return tuple((k, v) for k, v in vars(E).items() if k.isupper() and isinstance(v, (bool, int, float, str)))
 
 
-def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> np.ndarray:
-    """``rollout_whole``, assembled from independently rolled-out and cached components.
+def rollout(program: P, frames: int, size: int, motion_states: dict = None, claims: bool = False):
+    """``rollout_whole``, assembled from independently rolled-out and cached components. With ``claims``, also how
+    strongly each output cell is claimed: a pair (values, strengths) of the same shape.
 
     Trees joined by no dashed edge never affect each other (separate spaces; unknown motion is a latent, not a
     push seeded by node ids), so each component's output windows are rolled out on their own, memoised, and put
@@ -118,15 +119,16 @@ def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> n
     """
     prog = as_program(program)
     if prog.tree.kind != OUTPUTS or len(prog.tree.children) < 2:
-        return rollout_whole(program, frames, size, motion_states)
+        return rollout_whole(program, frames, size, motion_states, claims)
     comps = _components(prog)
     channels = [p for p, q in nodes(prog.tree) if q.kind == OUT]
     if len(comps) < 2 or not channels:
-        return rollout_whole(program, frames, size, motion_states)
+        return rollout_whole(program, frames, size, motion_states, claims)
     ids = _id_paths(prog)
     states = {k: v for k, v in (motion_states or {}).items()}
     sem = _semantics()
     out = np.empty((frames, len(channels), size, size))
+    out_c = np.empty_like(out) if claims else None
     where = {}                                            # root index -> (component, its index there)
     for c, (idx, _) in enumerate(comps):
         for j, k in enumerate(idx):
@@ -143,11 +145,11 @@ def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> n
             path = ids[unit]
             if path[0] in idx:
                 sub_states[f"{sub_ids[(idx.index(path[0]),) + path[1:]]}:{kind}"] = value
-        ckey = (sub, tuple(sorted(sub_states.items())), frames, size, sem)
+        ckey = (sub, tuple(sorted(sub_states.items())), frames, size, sem, claims)
         v = _component_cache.get(ckey)
         if v is None:
-            v = rollout_whole(sub, frames, size, sub_states)
-            v = v if v.ndim == 4 else v[:, None]
+            v = rollout_whole(sub, frames, size, sub_states, claims)
+            v = tuple(x if x.ndim == 4 else x[:, None] for x in v) if claims else (v if v.ndim == 4 else v[:, None])
             _component_cache[ckey] = v
             if len(_component_cache) > COMPONENT_CACHE_SIZE:
                 _component_cache.popitem(last=False)
@@ -157,11 +159,14 @@ def rollout(program: P, frames: int, size: int, motion_states: dict = None) -> n
     for i, p in enumerate(channels):
         c, j = where[p[0]]
         v, index = rolled[c]
-        out[:, i] = v[:, index[(j,) + p[1:]]]
-    return out
+        if claims:
+            out[:, i], out_c[:, i] = v[0][:, index[(j,) + p[1:]]], v[1][:, index[(j,) + p[1:]]]
+        else:
+            out[:, i] = v[:, index[(j,) + p[1:]]]
+    return (out, out_c) if claims else out
 
 
-def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None) -> np.ndarray:
+def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None, claims: bool = False):
     """Rendered output fields: (T, H, W) for one output, or (T, K, H, W) for a K-channel program.
 
     The rollout is deterministic. If the state (body positions, gates,
@@ -178,7 +183,7 @@ def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None
         graph.motion_states = dict(motion_states)   # this realization of the unknown motion
     windows = graph.windows()
     if windows:                       # output leaves: channel k = the board inside window k's region
-        return _window_rollout(graph, [w.node_id for w in windows], frames, size)
+        return _window_rollout(graph, [w.node_id for w in windows], frames, size, claims)
     roots = output_roots(program)
     multi = getattr(program, "tree", program).kind == "outputs"
     out = np.empty((frames, len(roots), size, size) if multi else (frames, size, size))
@@ -194,10 +199,10 @@ def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None
         frame = [graph.render_output((size, size), output_root_id=r, place_bodies=True).activation for r in roots]
         out[t] = np.stack(frame) if multi else frame[0]
         graph.step()
-    return out
+    return (out, np.abs(2 * out - 1)) if claims else out      # (no windows: strength read off the values)
 
 
-def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
+def _window_rollout(graph, ids, frames: int, size: int, claims: bool = False):
     """(T, K, size, size): each output window's own region, in its own frame, stretched to the full grid.
 
     An output is only the region its window occupies: its tree's space inside the window (carried into
@@ -209,6 +214,7 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
     from embodied_lot import ReceptiveField, _view_field, blank_board
     tree = graph.tree_index()
     out = np.empty((frames, len(ids), size, size))
+    out_c = np.empty_like(out) if claims else None
     seen, stretch = {}, {}
     for t in range(frames):
         sig = _state_signature(graph)
@@ -216,12 +222,15 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
             period = t - seen[sig]
             for u in range(t, frames):
                 out[u] = out[u - period]
+                if claims:
+                    out_c[u] = out_c[u - period]
             break
         seen[sig] = t
         if t:                                         # the step has just drawn this state
             spaces = graph._spaces
         else:
             spaces = graph._render_all()[0]
+        strengths = graph._space_claims
         views = graph.node_views((size, size))        # memoised: recomputed only if something moved
         fields = {}                                   # one field per space this frame
         for k, i in enumerate(ids):
@@ -229,6 +238,8 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
             vs = views.get(i)
             if not vs:                                  # a window with no region shows nothing known
                 out[t, k] = blank_board((size, size))
+                if claims:
+                    out_c[t, k] = 0.0
                 continue
             _, chain, rect = max(vs, key=lambda v: v[0])
             if id(space) not in fields:
@@ -238,8 +249,10 @@ def _window_rollout(graph, ids, frames: int, size: int) -> np.ndarray:
             if (h, w) not in stretch:
                 stretch[h, w] = np.ix_(np.arange(size) * h // size, np.arange(size) * w // size)
             out[t, k] = local[stretch[h, w]]
+            if claims:
+                out_c[t, k] = _view_field(ReceptiveField(strengths[tree[i]]), chain, rect).activation[stretch[h, w]]
         graph.step()
-    return out
+    return (out, out_c) if claims else out
 
 
 class LotRenderer:

@@ -31,6 +31,7 @@ salient points depends on the modality.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Dict, List
 
@@ -191,8 +192,11 @@ def feature_background(cfg: dict) -> dict:
                                 .transpose(1, 0, 2) for b in boards])
         d = np.diff(feats, axis=1)                                                     # feats: (M, T, 6)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(path, mu=feats.mean(axis=(0, 1)), var=feats.var(axis=(0, 1)), dmu=d.mean(axis=(0, 1)),
-                            dvar=d.var(axis=(0, 1)),
-                            boards=np.concatenate([b.transpose(1, 0, 2, 3) for b in boards]).astype(bool))
+        tmp = path.with_name(f"{path.stem}.{os.getpid()}.tmp")       # written whole, then moved: parallel workers
+        with open(tmp, "wb") as f:                                   # never read half a file
+            np.savez_compressed(f, mu=feats.mean(axis=(0, 1)), var=feats.var(axis=(0, 1)), dmu=d.mean(axis=(0, 1)),
+                                dvar=d.var(axis=(0, 1)),
+                                boards=np.concatenate([b.transpose(1, 0, 2, 3) for b in boards]).astype(bool))
+        os.replace(tmp, path)
     with np.load(path) as z:
         return {k: z[k].astype(np.float64) if k != "boards" else z[k] for k in z.files}

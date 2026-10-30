@@ -21,6 +21,8 @@ so their q terms include the move weights.
 | unwrap        | replace a single-child composition by its child           | paired with wrap                 |
 | add_child     | insert a generated subtree as a new child                 | paired with remove_child         |
 | remove_child  | delete a child subtree (no dashed edges inside)           | paired with add_child            |
+| lib_insert    | replace a subtree (no dashed edges) by a library piece    | paired with lib_remove           |
+| lib_remove    | replace a library piece (its own edges only) by a sample  | (``inference.library``)          |
 
 Dashed edges follow their nodes when paths shift (wrap, unwrap, add/remove
 child, swap). Moves that would orphan an edge are not offered, so every move
@@ -253,7 +255,9 @@ MOVES = {"regenerate": regenerate, "leaf": change_leaf, "composition": change_co
          "swap": swap_siblings,
          "add_dashed": add_dashed, "remove_dashed": remove_dashed,
          "wrap": wrap, "unwrap": unwrap, "add_child": add_child, "remove_child": remove_child}
-PAIRED = [("add_dashed", "remove_dashed"), ("wrap", "unwrap"), ("add_child", "remove_child")]
+from grace_lot.inference.library import lib_insert, lib_remove   # (after the moves it does not use)
+MOVES.update(lib_insert=lib_insert, lib_remove=lib_remove)
+PAIRED = [("add_dashed", "remove_dashed"), ("wrap", "unwrap"), ("add_child", "remove_child"), ("lib_insert", "lib_remove")]
 
 
 class ProposalMixture:

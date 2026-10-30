@@ -72,7 +72,8 @@ def main() -> None:
     for r in map(Path, args.runs):
         cfg = load_config(args.config)
         run_cfg = json.loads((r / "config.json").read_text())
-        cfg["inference"] = run_cfg["inference"]                      # the run's own settings and language
+        for k in ("preprocess", "interface", "split", "inference"):     # the run's own settings and language
+            cfg[k] = run_cfg.get(k, cfg[k])
         cfg["lot"] = saved_lot(run_cfg["lot"])
         apply_semantics(cfg["lot"])
         res = evaluate(cfg, r, args.draws)
