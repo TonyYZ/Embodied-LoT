@@ -123,6 +123,12 @@ ONSET_THRESHOLD = 0.5      # a motion leaf is on when its activation passes this
 # a whole cell. A lone band's line stays one board cell thick (thinner only where its region is). Motion, bodies and
 # substance stay on the board. 1: whole cells, as before.
 SUBCELL = 1
+# An output window's output. Off: its region stretched to the full board (it loses its size and place). On: the board with
+# only that region shown, where it is; every other cell unclaimed.
+WINDOW_CROP = False
+# Moving below the board's resolution. With FINE_MOTION = s > 1 a program runs on a board s times finer, so a tick's move is
+# 1/s of a board cell; lines stay a board cell thick, and each output is averaged back to the board.
+FINE_MOTION = 1
 
 
 def _clip(region: "Region", shape: Tuple[int, int]) -> "Region":
@@ -139,6 +145,49 @@ def _lone_bands(pattern) -> set:
         return set()
     fig = [b > 0.5 for b in pattern]
     return {i for i, f in enumerate(fig) if f and not (i > 0 and fig[i - 1]) and not (i + 1 < len(fig) and fig[i + 1])}
+
+
+@lru_cache(maxsize=256)
+def _blank(h: int, w: int) -> np.ndarray:
+    """A shared all-ones canvas, read-only."""
+    out = np.ones((h, w))
+    out.flags.writeable = False
+    return out
+
+
+@lru_cache(maxsize=8192)
+def _leaf_cells(pattern, n_bands: int, orientation: "Orientation", region: "Region", shape: Tuple[int, int], thick: int):
+    """What a still leaf draws in ``region``: its cells (shared, read-only), its bands' (cells, bit), whether it is
+    pure, and whether any cell is on the canvas. A pure leaf claims every band (its centre axis), others their figure."""
+    pure = len(set(pattern)) == 1
+    lone = set() if pure else _lone_bands(pattern)
+    mask, bands = np.zeros(shape, dtype=bool), []
+    for i, bit in enumerate(pattern):
+        if pure or bit > 0.5:
+            cells = _clip(_band_line(region, i, n_bands, orientation, thick) if i in lone
+                          else band_region(region, i, n_bands, orientation), shape)
+            mask[cells[0]:cells[1], cells[2]:cells[3]] = True
+            bands.append((cells, bit))
+    mask.flags.writeable = False
+    return mask, tuple(bands), pure, bool(mask.any())
+
+
+@lru_cache(maxsize=8192)
+def _leaf_home(pattern, n_bands: int, orientation: "Orientation", region: "Region", shape: Tuple[int, int], thick: int,
+               dr: int, dc: int) -> np.ndarray:
+    """A still leaf's cells moved back by (dr, dc) to where the enclosing body started (shared, read-only)."""
+    out = _moved_home(_leaf_cells(pattern, n_bands, orientation, region, shape, thick)[0], dr, dc)
+    out.flags.writeable = False
+    return out
+
+
+def _moved_home(cells: np.ndarray, dr: int, dc: int) -> np.ndarray:
+    """``cells`` moved by (dr, dc); what leaves the canvas is dropped."""
+    rs, cs = np.nonzero(cells)
+    keep = (rs + dr >= 0) & (rs + dr < cells.shape[0]) & (cs + dc >= 0) & (cs + dc < cells.shape[1])
+    out = np.zeros_like(cells)
+    out[rs[keep] + dr, cs[keep] + dc] = True
+    return out
 
 
 def _band_line(region: "Region", i: int, n: int, orientation: "Orientation", thick: int = 1) -> "Region":
@@ -180,6 +229,17 @@ def _spawned(node, ikey: tuple, instances) -> List[tuple]:
 
 _MOTION_KIND = {"top": "bulk", "bottom": "bulk", "upper": "gradient", "lower": "gradient",
                 "center": "out", "periphery": "in", "universal": "random"}
+
+
+def _spawn_index(instances) -> Dict[tuple, List[tuple]]:
+    """Template position -> the keys of the instances a field spawned there, in ``_spawned``'s order."""
+    out: Dict[tuple, List[tuple]] = {}
+    for k in instances:
+        if len(k) >= 2 and k[-2] == "s":
+            out.setdefault(k[:-2], []).append(k)
+    for keys in out.values():
+        keys.sort(key=lambda k: k[-1])
+    return out
 
 
 def _sg(node) -> float:
@@ -239,22 +299,62 @@ def _claim_values(claims: list, shape: Tuple[int, int], boundary=frozenset()) ->
 _claims_memo: Dict[tuple, tuple] = {}
 
 
-def _claim_values_of(claims: list, shape: Tuple[int, int], boundary) -> Tuple[np.ndarray, np.ndarray]:
+def _claim_values_in(claims: list, shape: Tuple[int, int], boundary, crop: "Region") -> Tuple[np.ndarray, np.ndarray]:
+    """``_claim_values`` read only in ``crop``. A cell's value depends only on the claims covering it and on the
+    extents of their leaves, which all the claims make; a claim missing a cell adds 0 to its sums and 1 to its
+    products, so leaving out the claims that miss the crop changes no bit of it."""
+    r0, r1, c0, c1 = crop
+    extent: Dict[str, np.ndarray] = {}
+    seen, near = set(), []
+    for c in claims:
+        k = (c[4], id(c[3]))
+        if k not in seen:                        # (copies of a leaf mostly share their home cells)
+            seen.add(k)
+            extent[c[4]] = extent[c[4]] | c[3] if c[4] in extent else c[3]
+        cells = c[0][r0:r1, c0:c1]
+        if cells.any():
+            near.append((cells, c[1] if np.isscalar(c[1]) else c[1][r0:r1, c0:c1],
+                         c[2] if np.isscalar(c[2]) else c[2][r0:r1, c0:c1], c[3], c[4], c[5]))
+    if not near:
+        return np.full((r1 - r0, c1 - c0), 0.5), np.zeros((r1 - r0, c1 - c0))
+    shape = (r1 - r0, c1 - c0)
+    if not all(np.isscalar(c[1]) and np.isscalar(c[2]) for c in near):
+        return _claim_values_of(near, shape, boundary, extent)
+    if len(near) == 1:                           # one claim: nothing to be nested in
+        key = (shape, near[0][0].tobytes(), near[0][1], near[0][2])
+    else:                                        # all that composing them reads
+        key = (shape, tuple((c[0].tobytes(), c[1], c[2], extent[c[4]].tobytes(), c[5], c[4] in boundary) for c in near))
+    hit = _near_claims.get(key)
+    if hit is None:
+        if len(_near_claims) > 4096:
+            _near_claims.clear()
+        hit = _near_claims[key] = _claim_values_of(near, shape, boundary, extent)
+    return hit[0].copy(), hit[1].copy()
+
+
+_near_claims: Dict[tuple, tuple] = {}
+
+
+def _claim_values_of(claims: list, shape: Tuple[int, int], boundary, extent: Dict[str, np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
     M = np.array([c[0] for c in claims])                                     # (n, H, W) cells
     V, w = (_per_claim([c[k] for c in claims], shape) for k in (1, 2))
-    extent: Dict[str, np.ndarray] = {}
-    for c in claims:
-        extent[c[4]] = extent[c[4]] | c[3] if c[4] in extent else c[3]
-    P = np.array([extent[c[4]].ravel() for c in claims])                     # (n, H * W) the leaf's extent
-    outside = (P[:, None, :] & ~P[None, :, :]).any(-1)                       # [i, j]: some of i's cells not j's
-    moved = np.array([c[5] for c in claims])
-    first = moved[:, None] & ~moved[None, :]                                 # [i, j]: i moved, j did not
-    inside = ((~outside & outside.T) | first) & ~first.T                     # [i, j]: i is nested in j
-    if boundary:                                 # a field's claims outrank everything they cover
-        b = np.array([c[4] in boundary for c in claims])
-        over = b[:, None] & ~b[None, :]
-        inside = (inside | over) & ~over.T
-    depth = (inside.astype(int) @ M.reshape(len(claims), -1).astype(int)).reshape(M.shape)
+    if extent is None:
+        extent = {}
+        for c in claims:
+            extent[c[4]] = extent[c[4]] | c[3] if c[4] in extent else c[3]
+    if len(claims) == 1:                         # nothing to be nested in
+        depth = np.zeros(M.shape, dtype=int)
+    else:
+        P = np.array([extent[c[4]].ravel() for c in claims])                 # (n, H * W) the leaf's extent
+        outside = (P[:, None, :] & ~P[None, :, :]).any(-1)                   # [i, j]: some of i's cells not j's
+        moved = np.array([c[5] for c in claims])
+        first = moved[:, None] & ~moved[None, :]                             # [i, j]: i moved, j did not
+        inside = ((~outside & outside.T) | first) & ~first.T                 # [i, j]: i is nested in j
+        if boundary:                             # a field's claims outrank everything they cover
+            b = np.array([c[4] in boundary for c in claims])
+            over = b[:, None] & ~b[None, :]
+            inside = (inside | over) & ~over.T
+        depth = (inside.astype(int) @ M.reshape(len(claims), -1).astype(int)).reshape(M.shape)
     v = np.full(shape, 0.5)
     for d in np.unique(depth[M]):
         ws = w * (M & (depth == d))
@@ -308,7 +408,7 @@ def _stuff_run(S: dict, cells: np.ndarray, dy: int, dx: int, against: np.ndarray
         run |= ahead
     lands = lambda m: _moved_mask(m, -dy, -dx)                # the cells whose target is in m
     blocked = run & (lands(against & ~run) | _held(S, drive))   # (it may leave the board)
-    while True:
+    while blocked.any():
         more = run & lands(blocked) & ~blocked
         if not more.any():
             break
@@ -823,6 +923,7 @@ class InWindowNode(Node):
         return 0.0
 
 
+_MISSING = object()
 _WINDOW_LEAVES = (WindowNode, InWindowNode)       # read or write a region; never scanned or averaged
 
 
@@ -1287,12 +1388,17 @@ class ConceptGraph:
 
     def _meta(self, name: str, build):
         """Structure-derived metadata (roots, parents, roles ...), rebuilt only after the structure changes."""
-        key = (self._version, len(self._nodes), len(self._solid), len(self._dashed), id(self._solid), id(self._dashed))
-        if key != self._meta_key:
-            self._meta_key, self._meta_cache = key, {}
-        if name not in self._meta_cache:
-            self._meta_cache[name] = build()
-        return self._meta_cache[name]
+        k = self._meta_key
+        if (k is None or k[0] != self._version or k[1] != len(self._nodes) or k[2] != len(self._solid)
+                or k[3] != len(self._dashed) or k[4] != id(self._solid) or k[5] != id(self._dashed)):
+            self._meta_key = (self._version, len(self._nodes), len(self._solid), len(self._dashed), id(self._solid),
+                              id(self._dashed))
+            self._meta_cache = {}
+        cache = self._meta_cache
+        hit = cache.get(name, _MISSING)
+        if hit is _MISSING:
+            hit = cache[name] = build()
+        return hit
 
     # -- construction / access ----------------------------------------
 
@@ -1569,12 +1675,14 @@ class ConceptGraph:
             bodies = [n for n in self._nodes.values() if isinstance(n, BodyNode) and not isinstance(n, PlanNode)]
             templates = [t for n in self._nodes.values() if isinstance(n, BodyNode)
                          for t in content_children(n)[:-1]]
-            return bodies, templates
-        bodies, templates = self._meta("view_inputs", build)
+            turning = [n for t in templates for n in walk(t)     # what ``_facing`` reads: same gates, same facing
+                       if (n.is_dynamic if isinstance(n, ObjectNode) else bool(getattr(n, "children", ())))]
+            return bodies, templates, turning
+        bodies, templates, turning = self._meta("view_inputs", build)
         tokens = tuple((t.node_id, None if t.position is None else tuple(t.position)) for t in self._group_tokens())
         return (tuple((None if b.position is None else tuple(b.position), None if b.extent is None else tuple(b.extent))
                       for b in bodies),
-                tuple(t.gate for t in templates), tuple(_facing(t) for t in templates), tokens)
+                tuple(t.gate for t in templates), tuple(n.gate for n in turning), tokens)
 
     def _group_tokens(self) -> List["GroupToken"]:
         """Every instance of every field and body."""
@@ -1757,6 +1865,35 @@ class ConceptGraph:
         """The part of ``_draw_key`` the claims of only the nodes ``ids`` depend on: the gates that weigh them (theirs,
         the structures above them and those structures' templates), the placement of the units above or among them,
         and the input fields. Trails and substance are not claims of theirs."""
+        return self._placement_key(*self._only_nodes(root_id, ids)[:4])
+
+    def _instance_nodes(self, root_id: str, ids: frozenset) -> Dict[str, list]:
+        """In a drawing of only ``ids``: for each field or body none of whose drawn content is another unit or an input,
+        the nodes whose gates an instance's claims depend on (units it does not draw are left out)."""
+        def build():
+            drawn, out = self._only_nodes(root_id, ids)[4], {}
+            unit = lambda m: isinstance(m, InWindowNode) or (isinstance(m, BodyNode) and not isinstance(m, PlanNode))
+
+            def inner(n, top):
+                ns, simple = [n], True
+                for c in n.children:
+                    if unit(c) and c.node_id not in drawn:
+                        continue                 # not drawn here, nor anything in it
+                    sub, ok = inner(c, False)
+                    ns += sub
+                    simple = simple and ok
+                return ns, simple and (top or not (unit(n) and n.node_id in drawn))
+            for n in self._nodes.values():
+                if isinstance(n, GroupNode) and n.node_id in drawn:
+                    ns, simple = inner(n, True)
+                    if simple:
+                        out[n.node_id] = ns
+            return out
+        return self._meta(("stamp", root_id, ids), build)
+
+    def _only_nodes(self, root_id: str, ids: frozenset) -> tuple:
+        """For a drawing of only ``ids``: the nodes whose gates weigh it, its bodies, groups and input windows, and the
+        ids of the nodes on a path to its leaves (nothing elsewhere in the tree draws in it)."""
         def build():
             def visit(n):                        # the nodes on a path to one of ``ids``
                 below = [visit(c) for c in n.children]
@@ -1768,8 +1905,9 @@ class ConceptGraph:
             visit(self._nodes[root_id])
             return (held + [c for n in held for c in n.children],
                     [n for n in held if isinstance(n, BodyNode) and not isinstance(n, PlanNode)],
-                    [n for n in held if isinstance(n, GroupNode)], [n for n in held if isinstance(n, InWindowNode)])
-        return self._placement_key(*self._meta(("only", root_id, ids), build))
+                    [n for n in held if isinstance(n, GroupNode)], [n for n in held if isinstance(n, InWindowNode)],
+                    frozenset(n.node_id for n in held))
+        return self._meta(("only", root_id, ids), build)
 
     def _placement_key(self, gated, bodies, groups, inputs) -> tuple:
         """A drawing's cache key: the structure, the gates of ``gated``, where the bodies and the groups' instances
@@ -1916,12 +2054,16 @@ class ConceptGraph:
         if keyed_views:
             self._issue_substance(node, kind, a, keyed_views, bodies_at, root.node_id, meta, units)
 
-    def _unit_figures(self, root: str, pad: int = 0):
-        """Every unit of a tree (bodies, not fields): its board cells, where it more likely than not
-        is (else where it most likely is), and how likely it is at each cell. With ``pad``, on the board
-        grown by ``pad`` cells on every side, a unit past the edge whole: it is solid there too."""
-        def figure(u, cells, values):
-            v, c = values
+    def _unit_figures(self, root: str) -> Dict[str, np.ndarray]:
+        """Every unit of a tree on the board: where it more likely than not is (``_unit_crops``)."""
+        return {b: fig for b, (_, _, fig, _) in self._unit_crops(root).items()}
+
+    def _unit_crops(self, root: str, whole: bool = False) -> Dict[str, tuple]:
+        """Every unit of a tree (bodies, not fields) as (row, column, fig, cover): the board cell its arrays start at and,
+        over its cells, where it more likely than not is (else where it most likely is) and how likely it is at each
+        cell. With ``whole``, a unit past the edge whole, row and column off the board: it is solid there too. Units can
+        be far past the edge, so nothing here spans the space between them."""
+        def figure(cells, v, c):
             solid = (_claimed_value(v, c) > 0.5) & cells
             likely = solid & (c > 0.5)
             fig = likely if likely.any() or not solid.any() else solid & (c >= c[solid].max() - 1e-9)
@@ -1929,49 +2071,58 @@ class ConceptGraph:
         views = self.node_views(self.grid)                   # (views first: they may place new copies)
         units = self._tokens()
         node_of = lambda b: getattr(units[b], "node", units[b])
-        rects = self._moving_bodies(views, rects=True) if pad else {}
-        win, own, cover = {}, {}, {}
+        rects = self._moving_bodies(views, rects=True) if whole else {}
+        out, bases = {}, {}
         for b, (chain, _, cells) in self._moving_bodies(views).items():
-            if b not in units or not (pad or cells.any()):        # (a copy spawned this tick is not a unit yet)
+            if b not in units or not (whole or cells.any()):      # (a copy spawned this tick is not a unit yet)
                 continue
             u = node_of(b)
             if self.tree_index().get(u.node_id) != root or isinstance(u, FieldNode):
                 continue
-            if pad and not chain:
-                cells, values = self._whole(root, units[b], rects[b][2], pad)
+            if whole and not chain:
+                (r, c0), (v, c) = self._whole_cells(root, units[b], rects[b][2], bases)
+                cells = np.ones(v.shape, dtype=bool)
             else:
-                cells, values = np.pad(cells, pad), [np.pad(x, pad) for x in self._paint_only_values(root, self._own_content(u))]
+                (r, c0), (v, c) = (0, 0), self._paint_only_values(root, self._own_content(u))
             if cells.any():
-                win[b] = cells
-                own[b], cover[b] = figure(u, cells, values)
-        return win, own, cover
+                out[b] = (r, c0) + figure(cells, v, c)
+        return out
 
-    def _whole(self, root: str, tok, rect: Region, pad: int):
-        """A unit's cells and own claims on the board grown by ``pad`` cells on every side, the part past the
-        edge included: drawn with the unit moved onto the board (as far as it fits), then moved back."""
+    def _whole_cells(self, root: str, tok, rect: Region, bases: dict = None):
+        """A unit's own claims over its cells, the part past the edge included, and the board cell they start at: drawn
+        with the unit moved onto the board (as far as it fits), then moved back. ``bases``: drawings with every unit
+        where it is, to reuse: moving one unit changes that unit's claims only, and they are drawn again in place."""
         H, W = self.grid
         u, (r0, r1, c0, c1) = getattr(tok, "node", tok), rect
         dr, dc = (-r0 if r0 < 0 else min(0, H - r1)), (-c0 if c0 < 0 else min(0, W - c1))
+        q0, q1, p0, p1 = _clip((r0 + dr, r1 + dr, c0 + dc, c1 + dc), (H, W))
+        ids, shifted = self._own_content(u), None
+        if bases is not None and SUBCELL == 1 and (dr or dc):
+            if ids not in bases:
+                record = {}
+                claims = self._paint_claims(root, ids, record)
+                bases[ids] = claims, record, self._paint_redraw
+            claims, record, redraw = bases[ids]
+            drawings = record.get(tok.node_id)
+
+            def shifted():
+                if drawings is None:
+                    return claims                # not drawn (a template, say): where it is changes nothing
+                if None in drawings:
+                    return None                  # drawn in a turned frame: draw it all
+                out, at = [], 0
+                for d in drawings:
+                    out += claims[at:d[0]]
+                    out += redraw(d)
+                    at = d[1]
+                return out + claims[at:]
         was = list(tok.position)
         tok.position[0], tok.position[1] = was[0] + dr / H, was[1] + dc / W
         try:
-            values = self._paint_only_values(root, self._own_content(u))
+            values = self._paint_only_values(root, ids, (q0, q1, p0, p1), shifted)
         finally:
             tok.position[:] = was
-        q0, q1, p0, p1 = _clip((r0 + dr, r1 + dr, c0 + dc, c1 + dc), (H, W))
-        at = (slice(pad + q0 - dr, pad + q1 - dr), slice(pad + p0 - dc, pad + p1 - dc))
-        out = [np.zeros((H + 2 * pad, W + 2 * pad)) for _ in range(3)]
-        out[0][at] = 1.0
-        for o, x in zip(out[1:], values):
-            o[at] = x[q0:q1, p0:p1]
-        return out[0] > 0, out[1:]
-
-    def _overhang(self) -> int:
-        """How far the furthest unit on the board's own frame reaches past it, in cells."""
-        H, W = self.grid
-        return max([0] + [max(-r[0], r[1] - H, -r[2], r[3] - W)
-                          for chain, _, r in self._moving_bodies(self.node_views(self.grid), rects=True).values()
-                          if not chain])
+        return (q0 - dr, p0 - dc), values
 
     def _drive_past_edge(self, node, tok, rect: Region, a: float, root_id: str, bodies_at) -> None:
         """A body's own leaf whose body is wholly past the edge (in the leaf's region) still drives the body
@@ -1984,12 +2135,11 @@ class ConceptGraph:
         home = self._moving_bodies(self.node_views(self.grid), rects=True).get(tok.node_id)
         if home is None or home[0]:                      # not placed in the board's own frame
             return
-        pad = self._overhang()
-        cells, values = self._whole(root_id, tok, home[2], pad)
+        start, values = self._whole_cells(root_id, tok, home[2])
+        rows, cols = (start[k] + np.arange(values[0].shape[k]) for k in (0, 1))
         r0, r1, c0, c1 = rect
-        there = np.zeros_like(cells)
-        there[max(0, pad + r0):pad + r1, max(0, pad + c0):pad + c1] = True
-        fig = cells & there & (values[0] > 0) & (_claimed_value(*values) > 0.5)
+        there = ((rows >= r0) & (rows < r1))[:, None] & ((cols >= c0) & (cols < c1))[None, :]
+        fig = there & (values[0] > 0) & (_claimed_value(*values) > 0.5)
         if not fig.any():
             return
         motion = BodyNode._template_motion(node)
@@ -1998,7 +2148,7 @@ class ConceptGraph:
             return
         for axis, comp in enumerate((motion[0] / norm, motion[1] / norm)):
             if abs(comp) > 1e-9:
-                at, lo, hi = np.nonzero(cells)[axis] - pad, rect[2 * axis], rect[2 * axis + 1] - 1
+                at, lo, hi = (rows, cols)[axis], rect[2 * axis], rect[2 * axis + 1] - 1
                 beyond = int(hi - at.min() + 1) if comp > 0 else int(at.max() - lo + 1)
                 self._push_body(tok, bodies_at, axis, a * comp, node_id=node.node_id, beyond=beyond)
 
@@ -2016,7 +2166,7 @@ class ConceptGraph:
         S = self._substance(root)
         if (home & (S["s"] > 0) & (S["v"] > 0.5) & ~S["F"]).any():
             return False
-        return not any((home & fig).any() for fig in self._unit_figures(root)[1].values())
+        return not any((home & fig).any() for fig in self._unit_figures(root).values())
 
     def _own_figure(self, root_id: str, node) -> np.ndarray:
         """Where a body's own content is figure."""
@@ -2302,7 +2452,7 @@ class ConceptGraph:
     def _pinned(self, body) -> bool:
         """Is the body's figure (on the board) where a pin holds it against its own drive?"""
         root = self.tree_index()[getattr(body, "node", body).node_id]
-        fig = self._unit_figures(root)[1].get(body.node_id)
+        fig = self._unit_figures(root).get(body.node_id)
         held = _held(self._substance(root), getattr(self, "_strength", {}).get(body.node_id, 1.0))
         return fig is not None and bool((fig & held).any())
 
@@ -2325,32 +2475,54 @@ class ConceptGraph:
         units, groups = self._tokens(), getattr(self, "_unit_groups", {})
         node_of = lambda b: getattr(units[b], "node", units[b])
         root = self.tree_index()[node_of(body.node_id).node_id]
-        p = self._overhang() + max(map(abs, net))                         # the board grown to hold
-        board = (slice(p, p + H), slice(p, p + W))                             # every unit past it, and its move
-        win, own, cover = self._unit_figures(root, p)
+        crops = self._unit_crops(root, whole=True)                            # every unit, past the edge too
         units = self._tokens()                                                # (with any copies the views placed)
         inside = lambda b, a: a in groups.get(b, ())                          # unit b is inside unit a
-        none = np.zeros((H + 2 * p, W + 2 * p), dtype=bool)
-        group = lambda a: np.logical_or.reduce([own[b] for b in own if b == a or inside(b, a)] + [none])
+        known = {}
+
+        def cells(b):
+            """Where unit b more likely than not is, as (row, column) cells: units may be anywhere past the board."""
+            if b not in known:
+                r, c, fig, _ = crops[b]
+                rows, cols = np.nonzero(fig)
+                known[b] = set(zip((rows + r).tolist(), (cols + c).tolist()))
+            return known[b]
+
+        def on_board(where):
+            found = [(r, c) for r, c in where if 0 <= r < H and 0 <= c < W]
+            return tuple(np.array(found).T) if found else None
+
+        def times(a, r, c, cover):
+            """``a *= 1 - cover``, with ``cover`` starting at board cell (r, c)."""
+            q0, q1, p0, p1 = _clip((r, r + cover.shape[0], c, c + cover.shape[1]), (H, W))
+            a[q0:q1, p0:p1] *= 1.0 - cover[q0 - r:q1 - r, p0 - c:p1 - c]
+
+        group = lambda a: set().union(*[cells(b) for b in crops if b == a or inside(b, a)])
         S = self._substance(root)
-        stuff = np.pad(_solid_stuff(S), p) & ~np.logical_or.reduce(list(own.values()) + [none])   # a unit's own:
-        drive = getattr(self, "_strength", {}).get(body.node_id, 1.0)                           # pushed whole
-        held = np.pad(_held(S, drive), p)                         # pinned too strongly to be pushed
+        stuff = _solid_stuff(S).copy()                                        # a unit's own: pushed whole
+        for r, c, fig, _ in crops.values():
+            q0, q1, p0, p1 = _clip((r, r + fig.shape[0], c, c + fig.shape[1]), (H, W))
+            stuff[q0:q1, p0:p1] &= ~fig[q0 - r:q1 - r, p0 - c:p1 - c]
+        drive = getattr(self, "_strength", {}).get(body.node_id, 1.0)
+        held = _held(S, drive)                                                # pinned too strongly to be pushed
 
         def plan(d):
-            moving, push, queue = [], none.copy(), [body.node_id]
+            moving, push, queue = [], np.zeros((H, W), dtype=bool), [body.node_id]
             while queue:
                 x = queue.pop()
                 if x in moving or any(inside(x, m) for m in moving):
                     continue                                                  # carried by a moving unit
                 g = group(x)
-                foot = _moved_mask(g, *d)
-                if (g & held).any():
+                at = on_board(g)
+                if at is not None and held[at].any():
                     return None                                               # pinned
                 moving.append(x)
-                push |= foot & stuff & ~g
-                queue += [y for y in own if y not in moving and not inside(y, x) and (foot & own[y] & ~g).any()]
-            if push.any() and _stuff_run(S, push[board], *d, drive=drive)[1].any():
+                ahead = {(r + d[0], c + d[1]) for r, c in g} - g              # what it would move into
+                at = on_board(ahead)
+                if at is not None:
+                    push[at] |= stuff[at]
+                queue += [y for y in crops if y not in moving and not inside(y, x) and not ahead.isdisjoint(cells(y))]
+            if push.any() and _stuff_run(S, push, *d, drive=drive)[1].any():
                 return None                                                   # stuff in the way cannot move
             return moving, push
 
@@ -2374,12 +2546,12 @@ class ConceptGraph:
                     size = max(1, round(tok.extent[axis] * n))
                     tok.position[axis] = (round(tok.position[axis] * n - size / 2) + d[axis] + size / 2) / n
             if push.any():
-                self._shift_substance(S, push[board], *d, drive=drive)
+                self._shift_substance(S, push, *d, drive=drive)
             was, now = np.ones((H, W)), np.ones((H, W))       # the chance no unit covers a cell, before / after
-            for b in cover:
+            for b, (r, c, _, cover) in crops.items():
                 moved = any(b == x or inside(b, x) for x in movers)
-                was *= 1.0 - cover[b][board]
-                now *= 1.0 - (_moved_mask(cover[b], *d) if moved else cover[b])[board]
+                times(was, r, c, cover)
+                times(now, r + d[0] if moved else r, c + d[1] if moved else c, cover)
             passed = S.setdefault("passed", np.zeros((H, W)))   # the most likely it covered a cell it is still on
             np.maximum(passed, 1.0 - np.minimum(was, now), out=passed)
             left = (now >= 1.0) & (passed > 0)
@@ -2606,22 +2778,25 @@ class ConceptGraph:
         # cv: [yang paint, yin paint, place bodies, frame size, inside a body, emptiness left behind, claims,
         # offset from a moved body's home]. An oriented slot swaps in a canvas for its upright frame (render_oriented).
         # The yang and yin paint only measure what a moved body still covers (its trail); the drawing is the claims'.
-        cv = [np.ones((H, W)), np.ones((H, W)), place_bodies, (H, W), False, np.ones((H, W)), [], (0, 0)]
+        blank = _blank if values else (lambda h, w: np.ones((h, w)))     # (values: claims only, nothing paints these)
+        cv = [blank(H, W), blank(H, W), place_bodies, (H, W), False, blank(H, W), [], (0, 0)]
         only = getattr(self, "_paint_only", None)
+        keep = None if only is None else self._only_nodes(out_root.node_id, only)[4]
+        spawn_index = {}                         # per group: ``_spawned``'s answers (a drawing adds no instances)
+        stamps = self.__dict__.setdefault("_stamps", {}) if only is not None and values else None
+        stampable = None if stamps is None else self._instance_nodes(out_root.node_id, only)
+        record = self.__dict__.pop("_paint_record", None)     # per unit: where its claims are, how to redraw them
+                                                 # (None for a drawing in a turned frame)
+        turned = [0]                             # inside a turned frame (those claims are carried into their slot)
         seeding = getattr(self, "_seeding", False)
         fine = SUBCELL > 1 and (H, W) == tuple(self.grid)      # drawn SUBCELL times finer, then pooled back
-        thick = SUBCELL if (H, W) == (self.grid[0] * SUBCELL, self.grid[1] * SUBCELL) and SUBCELL > 1 else 1
+        thick = FINE_MOTION if FINE_MOTION > 1 else (
+            SUBCELL if (H, W) == (self.grid[0] * SUBCELL, self.grid[1] * SUBCELL) and SUBCELL > 1 else 1)
 
         def at_home(cells):
             """Cells moved back to where the enclosing body started."""
             dr, dc = cv[7]
-            if (dr, dc) == (0, 0):
-                return cells
-            rs, cs = np.nonzero(cells)
-            keep = (rs + dr >= 0) & (rs + dr < cells.shape[0]) & (cs + dc >= 0) & (cs + dc < cells.shape[1])
-            out = np.zeros_like(cells)
-            out[rs[keep] + dr, cs[keep] + dc] = True
-            return out
+            return cells if dr == 0 and dc == 0 else _moved_home(cells, dr, dc)
 
         def claim(mask, value, w, leaf, home=None, moved=False) -> None:
             """Record a claim; its home cells (``home``, default its cells) moved back to where the enclosing body
@@ -2635,6 +2810,8 @@ class ConceptGraph:
                 render_node(children[0], region, weight, ikey)
                 return
             template, rest = children[0], children[1:]
+            if keep is not None and not any(c.node_id in keep for c in rest):
+                return
             p = _clamp(template.gate)
             if p > 1e-9:
                 for i, (sub, v) in enumerate(orient_slots(template, region)):
@@ -2649,16 +2826,19 @@ class ConceptGraph:
             """Draw ``children`` upright in their own frame, then show it in ``slot`` facing ``v``."""
             Hc, Wc, rows, cols, _ = _orientation_map(slot, v)
             saved = cv[:]
-            cv[:] = [np.ones((Hc, Wc)), np.ones((Hc, Wc)), saved[2], (Hc, Wc), saved[4],   # bodies live in the frame
-                     np.ones((Hc, Wc)), [], (0, 0)]
+            turned[0] += 1
+            cv[:] = [blank(Hc, Wc), blank(Hc, Wc), saved[2], (Hc, Wc), saved[4],   # bodies live in the frame
+                     blank(Hc, Wc), [], (0, 0)]
             render_plan(children, (0, Hc, 0, Wc), weight, ikey)
             frame_yang, frame_yin, frame_left, frame_claims = cv[0], cv[1], cv[5], cv[6]
             cv[:] = saved
+            turned[0] -= 1
             r0, r1, c0, c1 = _clip(slot, cv[0].shape)                    # the part of the slot on the canvas
             rows, cols = (a[r0 - slot[0]:r1 - slot[0], c0 - slot[2]:c1 - slot[2]] for a in (rows, cols))
-            cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
-            cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
-            cv[5][r0:r1, c0:c1] *= frame_left[rows, cols]
+            if not values:
+                cv[0][r0:r1, c0:c1] *= frame_yang[rows, cols]
+                cv[1][r0:r1, c0:c1] *= frame_yin[rows, cols]
+                cv[5][r0:r1, c0:c1] *= frame_left[rows, cols]
             for mask, value, w, home, leaf, moved in frame_claims:          # into the slot, home cells too
                 m, h = np.zeros(cv[0].shape, dtype=bool), np.zeros(cv[0].shape, dtype=bool)
                 m[r0:r1, c0:c1], h[r0:r1, c0:c1] = mask[rows, cols], home[rows, cols]
@@ -2711,10 +2891,37 @@ class ConceptGraph:
         def draw_instance(node, region: Region, weight: float, ikey: tuple) -> None:
             """One instance of a field or body, drawn where it is (its region: where the tree places it)."""
             tok = node.instances.get(ikey)
+            if record is None or tok is None:
+                place(node, tok, region, weight, ikey)
+                return
+            drawing = None if turned[0] else [len(cv[6]), None, node, region, weight, ikey, cv[4], cv[7]]
+            record.setdefault(tok.node_id, []).append(drawing)     # (a nested copy may be drawn from two parents)
+            place(node, tok, region, weight, ikey)
+            if drawing is not None:
+                drawing[1] = len(cv[6])
+
+        def place(node, tok, region: Region, weight: float, ikey: tuple) -> None:
             home = region
             if cv[2] and tok is not None and tok.position is not None:
                 region = tok.rect(region, *cv[3])
+            if stampable is not None:            # a partial drawing's claims of an instance holding no other unit
+                inner = stampable.get(node.node_id)
+                if inner is not None:
+                    key = (only, node.node_id, ikey, home, region, weight, cv[0].shape, cv[3], cv[4], cv[7],
+                           tuple([n.gate for n in inner]))
+                    hit = stamps.get(key)
+                    if hit is None:
+                        start = len(cv[6])
+                        drawn(node, home, region, weight, ikey)
+                        if len(stamps) > 4096:
+                            stamps.clear()
+                        stamps[key] = cv[6][start:]
+                    else:
+                        cv[6].extend(hit)
+                    return
+            drawn(node, home, region, weight, ikey)
 
+        def drawn(node, home: Region, region: Region, weight: float, ikey: tuple) -> None:
             def draw(r):
                 was_inside = cv[4]
                 cv[4] = True
@@ -2725,6 +2932,8 @@ class ConceptGraph:
 
         def render_node(node: Node, region: Region, weight: float, ikey: tuple = ()) -> None:
             if weight < 1e-9 or is_empty(region):
+                return
+            if keep is not None and node.node_id not in keep:
                 return
             if getattr(node, "role", None) == "observer":
                 return                           # perceptual patterns are not part of the imagery
@@ -2741,8 +2950,9 @@ class ConceptGraph:
                     m, value = np.zeros(cv[0].shape, dtype=bool), np.full(cv[0].shape, 0.5)
                     m[r0:r1, c0:c1], value[r0:r1, c0:c1] = True, f
                     claim(m, value, w, node.node_id)
-                cv[0][r0:r1, c0:c1] *= 1.0 - w * np.clip(2 * f - 1, 0, 1)
-                cv[1][r0:r1, c0:c1] *= 1.0 - w * np.clip(1 - 2 * f, 0, 1)
+                if not values:
+                    cv[0][r0:r1, c0:c1] *= 1.0 - w * np.clip(2 * f - 1, 0, 1)
+                    cv[1][r0:r1, c0:c1] *= 1.0 - w * np.clip(1 - 2 * f, 0, 1)
                 return
             if isinstance(node, ObjectNode):
                 if node.is_dynamic:
@@ -2751,21 +2961,25 @@ class ConceptGraph:
                     return                       # a drawing of only some leaves
                 if seeding == bool(cv[4]):
                     return                       # bare leaves are drawn once, into the substance grid
-                pure, w = len(set(node.pattern)) == 1, _clamp(weight * node.gate)   # centre axis claims every
-                lone = set() if pure else _lone_bands(node.pattern)                   # band, others their figure
-                mask = np.zeros(cv[0].shape, dtype=bool)
-                for i, bit in enumerate(node.pattern):
-                    if pure or bit > 0.5:
-                        r0, r1, c0, c1 = _clip(_band_line(region, i, node.n_bands, node.orientation, thick) if i in lone
-                                               else band_region(region, i, node.n_bands, node.orientation),
-                                               cv[0].shape)
-                        mask[r0:r1, c0:c1] = True
+                w = _clamp(weight * node.gate)
+                mask, bands, pure, some = _leaf_cells(node.pattern, node.n_bands, node.orientation, region, cv[0].shape,
+                                                      thick)
+                if not values:
+                    for (r0, r1, c0, c1), bit in bands:
                         cv[0][r0:r1, c0:c1] *= 1.0 - w * _clamp(2 * bit - 1)
                         cv[1][r0:r1, c0:c1] *= 1.0 - w * _clamp(1 - 2 * bit)
-                if w > 0 and mask.any():
-                    claim(mask, float(node.pattern[0]) if pure else 1.0, w, node.node_id)
+                if w > 0 and some:
+                    dr, dc = cv[7]
+                    home = mask if dr == 0 and dc == 0 else _leaf_home(node.pattern, node.n_bands, node.orientation,
+                                                                       region, cv[0].shape, thick, dr, dc)
+                    cv[6].append((mask, float(node.pattern[0]) if pure else 1.0, w, home, node.node_id,
+                                  dr != 0 or dc != 0))
             elif isinstance(node, GroupNode):                    # an instance, drawn where it is
-                for key in _spawned(node, ikey, node.instances):
+                index = spawn_index.get(node.node_id)
+                if index is None:
+                    index = spawn_index[node.node_id] = _spawn_index(node.instances)
+                draw_instance(node, region, weight, ikey)
+                for key in index.get(ikey, ()):
                     draw_instance(node, region, weight, key)
             elif isinstance(node, BodyNode):
                 home = region
@@ -2794,6 +3008,16 @@ class ConceptGraph:
         else:
             render_node(out_root, (0, H, 0, W), 1.0)
         if raw:
+            if record is not None:
+                def redraw(drawing):             # one instance's claims, drawn again where it now is
+                    _, _, node, region, weight, ikey, inside, offset = drawing
+                    saved = cv[:]
+                    cv[4], cv[6], cv[7] = inside, [], offset
+                    place(node, node.instances.get(ikey), region, weight, ikey)
+                    claims = cv[6]
+                    cv[:] = saved
+                    return claims
+                self._paint_redraw = redraw
             return cv[6], cv[5]
         if only is None and not seeding and (H, W) == tuple(self.grid):
             S = self._substance(out_root.node_id)               # the substance grid, as two claims
@@ -2879,22 +3103,36 @@ class ConceptGraph:
             out[key] = (c > 0) & (_claimed_value(v, c) > 0.5)
         return out
 
-    def _paint_only_values(self, root_id: str, ids: frozenset) -> Tuple[np.ndarray, np.ndarray]:
-        """The claimed values and strengths of only the nodes ``ids`` (trails left as they were),
-        memoised by what that drawing depends on: fields are re-asserted every tick, mostly where they were."""
+    def _paint_claims(self, root_id: str, ids: frozenset, record: dict = None) -> list:
+        """The claims of a drawing of only the nodes ``ids``, trails left as they were; ``record``: see ``_paint``."""
+        trails, self._paint_only = dict(self._trails), ids
+        if record is not None:
+            self._paint_record = record
+        try:
+            return self._paint(self.grid, root_id, True, values=True, raw=True)[0]
+        finally:
+            self._paint_only, self._trails = None, trails
+
+    def _paint_only_values(self, root_id: str, ids: frozenset, crop: Region = None, shifted=None) -> Tuple[np.ndarray, np.ndarray]:
+        """The claimed values and strengths of only the nodes ``ids`` (trails left as they were), in ``crop`` if given,
+        memoised by what that drawing depends on: fields are re-asserted every tick, mostly where they were.
+        ``shifted``: a callable giving the same drawing's claims more cheaply than drawing it."""
         key = (self._only_key(root_id, ids), ids)
         cache = self.__dict__.setdefault("_only_paints", {})
         hit = cache.get(key)
         if hit is None:
-            trails, self._paint_only = dict(self._trails), ids
-            try:
-                hit = self._paint(self.grid, root_id, True, values=True)
-            finally:
-                self._paint_only, self._trails = None, trails
+            claims = shifted() if shifted is not None else None
+            if claims is None:
+                claims = self._paint_claims(root_id, ids)
             if len(cache) > 256:
                 cache.clear()
-            cache[key] = hit
-        return hit
+            hit = cache[key] = [claims, None]
+        boundary = self._field_leaves(root_id)
+        if crop is not None:
+            return _claim_values_in(hit[0], tuple(self.grid), boundary, crop)
+        if hit[1] is None:
+            hit[1] = _claim_values(hit[0], tuple(self.grid), boundary)
+        return hit[1]
 
     def _field_leaves(self, root_id: str) -> frozenset:
         """The nodes of a tree's fields, not of the bodies they hold (their claims are the boundary
@@ -3011,15 +3249,14 @@ class ConceptGraph:
         S["v"][tr, tc] = np.where(both, (pw * pv + aw * av) / np.maximum(pw + aw, 1e-12), av)
         S["s"][tr, tc] = np.where(both, 1.0 - (1.0 - pw) * (1.0 - aw), aw)
         S["moved"][tr, tc] = True
-        gone = np.zeros((H, W), dtype=bool)
-        gone[rows, cols] = gone[lr, lc] = True
-
-        def follow(m):
-            out = m & ~gone
-            out[tr, tc] |= m[rows, cols]
-            return out
-        for o in S["orders"]:
-            o[0] = follow(o[0])
+        stayed = np.ones((H, W), dtype=bool)
+        stayed[rows, cols] = stayed[lr, lc] = False
+        if S["orders"]:                          # all at once: orders can be many
+            was = np.array([o[0] for o in S["orders"]])
+            now = was & stayed
+            now[:, tr, tc] |= was[:, rows, cols]
+            for o, m in zip(S["orders"], now):
+                o[0] = m
 
     def derived_fields(self, shape: Tuple[int, int] = (9, 9)) -> Dict[str, ReceptiveField]:
         """One display field per node (used by the visualizer).

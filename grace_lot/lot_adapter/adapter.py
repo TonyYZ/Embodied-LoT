@@ -167,6 +167,20 @@ def rollout(program: P, frames: int, size: int, motion_states: dict = None, clai
 
 
 def rollout_whole(program: P, frames: int, size: int, motion_states: dict = None, claims: bool = False):
+    """``_rollout_at`` on the board; with FINE_MOTION = s > 1, on a board s times finer, each output averaged back (a mean of
+    values is the claimed figure weighted by claim strength, so values and strengths stay consistent)."""
+    import embodied_lot as E
+    s = E.FINE_MOTION
+    if s == 1:
+        return _rollout_at(program, frames, size, motion_states, claims)
+
+    def pooled(a):
+        return a.reshape(a.shape[:-2] + (size, s, size, s)).mean(axis=(-3, -1))
+    out = _rollout_at(program, frames, size * s, motion_states, claims)
+    return (pooled(out[0]), pooled(out[1])) if claims else pooled(out)
+
+
+def _rollout_at(program: P, frames: int, size: int, motion_states: dict = None, claims: bool = False):
     """Rendered output fields: (T, H, W) for one output, or (T, K, H, W) for a K-channel program.
 
     The rollout is deterministic. If the state (body positions, gates,
@@ -211,7 +225,8 @@ def _window_rollout(graph, ids, frames: int, size: int, claims: bool = False):
     only when something moves relative to its window. For output, the window's cells are stretched to
     the full grid (each cell repeated). A window in several template slots uses its heaviest view.
     """
-    from embodied_lot import ReceptiveField, _view_field, blank_board
+    import embodied_lot as E
+    from embodied_lot import ReceptiveField, _view_field, _view_mask, blank_board
     tree = graph.tree_index()
     out = np.empty((frames, len(ids), size, size))
     out_c = np.empty_like(out) if claims else None
@@ -242,6 +257,12 @@ def _window_rollout(graph, ids, frames: int, size: int, claims: bool = False):
                     out_c[t, k] = 0.0
                 continue
             _, chain, rect = max(vs, key=lambda v: v[0])
+            if E.WINDOW_CROP:                           # only the window shows, where it is
+                shown = _view_mask((size, size), chain, rect)
+                out[t, k] = np.where(shown, space, 0.5)
+                if claims:
+                    out_c[t, k] = np.where(shown, strengths[tree[i]], 0.0)
+                continue
             if id(space) not in fields:
                 fields[id(space)] = ReceptiveField(space)
             local = _view_field(fields[id(space)], chain, rect).activation

@@ -31,6 +31,7 @@ from grace_lot.grace.parts import PART_NAMES
 from grace_lot.grace.preprocess import load_trajectory
 from grace_lot.grace.scanner import part_boards
 from grace_lot.grace.temporal import sample_window
+from grace_lot.lot_adapter.adapter import rollout
 from grace_lot.lot_adapter.program import parse_program, saved_lot, size
 
 CELL = 16                                  # pixels per board cell (12 x 12; a board is 12 x CELL pixels tall)
@@ -154,7 +155,8 @@ def main() -> None:
         traj = load_trajectory(cfg, videos[med])
         boards = part_boards(traj, pre, itf["edge_samples"])
         lp, lpr, best = top[0]
-        y = renderer(best)
+        warmup = getattr(lik, "warmup", 0)
+        y = rollout(best, lik.frames + warmup, lik.size)[warmup:] if warmup else renderer(best)     # the scored frames
         y = y if y.ndim == 4 else y[:, None]
         rows, cols, _ = lik.assignments(best)[med]
         label = {int(k): PART_NAMES[int(c)] for k, c in zip(rows, cols) if k < y.shape[1]}

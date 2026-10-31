@@ -32,6 +32,7 @@ import time
 import zlib
 from collections import Counter
 from multiprocessing import Pipe, Pool, Process
+from multiprocessing.connection import wait
 from pathlib import Path
 from typing import Dict, List
 
@@ -111,7 +112,8 @@ def build(cfg: dict, observations, noise: dict = None):
                                    feature_background(cfg), inf.get("temperature"), inf.get("cell_draws", 256),
                                    inf.get("noise_floor", 0.1), noise, size_range=inf.get("size_range"),
                                    features=inf.get("descriptors", "motion"), open_cells=inf.get("open_cells", "fill"),
-                                   warmup=inf.get("warmup", 0))
+                                   warmup=inf.get("warmup", 0), open_variance=inf.get("open_variance", False),
+                                   baseline=inf.get("baseline", "parts"))
     elif representation(cfg) == "parts_scan" and inf.get("likelihood") == "gaussian":
         from grace_lot.grace.scanner import feature_background
         from grace_lot.inference.likelihood import GaussianScanLikelihood
@@ -287,11 +289,11 @@ def _ladder_worker(conn, cfg: dict, manner: str, videos, k: int, j: int) -> None
     it, t0 = 0, time.time()
     while True:
         cmd = conn.recv()
-        if cmd[0] == "run":
+        if cmd[0] in ("run", "free"):
             for _ in range(cmd[1]):
                 ladder.sweep(it, inf["burn_in"], inf["thin"])
                 it += 1
-            conn.send(ladder.log_post)
+            conn.send(ladder.log_post if cmd[0] == "run" else (it, ladder.log_post, list(ladder.chain.log_post)))
         elif cmd[0] == "state":
             conn.send(ladder.state())
         elif cmd[0] == "take":
@@ -329,7 +331,17 @@ def run_parallel(cfg: dict, split: str, out: Path, manners=None, quiet: bool = F
     stops = sorted({total} | {b for b in range(select, inf["burn_in"], select)}
                    | ({b for b in range(every, total, every)} if every else set()))
     it, t0 = 0, time.time()
-    for b in stops:
+    def report(m, k, b, lead_lp, trace):
+        if not quiet:
+            print(f"  {m} chain {k}: {b}/{total} iterations, {(time.time() - t0) / 60:.0f} min, "
+                  f"log-post {lead_lp:.1f}", flush=True)
+        path = out / "checkpoints" / f"{m}_{k}.npz"
+        tmp = path.with_suffix(".tmp.npz")
+        trace = np.array(trace)
+        np.savez(tmp, log_post=trace, log_lik=trace, log_prior=trace)
+        tmp.replace(path)
+
+    for b in [b for b in stops if b <= inf["burn_in"]]:
         for c in conns.values():
             c.send(("run", b - it))
         lp = {key: c.recv() for key, c in conns.items()}
@@ -343,15 +355,35 @@ def run_parallel(cfg: dict, split: str, out: Path, manners=None, quiet: bool = F
         if every and b % every == 0 and b < total:
             for m, k in keys:
                 lead = max(range(n), key=lambda j: lp[m, k, j])
-                if not quiet:
-                    print(f"  {m} chain {k}: {b}/{total} iterations, {(time.time() - t0) / 60:.0f} min, "
-                          f"log-post {lp[m, k, lead]:.1f}", flush=True)
                 conns[m, k, lead].send(("trace",))
-                trace = np.array(conns[m, k, lead].recv())
-                path = out / "checkpoints" / f"{m}_{k}.npz"
-                tmp = path.with_suffix(".tmp.npz")
-                np.savez(tmp, log_post=trace, log_lik=trace, log_prior=trace)
-                tmp.replace(path)
+                report(m, k, b, lp[m, k, lead], conns[m, k, lead].recv())
+    # After the burn-in nothing passes between ladders, so they need not wait for each other (the chains are the same;
+    # a ladder that drew a slow program holds up only itself). Each reports as it reaches a progress point.
+    stops = sorted({total} | ({b for b in range(every, total, every)} if every else set()))
+    stops = [b for b in stops if b > it]
+    at = {key: 0 for key in conns}                       # how many of the stops each ladder has reached
+    of = {c: key for key, c in conns.items()}
+    best = {}                                            # search, stop -> (the best log posterior so far, its trace)
+    for key, c in conns.items():
+        if stops:
+            c.send(("free", stops[0] - it))
+    busy = set(of) if stops else set()
+    while busy:
+        for c in wait(list(busy)):
+            key, (done, lead_lp, trace) = of[c], c.recv()
+            search, seen = key[:2], best.setdefault((key[:2], done), [0, -np.inf, None])
+            seen[0] += 1
+            if lead_lp > seen[1]:
+                seen[1:] = lead_lp, trace
+            if seen[0] == n:
+                if done < total and every and done % every == 0:
+                    report(*search, done, seen[1], seen[2])
+                del best[search, done]
+            at[key] += 1
+            if at[key] < len(stops):
+                c.send(("free", stops[at[key]] - done))
+            else:
+                busy.discard(c)
     for c in conns.values():
         c.send(("finish",))
     done = {}

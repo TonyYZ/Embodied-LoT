@@ -29,6 +29,16 @@ every rhythm from once per clip to twice per cycle (FULL_HARMONICS: a single ste
 free), and its posture: its average x, y (the board follows the body), size (share of the board) and axis. These are
 averages over the clip, so timing still does not count.
 
+With ``open_variance`` (``inference.open_variance``, expected boards only) an output is no surer than what it claims: its
+descriptors' predicted variance gains u^2 x the background's, u the share of its board that comes from unclaimed cells. An
+output claiming nothing is then predicted as widely as a part no output explains; one claiming everything, as before.
+
+With ``baseline = "blobs"`` (``inference.baseline``, expected boards only) nothing here knows what a body is. An output is
+described by its own claims alone, no fill (where it draws nothing, its centre and axis hold their nearest drawn value); what
+no output claims is predicted by a generic background, the descriptors of random blobs: 1..8 x 1..8 cells, anywhere, swung
+0..3 cells at a random rhythm, no data. An output's prediction blends towards that background by u, 1 minus its figure's
+mass-weighted claim strength, so claiming nothing is exactly the background: a program earns only evidence over it.
+
 With ``warmup`` w > 0 (``inference.warmup``) a program runs w ticks before the clip starts, so what is scored is how it
 keeps behaving, not its start-up (a one-tick change at the start would otherwise read as a swing at every rhythm).
 
@@ -87,19 +97,64 @@ def video_descriptors(boards: np.ndarray, salience: float, full: bool = False):
     return amps, np.array([_coupling(z[a], z[b]) for a, b in PAIRS])
 
 
+def _own_descriptors(w: np.ndarray):
+    """A claim-weighted board (T, H, W) -> full amplitudes (A,) and once-per-cycle x, y (2,); frames that draw nothing hold the
+    nearest drawn centre and axis."""
+    T = len(w)
+    n = w.sum((1, 2))
+    sig = D.board_signals(w[:, None], None)[:, 0]
+    drawn = np.nonzero(n > 1e-9)[0]
+    if len(drawn) < T:
+        sig = sig[drawn[np.abs(np.arange(T)[:, None] - drawn[None]).argmin(1)]]
+    a, z = _amplitudes_and_once(sig[:, None], w.mean((1, 2))[:, None])
+    return a[0], z[0]
+
+
+def _blob_background(T: int, N: int, n: int = 4000) -> dict:
+    """Descriptors of random blobs, from no data: mean and variance of amplitudes, and of couplings of pairs of blobs."""
+    rng = np.random.default_rng(0)
+    A, Z = [], []
+    while len(A) < n:
+        h, w = rng.integers(1, 9, 2)
+        r, c = rng.uniform(0, N - h), rng.uniform(0, N - w)
+        amp, axis, k, ph = rng.integers(0, 4), rng.integers(0, 2), rng.integers(1, 5), rng.uniform(0, 2 * np.pi)
+        b = np.zeros((T, N, N))
+        for t in range(T):
+            o = int(round(amp * np.sin(2 * np.pi * k * t / T + ph)))
+            rr, cc = int(round(r)) + (o if axis == 0 else 0), int(round(c)) + (o if axis == 1 else 0)
+            b[t, max(rr, 0):max(rr + h, 0), max(cc, 0):max(cc + w, 0)] = 1.0
+        if (b.sum((1, 2)) > 0).any():
+            a, z = _own_descriptors(b)
+            A.append(a)
+            Z.append(z)
+    A, Z = np.stack(A), np.stack(Z)
+    x = _coupling(Z[:n // 2], Z[n // 2:n // 2 * 2])
+    return dict(amu=A.mean(0), avar=A.var(0), cmu=np.broadcast_to(x.mean(0), (len(PAIRS), 2)).copy(),
+                cvar=np.broadcast_to(x.var(0), (len(PAIRS), 2)).copy())
+
+
 class DescriptorLikelihood:
     """See the module docstring. ``observations``: each video's part boards (T, P, H, W)."""
 
     def __init__(self, observations, frames: int, size: int, salience: float, background: dict,
                  temperature: float = 1.0, draws: int = 256, noise_floor: float = 0.1, noise: dict = None,
                  cache_size: int = 1000, size_range: float = None, features: str = "motion",
-                 open_cells: str = "fill", warmup: int = 0) -> None:
+                 open_cells: str = "fill", warmup: int = 0, open_variance: bool = False,
+                 baseline: str = "parts") -> None:
         if features not in ("motion", "full"):
             raise ValueError(f"unknown descriptors {features!r}")
         if open_cells not in ("fill", "expected"):
             raise ValueError(f"unknown open_cells {open_cells!r}")
         self.expected = open_cells == "expected"
         self.warmup = int(warmup)
+        if open_variance and not self.expected:
+            raise ValueError("open_variance needs open_cells = 'expected'")
+        self.open_variance = open_variance
+        if baseline not in ("parts", "blobs"):
+            raise ValueError(f"unknown baseline {baseline!r}")
+        if baseline == "blobs" and (not self.expected or not features == "full"):
+            raise ValueError("baseline 'blobs' needs open_cells = 'expected' and the full descriptors")
+        self.blobs = baseline == "blobs"
         self.frames, self.size, self.salience, self.draws = frames, size, salience, draws
         self.full = features == "full"
         self.lengths = LENGTHS if not self.full else np.array(
@@ -127,6 +182,8 @@ class DescriptorLikelihood:
             noise = dict(s2=sized.var(axis=0), s2d=self.coup.var(axis=0))
         self.s2 = np.maximum(noise["s2"], np.maximum(noise_floor * self.bg["avar"], 1e-6))      # (P, A)
         self.s2d = np.maximum(noise["s2d"], np.maximum(noise_floor * self.bg["cvar"], 1e-6))    # (pairs, 2)
+        if self.blobs:                             # (the noise above keeps its floor)
+            self.bg = _blob_background(frames, size)
         self._cache, self._cache_size = OrderedDict(), cache_size
         self._channel_cache = {}
 
@@ -151,6 +208,12 @@ class DescriptorLikelihood:
         if hit is not None:
             return hit
         T, H, W = c.shape
+        if self.blobs:
+            hit = self._blob_channel(c, strength)
+            if len(self._channel_cache) > MEMO_SIZE:
+                self._channel_cache.clear()
+            self._channel_cache[key] = hit
+            return hit
         if self.expected:                                                  # (T, 1, H, W): one expected board
             from embodied_lot import _claimed_value
             if strength is None:
@@ -178,6 +241,24 @@ class DescriptorLikelihood:
         self._channel_cache[key] = hit
         return hit
 
+    def _blob_channel(self, c: np.ndarray, strength: np.ndarray):
+        """``_channel`` under the blob baseline: amplitudes (1, A), once-per-cycle x, y (1, 2) and u."""
+        from embodied_lot import _claimed_value
+        claim = np.clip(strength, 0.0, 1.0)
+        w = claim * _claimed_value(c, claim)
+        mass = w.sum()
+        if mass <= 1e-9 * len(w):
+            return self.bg["amu"][None], np.zeros((1, 2), dtype=complex), 1.0
+        a, z = _own_descriptors(w)
+        return a[None], z[None], float(1.0 - (w * claim).sum() / mass)
+
+    def unclaimed_share(self, c: np.ndarray, strength: np.ndarray) -> float:
+        """Of an output's expected board (T, H, W) over the clip, the share that comes from unclaimed cells."""
+        from embodied_lot import _claimed_value
+        claim = np.clip(strength, 0.0, 1.0)
+        own, rest = (claim * _claimed_value(c, claim)).sum(), ((1 - claim) * self._presence).sum()
+        return float(rest / max(own + rest, 1e-12))
+
     def _matched(self, v: np.ndarray, strengths: np.ndarray = None):
         """Outputs (T, K, H, W) -> per video (rows, columns, NLL); rows >= K are background rows. With size factors,
         the NLL averages the factors' likelihoods and the matching is the most likely factor's."""
@@ -187,8 +268,15 @@ class DescriptorLikelihood:
         per = [self._channel(np.ascontiguousarray(v[:, k]), k,
                              None if strengths is None else np.ascontiguousarray(strengths[:, k])) for k in range(K)]
         b = max(0, self.P - K)
-        mu = np.stack([a.mean(0) for a, _ in per] + [self.bg["amu"]] * b)  # (K + b, A)
-        var = np.stack([a.var(0) for a, _ in per] + [self.bg["avar"]] * b)
+        mu = np.stack([p[0].mean(0) for p in per] + [self.bg["amu"]] * b)  # (K + b, A)
+        var = np.stack([p[0].var(0) for p in per] + [self.bg["avar"]] * b)
+        if self.blobs:                                # towards the background by how little is claimed
+            u = np.array([p[2] for p in per])[:, None]
+            mu[:K] = (1 - u) * mu[:K] + u * self.bg["amu"]
+            var[:K] += u ** 2 * self.bg["avar"]
+        if self.open_variance:
+            u = [self.unclaimed_share(v[:, k], strengths[:, k]) for k in range(K)]
+            var[:K] += np.array(u)[:, None] ** 2 * self.bg["avar"]
         own = (np.arange(K + b) < K)[:, None] & self.lengths[None]              # a program's lengths scale
         f = np.where(own[None], self.scales[:, None, None], 1.0)            # (S, K + b, A)
         V = (f ** 2 * var)[:, None, :, None] + self.s2[None, None, None]   # (S, 1, K + b, P, A)
@@ -205,6 +293,9 @@ class DescriptorLikelihood:
                     if pa in of and pb in of:
                         x = _coupling(per[of[pa]][1], per[of[pb]][1])      # (D, 2) over the paired draws
                         m, sv = x.mean(0), x.var(0)
+                        if self.blobs:
+                            uu = max(per[of[pa]][2], per[of[pb]][2])
+                            m, sv = (1 - uu) * m + uu * self.bg["cmu"][j], sv + uu ** 2 * self.bg["cvar"][j]
                     else:
                         m, sv = self.bg["cmu"][j], self.bg["cvar"][j]
                     sv = sv + self.s2d[j]
@@ -212,7 +303,7 @@ class DescriptorLikelihood:
                 best.append((r, col, float(nll)))
             nlls = np.array([x[2] for x in best])
             r, col, _ = best[int(nlls.argmin())]
-            out.append((r, col, float(-(logsumexp(-nlls) - np.log(len(nlls))))))
+            out.append((r, col, float(nlls[0] if len(nlls) == 1 else -(logsumexp(-nlls) - np.log(len(nlls))))))
         return out
 
     def _scores(self, p):
@@ -230,7 +321,8 @@ class DescriptorLikelihood:
 
     def per_video_scores(self, p) -> np.ndarray:
         from scipy.special import logsumexp
-        return logsumexp(self._scores(p)[0], axis=0)
+        L = self._scores(p)[0]
+        return L[0] if len(L) == 1 else logsumexp(L, axis=0)
 
     def assignments(self, p):
         """Per video, under its most probable state combination: (rows, columns, NLL x temperature / P)."""

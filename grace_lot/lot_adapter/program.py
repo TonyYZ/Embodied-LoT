@@ -68,7 +68,7 @@ LANGUAGE = {"imagined_evaluation": "full", "dynamics": "gameboard", "gate_struct
             "flow_perception": True, "multi_part_units": True, "contour_claims": True, "motion_claims": True,
             "open_edge": True, "see_start": True, "missions": True}
 EARLIER = {**{k: False for k in LANGUAGE}, "imagined_evaluation": "legacy", "dynamics": "legacy", "gate_structures": True}
-SWITCHES = {"solid_figure": True, "subcell": 1}          # what a config may still choose (default: the language's)
+SWITCHES = {"solid_figure": True, "subcell": 1, "window_crop": False, "fine_motion": 1}          # what a config may still choose (default: the language's)
 
 
 def apply_semantics(lot_cfg: dict) -> None:
@@ -82,6 +82,8 @@ def apply_semantics(lot_cfg: dict) -> None:
     embodied_lot.ONSET_THRESHOLD = float(lot_cfg.get("onset_threshold", 0.5))
     embodied_lot.SOLID_FIGURE = bool(lot_cfg.get("solid_figure", SWITCHES["solid_figure"]))
     embodied_lot.SUBCELL = int(lot_cfg.get("subcell", SWITCHES["subcell"]))
+    embodied_lot.WINDOW_CROP = bool(lot_cfg.get("window_crop", SWITCHES["window_crop"]))
+    embodied_lot.FINE_MOTION = int(lot_cfg.get("fine_motion", SWITCHES["fine_motion"]))
 
 
 def resolved_lot(lot_cfg: dict) -> dict:

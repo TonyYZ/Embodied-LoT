@@ -493,7 +493,8 @@ def full_section(run: Path, out: Path) -> str:
     comes from, against the motion fit's programs scored the same way (``compare_scoring.json`` in the run)."""
     c = json.loads((run / "compare_scoring.json").read_text())
     pred = json.loads((run / "predictive.json").read_text())
-    it = json.loads((run / "config.json").read_text())["inference"]["iterations"]
+    inf = json.loads((run / "config.json").read_text())["inference"]
+    it, warmup = inf["iterations"], inf.get("warmup", 0)
     rows = "".join(
         f"<tr><td>{E(m)}</td>" + "".join(
             f"<td>{100 * v[f]['share']:.0f}%</td><td>{v[f]['nodes']}</td><td>{v[f]['outputs']}</td>"
@@ -511,21 +512,26 @@ def full_section(run: Path, out: Path) -> str:
             f"""<article class=partview><h3>{E(f.stem)}</h3><img src="full_view/{f.stem}.gif" alt="{E(f.stem)}: each body
 part and its matched output" loading=lazy><img src="full_view/{f.stem}.png" alt="{E(f.stem)}: the numbers compared, part by
 part" loading=lazy></article>""" for f in sorted(mv.glob("*.png"))) + "</div>"
+    length, pilot = ("A full-length", "") if it >= 24000 else ("A short pilot", (
+        "The motion fit's programs collapse once posture counts: they never had to put a part where it belongs. The "
+        "pilot gains on both motion and posture but stays far from the ideal with small programs; a full-length fit "
+        "is the test. "))
+    note = (run / "note.html").read_text(encoding="utf-8") if (run / "note.html").exists() else ""
+    warm = (f" Each program ran {warmup} ticks before scoring began, so what counts is how it keeps behaving: a one-off "
+            "change at the start of a clip used to read as a swing at every rhythm." if warmup else "")
     return f"""<h2 id=full>Adding rhythm and posture</h2>
 <p>Two gaps in the motion scoring, fixed by one rule set before fitting: it compared only two rhythms, so a single
 step across the clip could stand in for a repeating movement; and it ignored where each part is, so programs needed
 not look like a body. The full set adds every rhythm from once per clip to twice per cycle, and each part's posture:
-its average position on the board (which follows the body), size and tilt. A short pilot fit ({it} iterations, a
-quarter of the motion fit's) of the same five manners; held-out recognition <b>{pred['recognition_top1']:.2f}</b>.</p>
+its average position on the board (which follows the body), size and tilt. {length} fit ({it} iterations) of the same
+five manners; held-out recognition <b>{pred['recognition_top1']:.2f}</b>.{warm}</p>
 <div class=table><table><tr><th rowspan=2>manner</th><th colspan=4>full fit</th><th colspan=4>motion fit, rescored</th></tr>
 <tr><th>to ideal</th><th>nodes</th><th>outputs</th><th>motion / posture / pairs</th><th>to ideal</th><th>nodes</th>
 <th>outputs</th><th>motion / posture / pairs</th></tr>{rows}</table></div>
 <p class=note>Scored on the full set, training actors. "To ideal": the share of the way from the empty program to an
 ideal one. The last columns: gain over the empty program, in log likelihood, from the rhythm amplitudes, the posture
 and the limb pairs.</p>
-<p>The motion fit's programs collapse once posture counts: they never had to put a part where it belongs. The pilot
-gains on both motion and posture but stays far from the ideal with small programs; a full-length fit is the test.
-In the charts below the posture bars (several cells) dwarf the swing bars; the scoring weighs each in noise
+{note}<p>{pilot}In the charts below the posture bars (several cells) dwarf the swing bars; the scoring weighs each in noise
 units, not cells.</p>
 {legend(PART_COLOURS)}{gallery}{views}"""
 

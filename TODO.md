@@ -17,13 +17,21 @@ actors sealed, nothing tuned on human data.
   exact on 400 cases). With `descriptors="full"` and `warmup=16` oscillators beat still and small units on
   17/30 manner x part pairs after cost (motion-only scoring favours one-tick start-up blips instead). The seed
   library was compressed from a hand-written candidate list under the old scoring, so it is not used: the loop
-  below starts from the search's own programs. Round 0 (no library, new scoring) is job 91116 `round0_5`. The learned pieces (the three-strip shuttle skeleton with its dashed edges, the
+  below starts from the search's own programs. Round 0 (no library, new scoring) finished 31 Oct: `round0_5`, 28-45% of the way to the ideal, recognition 0.92, no program repeats at the actors' rhythm; on the page. Next: compress its programs (not written yet). The learned pieces (the three-strip shuttle skeleton with its dashed edges, the
   self-gating strip `(parallel ? ? (body ?)) | .1>.0`) in the prior and as one-step proposals; refit the 5 manners and
   compare with `desc_fix_5` on held-out actors. A library learned from four manners shortens the fifth's limb units by
   22-48%; assembled six-part programs still fit worse than the search's best (why is not known yet: the limb pairs
   add little, so it is not only that limbs chosen one at a time miss them).
 - [~] **Library learning loop (DreamCoder-like).** Fit -> compress the fits' programs -> refit, a few rounds,
   learned pieces only; hand-built pieces as a separate condition. Pieces with subtree holes; learned piece weights.
+- [ ] **Search speed (31 Oct).** Two exact passes are in (`tools/bench_search.py`, `tools/tail_stats.py`, `tools/check_rollouts.py`). The unit
+  pile-up is fixed in jumping (worst rollout 40 s -> 4.6 s); ordinary programs are flat Python now, about 2-6 min per 1000
+  iterations per ladder, so under 1 hour needs a change to the search. Options, none applied: a budget on units, fewer
+  replicas, a shorter warm-up. Distance-based pruning of off-board bodies cannot fire (see the 31 Oct report).
+- [ ] **Unknown and motion size (31 Oct, nothing refit).** The average-body fill gives unclaimed cells free body knowledge. A generic
+  blob baseline (unclaimed scores 0) rewards confident still shapes; every oscillator and moving window loses, because actors
+  swing 0.03-0.97 cells and the smallest move is 1 cell. Oracle rectangles swung by sub-cell amounts beat still ones on 30/30
+  pairs (-193 -> +2672). So: sub-cell motion, `lot.window_crop`, and the generic baseline need testing together.
 - [ ] **Rhythmic tilt.** Actors' torso and legs tilt rhythmically (0.07-0.19); shuttles only translate (~0.01).
 - [ ] **26-manner comparison against templates.** On 5 manners recognition is at ceiling: programs and program-free
   baselines all get 0.96.

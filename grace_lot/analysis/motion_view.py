@@ -207,7 +207,7 @@ def main() -> None:
         L, matched = lik._scores(prog)
         b = int(L[:, med].argmax())
         states = list(motion_combinations(prog, S))[b][0]
-        v = rollout(prog, lik.frames, S, states)
+        v = rollout(prog, lik.frames + lik.warmup, S, states)[lik.warmup:]      # the frames that were scored
         v = v if v.ndim == 4 else v[:, None]
         rows, cols, _ = matched[b][med]
         out_of = {int(c): int(r) for r, c in zip(rows, cols) if r < v.shape[1]}       # part -> its output
