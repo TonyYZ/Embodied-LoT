@@ -2,7 +2,7 @@
 # Five manners scored on the full descriptors (inference.descriptors="full", fixed a priori 30 Oct): every rhythm from
 # once per clip to twice per cycle, and each part's posture (average position, size, axis). A short fit (6000
 # iterations, a quarter of desc_fix_5's) to finish within hours; otherwise as desc_fix_5.
-#   sbatch -p gpu-p2 -c 12 --mem=50G full_5.sbatch
+#   sbatch -p gpu-p2 -c 12 --mem=50G cluster/old/full_5.sbatch
 #SBATCH --job-name=elot-full
 #SBATCH --time=0-06:00:00
 #SBATCH --output=/home/yzhou/workdir/Embodied-LoT/results/grace_v7_parts/slurm-%x-%j.out

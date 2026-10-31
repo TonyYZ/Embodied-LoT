@@ -1,7 +1,7 @@
 #!/bin/bash
 # Five manners scored on limb-motion descriptors, independent draws per output (grace.descriptors; temperature 1, the plain density; set a
 # priori), otherwise as all26_current. Densities differ from the Gaussian scan: compare recognition, moving, size.
-#   sbatch -p gpu-p2 -c 12 --mem=50G desc_fix_5.sbatch
+#   sbatch -p gpu-p2 -c 12 --mem=50G cluster/old/desc_fix_5.sbatch
 #SBATCH --job-name=elot-desc
 #SBATCH --time=1-00:00:00
 #SBATCH --output=/home/yzhou/workdir/Embodied-LoT/results/grace_v7_parts/slurm-%x-%j.out

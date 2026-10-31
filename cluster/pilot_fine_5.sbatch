@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pilot (31 Oct): round 0's settings with the blob baseline (inference.baseline), cropped windows (lot.window_crop), fine motion
 # (lot.fine_motion = 3) and lot.max_depth = 9; no library; the 9 trigram leaves. 6000 iterations.
-#   sbatch -p gpu-p2 -c 22 --mem=60G pilot_fine_5.sbatch   (20 ladder processes; 22 CPUs approved for this pilot, 31 Oct)
+#   sbatch -p gpu-p2 -c 22 --mem=60G cluster/pilot_fine_5.sbatch   (20 ladder processes; 22 CPUs approved for this pilot, 31 Oct)
 #SBATCH --job-name=elot-pilot_fine_5
 #SBATCH --time=1-00:00:00
 #SBATCH --output=/home/yzhou/workdir/Embodied-LoT/results/grace_v7_parts/slurm-%x-%j.out

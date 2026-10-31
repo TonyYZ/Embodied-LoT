@@ -908,7 +908,7 @@ class PlaygroundTests(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             self.skipTest("node is not installed")
-        html = (Path(__file__).parent / "grace_lot" / "analysis" / "playground_page.html").read_text(encoding="utf-8")
+        html = (Path(__file__).parent.parent / "grace_lot" / "analysis" / "playground_page.html").read_text(encoding="utf-8")
         scripts = [m.group(1) for m in re.finditer(r"<script>(.*?)</script>", html, re.S)]
         self.assertTrue(scripts)
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,7 +3,7 @@
 #   fine24_5   body frame, cells half as big both ways (edge_samples 8: the fewest with no gaps along a limb)
 #   world24_5  world frame (the walk across the screen kept): columns as wide as now over 2.6 body heights,
 #              rows half as tall over the same 1.3 (edge_samples 8, the same rule)
-#   sbatch -p gpu-p2 -c 12 --mem=50G board24_5.sbatch
+#   sbatch -p gpu-p2 -c 12 --mem=50G cluster/old/board24_5.sbatch
 #SBATCH --job-name=elot-board24
 #SBATCH --time=1-12:00:00
 #SBATCH --output=/home/yzhou/workdir/Embodied-LoT/results/grace_v7_parts/slurm-%x-%j.out

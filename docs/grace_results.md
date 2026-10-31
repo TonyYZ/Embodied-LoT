@@ -23,7 +23,7 @@
 
 ```
 python -m grace_lot.grace.preprocess --all --workers 12                 # pose + trajectories, all 650 videos
-python -m unittest test_grace_lot                                       # exactness and reachability checks
+python -m unittest tests.test_grace_lot                                     # exactness and reachability checks
 python -m grace_lot.inference.recovery --n 24                           # synthetic recovery
 python -m grace_lot.inference.select --out results/grace_v2             # lambda/beta grid + variants, on validation actors
 python -m grace_lot.analysis.run --results results/grace_v2/select/<chosen>    # human comparison (training-actor posteriors)

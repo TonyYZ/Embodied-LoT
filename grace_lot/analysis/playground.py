@@ -1,7 +1,7 @@
 """A playground for the v7 language: type a program, step it on the gameboard, look for bugs.
 
     python -m grace_lot.analysis.playground [--config configs/grace_v7_parts.toml] [--port 8765] [--lot solid_figure=false]
-    python -m grace_lot.analysis.playground --offline playground_offline.html     # a self-contained copy (no server)
+    python -m grace_lot.analysis.playground --offline demos/playground_offline.html     # a self-contained copy (no server)
 
 then open http://localhost:8765 for the board-first page (also at /gameboard), or /graph for the graph visualizer
 (``visualizer/page.html``: edit a graph, load or export v7 program text, run it on the engine and replay the ticks).

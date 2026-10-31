@@ -12,7 +12,7 @@ visualizer.
 ```text
 python demos.py [--visualize]
 python visualize_demo.py
-python -m unittest test_embodied_lot
+python -m unittest tests.test_embodied_lot
 ```
 
 `visualize_demo.py` regenerates `top_replay.html`.
@@ -196,7 +196,7 @@ and browser-side evaluation for edited structures.
         `step_size x activation` cells per tick via accumulated credit. Weaker
         activation therefore means the token moves less often. Positions are
         always whole cells.
-    The self-observing oscillator in `test_grace_lot.py` is the reference example.
+    The self-observing oscillator in `tests/test_grace_lot.py` is the reference example.
 11. Dashed edges may target any node. A structure's gate scales its whole
     composite (`GATE_STRUCTURES`; config `lot.gate_structures`):
     - its own activation;

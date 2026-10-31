@@ -2,7 +2,7 @@
 # As claims_5, with the learned-only library (inference.library = configs/library_learned.json, 30 Oct): the 7 pieces
 # compressed from the training units, no hand-built ones; the 9 trigram leaves (no halves); rhythm-and-posture
 # descriptors and a 16-tick warm-up (oscillators favoured on 17/30 parts in osc_favored). 24000 iterations.
-#   sbatch -p gpu-p2 -c 12 --mem=50G library_5.sbatch
+#   sbatch -p gpu-p2 -c 12 --mem=50G cluster/old/library_5.sbatch
 #SBATCH --job-name=elot-library_5
 #SBATCH --time=1-00:00:00
 #SBATCH --output=/home/yzhou/workdir/Embodied-LoT/results/grace_v7_parts/slurm-%x-%j.out

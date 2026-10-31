@@ -29,7 +29,7 @@ Run the demos with:
 ```text
 python demos.py               # add --visualize to also write demos_gallery.html
 python visualize_demo.py      # writes top_replay.html
-python -m unittest test_embodied_lot
+python -m unittest tests.test_embodied_lot
 ```
 
 ## Core Semantics
@@ -142,6 +142,11 @@ scan -> propagate dashed gates -> update BodyNodes
 | `visualize_lot.py` | Writes the standalone interactive visualizer and replay pages |
 | `visualizer/` | The visualizer page itself: `page.html`, `viewer.css`, `viewer.js` |
 | `visualize_demo.py` | Generates `top_replay.html` from a small two-component graph |
+
+- `tests/`: unit tests (`python -m unittest tests.test_embodied_lot tests.test_grace_lot`).
+- `tools/`: benchmarks, cost statistics and old-vs-new checks of the search.
+- `cluster/`: batch scripts for the cluster; `cluster/old/` keeps those of past fits, some for switches since removed.
+- `demos/`: standalone demo pages.
 
 ## Learners
 

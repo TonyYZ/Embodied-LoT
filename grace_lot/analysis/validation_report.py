@@ -92,7 +92,7 @@ def main() -> None:
           f"program families visited by flat-likelihood MCMC; families with clear prior mass left unvisited: "
           f"{len(cov['family']['unvisited_with_mass'])}; total variation of the family distribution against an independent "
           f"importance-sampling estimate: {cov['family']['tv_family_marginal']:.3f} (selected search bounds).",
-          "- Exactness unit tests (test_grace_lot.py) check that MH and parallel tempering reproduce exact priors "
+          "- Exactness unit tests (tests/test_grace_lot.py) check that MH and parallel tempering reproduce exact priors "
           "and posteriors for every move type, dashed edges included.", ""]
 
     # 3. Selection

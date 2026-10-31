@@ -441,5 +441,5 @@ outcome; a test that could favour the new semantics needs stimuli with objects, 
 - Cases and reports: `expressivity/cases.toml`, `expressivity/report_*.md` (one per language version).
 - Playground: `python -m grace_lot.analysis.playground`, then `http://localhost:8765/gameboard`; switches for the
   four flags, a substance board, and examples of each construct.
-- Tests: `test_grace_lot.py` (`PureClaimsTests`, `StaticFieldsTests`, `ExpressivityTests`, `PlaygroundTests`).
+- Tests: `tests/test_grace_lot.py` (`PureClaimsTests`, `StaticFieldsTests`, `ExpressivityTests`, `PlaygroundTests`).
 - Diagnostics and λ choice: `docs/v7_diagnostics.md`.

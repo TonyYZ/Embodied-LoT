@@ -1,6 +1,6 @@
 #!/bin/bash
 # What the results page reads for a fit, once it has finished: gallery, part-by-part motion views, score comparison.
-#   RUN=results/grace_v7_parts/round0_5 BASE=results/grace_v7_parts/claims_5 sbatch -p gpu-p2 -c 6 --mem=24G --dependency=afterok:<fit> post_round0.sbatch
+#   RUN=results/grace_v7_parts/round0_5 BASE=results/grace_v7_parts/claims_5 sbatch -p gpu-p2 -c 6 --mem=24G --dependency=afterok:<fit> cluster/post_round0.sbatch
 #SBATCH --job-name=elot-post
 #SBATCH --time=06:00:00
 #SBATCH --output=/home/yzhou/workdir/Embodied-LoT/results/grace_v7_parts/slurm-%x-%j.out
